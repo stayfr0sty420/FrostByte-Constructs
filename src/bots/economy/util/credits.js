@@ -334,6 +334,7 @@ async function getEconomyEmojis(client, guildId) {
     coinSpin: coinSpin || heads || tails || '🪙',
     slotSpinFrames: (Array.isArray(slotSpinFrames) ? slotSpinFrames : []).filter(Boolean),
     brand: brand || '',
+    allowExternal: env.ECONOMY_ALLOW_EXTERNAL_EMOJIS,
     dice,
     diceBetType: diceBetTypeRes.map
   });

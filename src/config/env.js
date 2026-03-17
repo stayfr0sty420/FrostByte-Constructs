@@ -62,6 +62,8 @@ const envSchema = z.object({
   // Optional: seed required economy emojis (RodstarkianCredit/Heads/Tails/CoinSpin) into each guild.
   // Requires the Economy bot to have "Manage Guild Expressions".
   ECONOMY_SEED_EMOJIS: z.string().optional().default('true'),
+  // Optional: allow external custom emojis from RoBot emoji pack.
+  ECONOMY_ALLOW_EXTERNAL_EMOJIS: z.string().optional().default('false'),
   ECONOMY_EMOJI_ASSETS_DIR: z.string().optional().default('images/emojis'),
 
   DEV_GUILD_ID: z.string().optional().default(''),
@@ -94,7 +96,8 @@ const env = {
   LOG_NICKNAMES: parseBool(trimmed.LOG_NICKNAMES, true),
   LOG_BACKUPS: parseBool(trimmed.LOG_BACKUPS, true),
   LOG_ECONOMY: parseBool(trimmed.LOG_ECONOMY, true),
-  ECONOMY_SEED_EMOJIS: parseBool(trimmed.ECONOMY_SEED_EMOJIS, true)
+  ECONOMY_SEED_EMOJIS: parseBool(trimmed.ECONOMY_SEED_EMOJIS, true),
+  ECONOMY_ALLOW_EXTERNAL_EMOJIS: parseBool(trimmed.ECONOMY_ALLOW_EXTERNAL_EMOJIS, false)
 };
 
 module.exports = { env };
