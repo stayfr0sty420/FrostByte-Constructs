@@ -3,6 +3,7 @@ const seedCooldown = new Map(); // guildId -> lastAttemptAt
 const seedInFlight = new Map(); // guildId -> Promise
 const meRolesCache = new Map(); // guildId -> { roleIds: Set<string>, cachedAt }
 
+const { PermissionFlagsBits } = require('discord.js');
 const { env } = require('../../../config/env');
 const { seedEconomyEmojisForGuild } = require('./seedEconomyEmojis');
 const { withRoBotEmojiLookup } = require('./robotEmojiLookup');
@@ -286,6 +287,22 @@ async function resolveSlotSpinFrames(client, guildId) {
   return await Promise.all(SLOT_SPIN_FRAME_ALIAS_GROUPS.map((aliases) => resolveGuildEmojiAny(client, guildId, aliases)));
 }
 
+async function canUseExternalEmojis(client, guildId) {
+  if (!client?.guilds) return false;
+  const gId = String(guildId || '').trim();
+  if (!gId) return false;
+  const guild = client.guilds.cache.get(gId) || (await client.guilds.fetch(gId).catch(() => null));
+  if (!guild) return false;
+
+  let me = guild?.members?.me || null;
+  if (!me && typeof guild?.members?.fetchMe === 'function') {
+    me = await guild.members.fetchMe().catch(() => null);
+  }
+  const perms = me?.permissions;
+  if (!perms || typeof perms.has !== 'function') return false;
+  return perms.has(PermissionFlagsBits.UseExternalEmojis);
+}
+
 async function getEconomyEmojis(client, guildId) {
   let [currency, heads, tails, coinSpin, slotSpinFrames] = await Promise.all([
     resolveGuildEmojiAny(client, guildId, CURRENCY_EMOJI_ALIASES),
@@ -327,6 +344,9 @@ async function getEconomyEmojis(client, guildId) {
   const envCoinSpinUrl = String(process.env.ECONOMY_COINSPIN_GIF_URL || '').trim();
   const dice = diceRes.faces.map((f, i) => f || UNICODE_DICE[i] || UNICODE_DICE[0]);
 
+  const allowExternal =
+    Boolean(env.ECONOMY_ALLOW_EXTERNAL_EMOJIS) && (await canUseExternalEmojis(client, guildId));
+
   const merged = withRoBotEmojiLookup({
     currency: currency || '🪙',
     heads: heads || '🟡',
@@ -334,7 +354,7 @@ async function getEconomyEmojis(client, guildId) {
     coinSpin: coinSpin || heads || tails || '🪙',
     slotSpinFrames: (Array.isArray(slotSpinFrames) ? slotSpinFrames : []).filter(Boolean),
     brand: brand || '',
-    allowExternal: env.ECONOMY_ALLOW_EXTERNAL_EMOJIS,
+    allowExternal,
     dice,
     diceBetType: diceBetTypeRes.map
   });
