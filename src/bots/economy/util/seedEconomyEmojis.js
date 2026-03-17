@@ -20,7 +20,17 @@ const EMOJI_SPECS = [
     name: 'RBCredit',
     required: true,
     existsAliases: ['RodstarkianCredit', 'RodstarkianCredit~1'],
-    assetAliases: ['RBCredit', 'RodstarkianCredit', 'Rodstarkian_Credit', 'RodCredit', 'Credit']
+    assetAliases: [
+      'RBCredit',
+      'RBCredit_Opti',
+      'RBCreditOpti',
+      'RodstarkianCredit',
+      'Rodstarkian_Credit',
+      'Rodstarkian_Credit_Opti',
+      'RodstarkianCreditOpti',
+      'RodCredit',
+      'Credit'
+    ]
   },
   // Optional brand icon used in footers across games.
   {
@@ -28,8 +38,18 @@ const EMOJI_SPECS = [
     required: false,
     assetAliases: ['RodstarkG', 'Rodstark', 'RodstarkianG', 'RodLogo', 'Logo', 'Brand']
   },
-  { name: 'RBHeads', required: true, existsAliases: ['Heads', 'Heads~1'], assetAliases: ['RBHeads', 'Heads'] },
-  { name: 'RBTails', required: true, existsAliases: ['Tails', 'Tails~1'], assetAliases: ['RBTails', 'Tails'] },
+  {
+    name: 'RBHeads',
+    required: true,
+    existsAliases: ['Heads', 'Heads~1'],
+    assetAliases: ['RBHeads', 'RBHeads_Opti', 'RBHeadsOpti', 'Heads', 'Heads_Opti', 'HeadsOpti']
+  },
+  {
+    name: 'RBTails',
+    required: true,
+    existsAliases: ['Tails', 'Tails~1'],
+    assetAliases: ['RBTails', 'RBTails_Opti', 'RBTailsOpti', 'Tails', 'Tails_Opti', 'TailsOpti']
+  },
   // Optional animated (GIF) or static asset.
   {
     name: 'RBCoinflip',
