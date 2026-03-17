@@ -64,7 +64,11 @@ const envSchema = z.object({
   ECONOMY_SEED_EMOJIS: z.string().optional().default('true'),
   ECONOMY_EMOJI_ASSETS_DIR: z.string().optional().default('images/emojis'),
 
-  DEV_GUILD_ID: z.string().optional().default('')
+  DEV_GUILD_ID: z.string().optional().default(''),
+
+  // Optional: one-time admin bootstrap (only if no admins exist)
+  ADMIN_BOOTSTRAP_EMAIL: z.string().optional().default(''),
+  ADMIN_BOOTSTRAP_PASSWORD: z.string().optional().default('')
 });
 
 const parsed = envSchema.safeParse(process.env);

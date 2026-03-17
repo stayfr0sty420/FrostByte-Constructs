@@ -9,6 +9,7 @@ const { createVerificationBot } = require('./bots/verification/createVerificatio
 const { createWebApp } = require('./web/app');
 const { startJobs } = require('./jobs/startJobs');
 const { applyEphemeralFlagPatch } = require('./discord/patchEphemeralFlags');
+const { bootstrapAdminIfNeeded } = require('./services/admin/bootstrapAdmin');
 
 async function listenWithPortFallback(server, preferredPort, maxRetries = 15) {
   const basePort = Math.max(1, Math.floor(Number(preferredPort) || 3000));
@@ -50,6 +51,7 @@ async function listenWithPortFallback(server, preferredPort, maxRetries = 15) {
 async function main() {
   applyEphemeralFlagPatch();
   await connectToDatabase(env.MONGODB_URI);
+  await bootstrapAdminIfNeeded();
 
   const economyClient = await createEconomyBot();
   const backupClient = await createBackupBot();
