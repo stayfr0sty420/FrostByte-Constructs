@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <div>
+          <h1 class="h4 mb-1">Economy Users</h1>
+          <div class="text-muted small">
+            <% if (economyScope === 'global') { %>
+              Shared economy account across all servers.
+            <% } else { %>
+              Economy accounts are per server.
+            <% } %>
+          </div>
+        </div>
+        <div class="text-muted small">
+          Showing <%= users.length %> of <%= total %>
+        </div>
+      </div>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="card shadow-sm mb-4">
+        <div class="card-body">
+          <div class="row g-3 align-items-end">
+            <div class="col-12 col-lg-7">
+              <form method="get" action="/admin/economy/users" class="row g-2">
+                <div class="col-12">
+                  <label class="form-label">Search</label>
+                  <input
+                    class="form-control"
+                    name="q"
+                    value="<%= q || '' %>"
+                    placeholder="Discord ID or username…"
+                    autocomplete="off"
+                  />
+                  <div class="form-text">Tip: paste a Discord ID for exact match.</div>
+                </div>
+                <div class="col-12 d-flex gap-2">
+                  <button class="btn btn-outline-primary" type="submit">Search</button>
+                  <a class="btn btn-outline-secondary" href="/admin/economy/users">Clear</a>
+                </div>
+              </form>
+            </div>
+
+            <div class="col-12 col-lg-5">
+                <div class="border rounded p-3">
+                  <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                  <div class="fw-semibold">Gift Rodstarkian Credits to All Users</div>
+                  <span class="badge text-bg-warning">Bulk</span>
+                </div>
+                <form method="post" action="/admin/economy/users/gift-all" class="row g-2">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <div class="col-12 col-md-8">
+                    <label class="form-label">Amount</label>
+                    <input class="form-control" name="amount" type="number" min="1" step="1" placeholder="1000" required />
+                  </div>
+                  <div class="col-12 col-md-4 d-grid">
+                    <label class="form-label d-none d-md-block">&nbsp;</label>
+                    <button
+                      class="btn btn-danger"
+                      type="submit"
+                      data-confirm="<%= economyScope === 'global' ? 'Gift this amount to ALL economy users (global across all servers)?' : 'Gift this amount to ALL economy users in this server?' %>"
+                      data-confirm-title="Gift all users?"
+                      data-confirm-ok="Gift"
+                      data-confirm-cancel="Cancel"
+                    >
+                      Gift All
+                    </button>
+                  </div>
+                </form>
+                <div class="form-text mt-2">
+                  <% if (economyScope === 'global') { %>
+                    This modifies shared wallet balance for all users already in the database (global across all servers).
+                  <% } else { %>
+                    This modifies wallet balance for all users already in the database (this server only).
+                  <% } %>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mb-4">
+        <div class="card-body">
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+            <div>
+              <h2 class="h6 mb-1">Credit Grant Whitelist</h2>
+              <div class="text-muted small">
+                Whitelisted users can run <code>/grant</code> or <code>robo grant</code> to add Rodstarkian Credits to other users.
+              </div>
+            </div>
+            <span class="badge text-bg-secondary"><%= (whitelistEntries || []).length %> whitelisted</span>
+          </div>
+
+          <form method="post" action="/admin/economy/users/whitelist/add" class="row g-2 align-items-end">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <div class="col-12 col-md-6 col-lg-5">
+              <label class="form-label">Discord ID</label>
+              <input class="form-control" name="discordId" placeholder="123456789012345678" required />
+              <div class="form-text">Tip: enable Developer Mode in Discord to copy user IDs.</div>
+            </div>
+            <div class="col-12 col-md-3 d-grid">
+              <label class="form-label d-none d-md-block">&nbsp;</label>
+              <button class="btn btn-outline-warning" type="submit">Add to Whitelist</button>
+            </div>
+          </form>
+
+          <hr class="my-3" />
+
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Discord ID</th>
+                  <th>Username</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (!(whitelistEntries || []).length) { %>
+                  <tr>
+                    <td colspan="3" class="text-muted py-3">No whitelisted users yet.</td>
+                  </tr>
+                <% } %>
+
+                <% (whitelistEntries || []).forEach(w => { %>
+                  <tr>
+                    <td><code><%= w.discordId %></code></td>
+                    <td><%= w.username || '—' %></td>
+                    <td class="text-end">
+                      <form method="post" action="/admin/economy/users/whitelist/remove" class="d-inline">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                        <input type="hidden" name="discordId" value="<%= w.discordId %>" />
+                        <button
+                          class="btn btn-outline-danger btn-sm"
+                          type="submit"
+                          data-confirm="Remove this user from the credit-grant whitelist?"
+                          data-confirm-title="Remove whitelist?"
+                          data-confirm-ok="Remove"
+                          data-confirm-cancel="Cancel"
+                        >
+                          Remove
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <% const fmt = (n) => Number(n || 0).toLocaleString(); %>
+          <% const totalPages = Math.max(1, Math.ceil((total || 0) / (limit || 1))); %>
+          <% const whitelistSet = new Set((whitelist || []).map(String)); %>
+
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+            <h2 class="h6 mb-0">Users</h2>
+            <div class="d-flex align-items-center gap-2">
+              <span class="text-muted small">Page <%= page %> / <%= totalPages %></span>
+              <div class="btn-group btn-group-sm" role="group" aria-label="Pagination">
+                <% const base = `/admin/economy/users?q=${encodeURIComponent(q || '')}`; %>
+                <a class="btn btn-outline-secondary <%= page <= 1 ? 'disabled' : '' %>" href="<%= `${base}&page=${Math.max(1, page - 1)}` %>">Prev</a>
+                <a class="btn btn-outline-secondary <%= page >= totalPages ? 'disabled' : '' %>" href="<%= `${base}&page=${Math.min(totalPages, page + 1)}` %>">Next</a>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Discord ID</th>
+                  <th>Username</th>
+                  <th class="text-end">Wallet</th>
+                  <th class="text-end">Bank</th>
+                  <th class="text-end">Level</th>
+                  <th>Updated</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (!users.length) { %>
+                  <tr>
+                    <td colspan="7" class="text-muted py-4">No users found.</td>
+                  </tr>
+                <% } %>
+
+                <% users.forEach(u => { %>
+                  <tr>
+                    <td><code><%= u.discordId %></code></td>
+                    <td class="text-truncate" style="max-width: 220px"><%= u.username || '—' %></td>
+                    <td class="text-end"><%= fmt(u.balance) %></td>
+                    <td class="text-end"><%= fmt(u.bank) %></td>
+                    <td class="text-end"><%= fmt(u.level) %></td>
+                    <td class="text-muted small">
+                      <%= u.updatedAt ? new Date(u.updatedAt).toISOString().slice(0, 19).replace('T', ' ') : '—' %>
+                    </td>
+                    <td class="text-end">
+                      <div class="d-flex flex-wrap gap-2 justify-content-end">
+                        <% const isWhitelisted = whitelistSet.has(String(u.discordId)); %>
+                        <form method="post" action="/admin/economy/users/whitelist/<%= isWhitelisted ? 'remove' : 'add' %>" class="d-inline-flex">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <input type="hidden" name="discordId" value="<%= u.discordId %>" />
+                          <button
+                            class="btn btn-outline-warning btn-sm"
+                            type="submit"
+                            data-confirm="<%= isWhitelisted ? 'Remove this user from the credit-grant whitelist?' : 'Add this user to the credit-grant whitelist?' %>"
+                            data-confirm-title="<%= isWhitelisted ? 'Remove whitelist?' : 'Add to whitelist?' %>"
+                            data-confirm-ok="<%= isWhitelisted ? 'Remove' : 'Add' %>"
+                            data-confirm-cancel="Cancel"
+                          >
+                            <%= isWhitelisted ? 'Unwhitelist' : 'Whitelist' %>
+                          </button>
+                        </form>
+
+                        <form method="post" action="/admin/economy/users/grant" class="d-inline-flex gap-2">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <input type="hidden" name="discordId" value="<%= u.discordId %>" />
+                          <input class="form-control form-control-sm" name="amount" type="number" min="1" step="1" placeholder="+ credits" style="width: 110px" required />
+                          <button class="btn btn-success btn-sm" type="submit">Grant</button>
+                        </form>
+
+                        <form method="post" action="/admin/economy/users/deduct" class="d-inline-flex gap-2">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <input type="hidden" name="discordId" value="<%= u.discordId %>" />
+                          <input class="form-control form-control-sm" name="amount" type="number" min="1" step="1" placeholder="- credits" style="width: 110px" required />
+                          <button
+                            class="btn btn-outline-danger btn-sm"
+                            type="submit"
+                            data-confirm="Deduct Rodstarkian Credits from this user?"
+                            data-confirm-title="Deduct credits?"
+                            data-confirm-ok="Deduct"
+                            data-confirm-cancel="Cancel"
+                          >
+                            Deduct
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

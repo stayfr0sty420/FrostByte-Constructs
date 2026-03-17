@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../partials/head', { title }) %>
+  </head>
+  <body class="app verify-page">
+    <%- include('../partials/nav') %>
+    <main class="container py-4">
+      <div class="row justify-content-center">
+        <div class="col-12 col-lg-7">
+          <div class="card shadow-sm verify-card">
+            <div class="card-body p-4">
+              <h1 class="h4 mb-2">Verification</h1>
+              <p class="text-muted">
+                This process captures your Discord ID, email (via Discord OAuth), public IP, and location for security.
+                After you click <strong>Verify</strong>, Discord will ask you to authorize email access.
+              </p>
+
+              <% const needsGeo = (typeof requireLocation !== 'undefined' && requireLocation) ? true : false; %>
+
+              <% if (error === 'location_required') { %>
+                <div class="alert alert-danger">
+                  Location is required to verify. Click <strong>Allow Location</strong>, then submit again.
+                </div>
+              <% } %>
+
+              <% if (error === 'ip_required') { %>
+                <div class="alert alert-danger">
+                  Public IP is required to verify. Please wait a few seconds and try again.
+                </div>
+              <% } %>
+
+              <div class="alert alert-danger d-none" id="formError"></div>
+
+              <% if (needsGeo) { %>
+                <div class="alert alert-warning">
+                  Location is required for verification. Your browser will ask for permission.
+                </div>
+              <% } %>
+
+              <form
+                method="post"
+                action="/verify/<%= guildId %>"
+                data-require-geo="<%= needsGeo ? '1' : '0' %>"
+                data-guild-id="<%= guildId %>"
+                data-csrf="<%= csrfToken %>"
+                data-token="<%= token %>"
+              >
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <input type="hidden" name="t" value="<%= token %>" />
+                <input type="hidden" name="geoLat" id="geoLat" />
+                <input type="hidden" name="geoLon" id="geoLon" />
+                <input type="hidden" name="geoAcc" id="geoAcc" />
+
+                <div class="mb-3">
+                  <label class="form-label"><%= cfg.verification.question1 %></label>
+                  <input class="form-control" name="answer1" />
+                </div>
+                <div class="mb-3">
+                  <label class="form-label"><%= cfg.verification.question2 %></label>
+                  <input class="form-control" name="answer2" />
+                </div>
+                <div class="mb-3">
+                  <label class="form-label"><%= cfg.verification.question3 || 'Optional question' %></label>
+                  <input class="form-control" name="answer3" />
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 align-items-center verify-actions">
+                  <button class="btn btn-primary" type="submit" id="submitBtn" <%= needsGeo ? 'disabled' : '' %>>Verify</button>
+                  <button class="btn btn-outline-primary" type="button" id="geoBtn"><%= needsGeo ? 'Allow Location (Required)' : 'Allow Location (Optional)' %></button>
+                  <span class="text-muted small" id="geoStatus"></span>
+                </div>
+                <div class="text-danger small mt-2" id="ipStatus"></div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script src="/assets/js/verify.js"></script>
+    <%- include('../partials/footer') %>
+  </body>
+</html>

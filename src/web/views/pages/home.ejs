@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../partials/head', { title }) %>
+  </head>
+  <body class="app landing">
+    <main class="container py-5 landing-stage">
+      <div class="float-orb orb-1"></div>
+      <div class="float-orb orb-2"></div>
+      <div class="float-orb orb-3"></div>
+
+      <header class="landing-header">
+        <div class="brand">
+          <div class="brand-icon" data-fallback="RS">
+            <img src="/assets/images/bots/Rodstarkian_Bot.png" alt="Rodstarkian Bot logo" loading="lazy" data-fallback-img />
+            <span class="brand-fallback">RS</span>
+          </div>
+          <div>
+            <div class="brand-title">Rodstarkian Suite</div>
+            <div class="brand-sub">Bot Control Center</div>
+          </div>
+        </div>
+        <div class="header-actions">
+          <a class="btn btn-ghost" href="/admin/login">Admin Login</a>
+          <a class="btn btn-primary btn-glow" href="/auth/discord">User Login</a>
+        </div>
+      </header>
+
+      <div class="landing-grid">
+        <section class="hero-copy">
+          <div class="hero-eyebrow">Secure Discord Access</div>
+          <h1 class="hero-title">Manage approvals, verification, and bot access in one place.</h1>
+          <p class="hero-text">
+            User login is for inviting bots to your server. Admin login is for approvals and advanced settings.
+          </p>
+          <div class="cta-row">
+            <a class="btn btn-primary btn-lg btn-glow" href="/auth/discord">Login with Discord</a>
+            <a class="btn btn-outline-light btn-lg" href="/admin/login">Admin Portal</a>
+          </div>
+          <div class="hero-meta text-muted small">Works on desktop and mobile. Fast and secure.</div>
+        </section>
+
+        <aside class="glass-card login-card">
+          <h2 class="h5 mb-2">Sign In</h2>
+          <p class="text-muted small mb-3">Choose your access type to continue.</p>
+          <div class="login-actions">
+            <a class="btn btn-discord w-100" href="/auth/discord">Login with Discord</a>
+            <a class="btn btn-outline-light w-100" href="/admin/login">Admin Login</a>
+          </div>
+          <div class="login-note text-muted small mt-3">
+            Admins manage approvals, server settings, and logs.
+          </div>
+        </aside>
+      </div>
+
+      <section class="step-grid">
+        <div class="step-card">
+          <div class="step-number">1</div>
+          <div class="step-title">Login with Discord</div>
+          <div class="step-text text-muted small">Securely authorize your Discord account.</div>
+        </div>
+        <div class="step-card">
+          <div class="step-number">2</div>
+          <div class="step-title">Pick a Bot</div>
+          <div class="step-text text-muted small">Choose RoBot, Rodstarkian Vault, or God's Eye.</div>
+        </div>
+        <div class="step-card">
+          <div class="step-number">3</div>
+          <div class="step-title">Add to Server</div>
+          <div class="step-text text-muted small">Invite the bot and select your server.</div>
+        </div>
+      </section>
+    </main>
+    <%- include('../partials/footer') %>
+  </body>
+</html>

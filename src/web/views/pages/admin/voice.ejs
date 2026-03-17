@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <h1 class="h4 mb-3">Voice 24/7</h1>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <form method="post" action="/admin/voice" class="row g-3">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+
+            <div class="col-12">
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" role="switch" id="voiceEnabled" name="enabled" <%= cfg.voice?.enabled ? 'checked' : '' %> />
+                <label class="form-check-label" for="voiceEnabled">Enable 24/7 voice</label>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label">Voice Channel</label>
+              <select class="form-select" name="channelId">
+                <option value="">Select a voice channel</option>
+                <% channels.forEach(c => { %>
+                  <option value="<%= c.id %>" <%= cfg.voice?.channelId === c.id ? 'selected' : '' %>>
+                    <%= c.name %>
+                  </option>
+                <% }) %>
+              </select>
+              <div class="form-text">Bot will join this channel and stay connected 24/7.</div>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label">Self Mute (optional)</label>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="voiceMute" name="selfMute" <%= cfg.voice?.selfMute ? 'checked' : '' %> />
+                <label class="form-check-label" for="voiceMute">Keep bot muted (in addition to deafened)</label>
+              </div>
+              <div class="form-text">Self-deafen is enforced automatically.</div>
+            </div>
+
+            <div class="col-12">
+              <button class="btn btn-primary" type="submit">Save</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

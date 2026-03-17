@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../partials/head', { title }) %>
+  </head>
+  <body class="app">
+    <%- include('../partials/nav') %>
+    <main class="container py-5">
+      <div class="row justify-content-center">
+        <div class="col-12 col-md-10 col-lg-6">
+          <div class="card shadow-sm border-warning">
+            <div class="card-body p-4">
+              <h1 class="h4 mb-2">Owner Setup</h1>
+              <p class="text-muted mb-4">
+                Create the first owner account. This page only works when no admin users exist yet.
+              </p>
+
+              <% if (error) { %>
+                <div class="alert alert-danger"><%= error %></div>
+              <% } %>
+
+              <form method="post" action="/admin/setup">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+
+                <div class="mb-3">
+                  <label class="form-label">Owner Email</label>
+                  <input class="form-control" type="email" name="email" placeholder="owner@example.com" required />
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Owner Password</label>
+                  <input class="form-control" type="password" name="password" placeholder="At least 10 characters" required />
+                  <div class="form-text">Use a strong password. You can add more admins later in the dashboard.</div>
+                </div>
+
+                <button class="btn btn-warning w-100" type="submit">Create Owner</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../partials/footer') %>
+  </body>
+</html>

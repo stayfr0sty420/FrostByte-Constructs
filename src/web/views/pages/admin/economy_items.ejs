@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <h1 class="h4 mb-3">Items</h1>
+
+      <div class="card shadow-sm mb-4">
+        <div class="card-body">
+          <h2 class="h6">Create / Update Item</h2>
+          <form method="post" action="/admin/economy/items" class="row g-2">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <div class="col-12 col-md-4">
+              <label class="form-label">itemId</label>
+              <input class="form-control" name="itemId" required />
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">name</label>
+              <input class="form-control" name="name" required />
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">type</label>
+              <input class="form-control" name="type" required />
+            </div>
+            <div class="col-12">
+              <label class="form-label">description</label>
+              <input class="form-control" name="description" />
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label">rarity</label>
+              <input class="form-control" name="rarity" placeholder="common" required />
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label">price</label>
+              <input class="form-control" name="price" type="number" min="0" value="0" />
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label">tags (comma separated)</label>
+              <input class="form-control" name="tags" />
+            </div>
+            <div class="col-12 d-flex flex-wrap gap-3 align-items-center">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="sellable" value="1" checked />
+                <label class="form-check-label">sellable</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="consumable" value="1" />
+                <label class="form-check-label">consumable</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="stackable" value="1" checked />
+                <label class="form-check-label">stackable</label>
+              </div>
+              <button class="btn btn-primary ms-auto" type="submit">Save</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h2 class="h6 mb-3">Existing Items (latest 100)</h2>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>itemId</th>
+                  <th>name</th>
+                  <th>type</th>
+                  <th>rarity</th>
+                  <th class="text-end">price</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% items.forEach(it => { %>
+                  <tr>
+                    <td><code><%= it.itemId %></code></td>
+                    <td><%= it.name %></td>
+                    <td><%= it.type %></td>
+                    <td><%= it.rarity %></td>
+                    <td class="text-end"><%= it.price %></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

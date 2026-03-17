@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="bg-light">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <h1 class="h4 mb-3">Backup Schedules</h1>
+
+      <div class="card shadow-sm mb-4">
+        <div class="card-body">
+          <h2 class="h6">Add Schedule</h2>
+          <form method="post" action="/admin/schedules" class="row g-2">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <div class="col-12 col-md-6">
+              <label class="form-label">Cron</label>
+              <input class="form-control" name="cron" placeholder="0 * * * *" required />
+              <div class="form-text">Examples: Hourly <code>0 * * * *</code>, Daily <code>0 0 * * *</code>, Weekly <code>0 0 * * 0</code></div>
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label">Type</label>
+              <select class="form-select" name="type">
+                <option value="full">full</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-3 d-flex align-items-end">
+              <button class="btn btn-primary w-100" type="submit">Add</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Cron</th>
+              <th>Type</th>
+              <th>Enabled</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% schedules.forEach(s => { %>
+              <tr>
+                <td><code><%= s.scheduleId %></code></td>
+                <td><code><%= s.cron %></code></td>
+                <td><%= s.backupType %></td>
+                <td><%= s.enabled ? 'yes' : 'no' %></td>
+                <td class="text-end">
+                  <form method="post" action="/admin/schedules/remove/<%= s.scheduleId %>" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <button class="btn btn-outline-danger btn-sm" type="submit" onclick="return confirm('Remove this schedule?')">Remove</button>
+                  </form>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>
+

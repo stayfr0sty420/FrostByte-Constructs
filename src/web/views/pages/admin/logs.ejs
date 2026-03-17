@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+          <h1 class="h4 m-0">Logs</h1>
+          <div class="text-muted small">Latest activity from verification, backups, economy, and moderation.</div>
+        </div>
+        <a href="/admin/dashboard" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
+      </div>
+
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <div class="input-group input-group-sm log-search">
+              <span class="input-group-text">Search</span>
+              <input class="form-control" type="search" placeholder="Search logs..." data-log-search />
+            </div>
+            <div class="text-muted small" data-log-count></div>
+          </div>
+
+          <div class="log-list">
+            <div class="log-empty text-muted small" data-log-empty style="<%= logs.length ? 'display:none;' : '' %>">No logs yet.</div>
+            <% logs.forEach(l => { %>
+              <%
+                const embeds = Array.isArray(l.data?.embeds) ? l.data.embeds : [];
+                const embedText = embeds
+                  .map((e) => {
+                    const fields = Array.isArray(e.fields) ? e.fields : [];
+                    const fieldText = fields.map((f) => `${f.name || ''} ${f.value || ''}`).join(' ');
+                    return `${e.title || ''} ${e.description || ''} ${fieldText}`;
+                  })
+                  .join(' ');
+                const typeLabel = String(l.type || '').split('_').join(' ');
+                const jsonSearch = JSON.stringify(l.data || {}).slice(0, 2000);
+                const rawSearch = `${l.type || ''} ${l.data?.content || ''} ${embedText} ${jsonSearch}`;
+                const searchText = String(rawSearch || '').toLowerCase();
+              %>
+              <article class="log-card" data-log-row data-search="<%= searchText %>">
+                <header class="log-card-header">
+                  <div class="log-type"><%= typeLabel || l.type %></div>
+                  <div class="log-time"><%= l.createdAt.toLocaleString('en-US') %></div>
+                </header>
+                <div class="log-card-body">
+                  <% if (l.data?.content) { %>
+                    <div class="log-content"><%= l.data.content %></div>
+                  <% } %>
+                  <% if (embeds.length) { %>
+                    <div class="log-embed-stack">
+                      <% embeds.forEach((e) => { %>
+                        <% const fields = Array.isArray(e.fields) ? e.fields : []; %>
+                        <% const color = typeof e.color === 'number' ? `#${e.color.toString(16).padStart(6, '0')}` : ''; %>
+                        <% const embedTs = e.timestamp ? new Date(e.timestamp) : null; %>
+                        <% const embedTsText = embedTs && !Number.isNaN(embedTs.getTime()) ? embedTs.toLocaleString('en-US') : ''; %>
+                        <div class="log-embed" style="<%= color ? `--embed-color: ${color};` : '' %>">
+                          <% if (e.author?.name) { %>
+                            <div class="log-embed-author"><%= e.author.name %></div>
+                          <% } %>
+                          <% if (e.title) { %>
+                            <div class="log-embed-title"><%= e.title %></div>
+                          <% } %>
+                          <% if (e.description) { %>
+                            <div class="log-embed-desc"><%= e.description %></div>
+                          <% } %>
+                          <% if (fields.length) { %>
+                            <dl class="log-embed-fields">
+                              <% fields.forEach((f) => { %>
+                                <% const fieldName = String(f.name || ''); %>
+                                <% const isMessageId = fieldName.toLowerCase() === 'message id'; %>
+                                <% if (!isMessageId) { %>
+                                  <div class="log-embed-field">
+                                    <dt><%= fieldName %></dt>
+                                    <dd>
+                                      <% const valueLines = String(f.value || '').split('\\n').map((v) => String(v || '').trim()).filter(Boolean); %>
+                                      <% if (!valueLines.length) { %>
+                                        <span class="text-muted">(none)</span>
+                                      <% } %>
+                                      <% valueLines.forEach((line) => { %>
+                                        <% const trimmed = String(line || '').trim(); %>
+                                        <% const lowered = trimmed.toLowerCase(); %>
+                                        <% const isLink = lowered.startsWith('http://') || lowered.startsWith('https://'); %>
+                                        <% if (isLink) { %>
+                                          <div><a class="link-danger" href="<%= trimmed %>" target="_blank" rel="noreferrer"><%= trimmed %></a></div>
+                                        <% } else { %>
+                                          <div><%= line %></div>
+                                        <% } %>
+                                      <% }) %>
+                                    </dd>
+                                  </div>
+                                <% } %>
+                              <% }) %>
+                            </dl>
+                          <% } %>
+                          <% if (e.footer?.text || embedTsText) { %>
+                            <div class="log-embed-footer">
+                              <% if (e.footer?.text) { %>
+                                <span><%= e.footer.text %></span>
+                              <% } %>
+                              <% if (embedTsText) { %>
+                                <span><%= embedTsText %></span>
+                              <% } %>
+                            </div>
+                          <% } %>
+                        </div>
+                      <% }) %>
+                    </div>
+                  <% } %>
+                  <% if (!l.data?.content && !embeds.length) { %>
+                    <div class="text-muted small">No details.</div>
+                  <% } %>
+                </div>
+              </article>
+            <% }) %>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

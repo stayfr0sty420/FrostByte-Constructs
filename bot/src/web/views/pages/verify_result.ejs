@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <%- include('../partials/head', { title }) %>
+  </head>
+  <body class="bg-light">
+    <%- include('../partials/nav') %>
+    <main class="container py-5">
+      <div class="row justify-content-center">
+        <div class="col-12 col-lg-7">
+          <div class="card shadow-sm">
+            <div class="card-body p-4">
+              <h1 class="h4 mb-3">Verification Result</h1>
+              <% if (result.ok) { %>
+                <% if (result.status === 'approved') { %>
+                  <div class="alert alert-success">✅ Verified! You can return to Discord.</div>
+                <% } else if (result.status === 'pending') { %>
+                  <div class="alert alert-warning">🕒 Pending review by an admin.</div>
+                <% } else { %>
+                  <div class="alert alert-danger">⛔ Verification denied.</div>
+                <% } %>
+                <div class="text-muted">Risk score: <%= result.riskScore %></div>
+              <% } else { %>
+                <div class="alert alert-danger"><%= result.reason %></div>
+              <% } %>
+              <div class="d-flex flex-wrap gap-2 mt-3">
+                <% if (typeof guildId !== 'undefined' && guildId) { %>
+                  <a class="btn btn-outline-secondary" href="/verify/<%= guildId %>">Back</a>
+                <% } %>
+                <form method="post" action="/auth/logout" class="d-inline">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <button class="btn btn-outline-danger" type="submit">Logout</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../partials/footer') %>
+  </body>
+</html>

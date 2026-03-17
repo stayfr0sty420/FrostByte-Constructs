@@ -1,0 +1,30 @@
+:root {
+  --app-radius: 14px;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.navbar {
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+}
+
+.card {
+  border-radius: var(--app-radius);
+}
+
+code {
+  font-size: 0.9em;
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.35rem;
+  background: rgba(13, 110, 253, 0.08);
+}
+
+.table thead th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6c757d;
+}

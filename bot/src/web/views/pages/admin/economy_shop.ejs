@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="bg-light">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <h1 class="h4 mb-3">Shop</h1>
+
+      <div class="card shadow-sm mb-4">
+        <div class="card-body">
+          <h2 class="h6">Add / Update Listing</h2>
+          <form method="post" action="/admin/economy/shop" class="row g-2">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <div class="col-12 col-md-6">
+              <label class="form-label">Item</label>
+              <select class="form-select" name="itemId" required>
+                <% items.forEach(it => { %>
+                  <option value="<%= it.itemId %>"><%= it.name %> (<%= it.itemId %>)</option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label">Price</label>
+              <input class="form-control" name="price" type="number" min="0" value="0" required />
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label">Stock (if limited)</label>
+              <input class="form-control" name="stock" type="number" min="0" value="0" />
+            </div>
+            <div class="col-12 d-flex align-items-center gap-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" name="limited" value="1" />
+                <label class="form-check-label">Limited stock</label>
+              </div>
+              <button class="btn btn-primary ms-auto" type="submit">Save Listing</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h2 class="h6 mb-3">Listings</h2>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th class="text-end">Price</th>
+                  <th class="text-end">Stock</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% listings.forEach(l => { const it = byId.get(l.itemId); %>
+                  <tr>
+                    <td>
+                      <div class="fw-semibold"><%= it ? it.name : l.itemId %></div>
+                      <div class="text-muted small"><code><%= l.itemId %></code></div>
+                    </td>
+                    <td class="text-end"><%= l.price %></td>
+                    <td class="text-end"><%= l.limited ? l.stock : '∞' %></td>
+                    <td class="text-end">
+                      <form method="post" action="/admin/economy/shop/delete" class="d-inline">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                        <input type="hidden" name="itemId" value="<%= l.itemId %>" />
+                        <button class="btn btn-outline-danger btn-sm" type="submit" onclick="return confirm('Delete this listing?')">Delete</button>
+                      </form>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

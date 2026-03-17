@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="bg-light">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <h1 class="h4 mb-0">Help</h1>
+        <div class="text-muted small">Commands, setup, and troubleshooting.</div>
+      </div>
+
+      <div class="row g-3">
+        <div class="col-12 col-lg-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h6 mb-2">Quick Setup</h2>
+              <ol class="mb-0">
+                <li>Invite all 3 bots (Economy, Backup, Verification) to the server.</li>
+                <li>Open <a href="/admin/servers">Servers</a> and wait for E/B/V to turn green.</li>
+                <li>Click <strong>Approve</strong>. (Bots do nothing until approved.)</li>
+                <li>Click <strong>Manage</strong> → configure Shop/Backups/Verification.</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-lg-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h6 mb-2">Bot Invite Links</h2>
+              <% const hasInvites = invites && (invites.economy || invites.backup || invites.verification); %>
+              <% if (!hasInvites) { %>
+                <div class="alert alert-secondary mb-0">
+                  Set <code>ECONOMY_CLIENT_ID</code>, <code>BACKUP_CLIENT_ID</code>, and <code>VERIFICATION_CLIENT_ID</code> in <code>.env</code>
+                  to generate one-click invite links.
+                </div>
+              <% } else { %>
+                <div class="d-flex flex-wrap gap-2">
+                  <% if (invites.economy) { %>
+                    <a class="btn btn-outline-primary btn-sm" href="<%= invites.economy %>" target="_blank" rel="noreferrer">Invite Economy</a>
+                  <% } %>
+                  <% if (invites.backup) { %>
+                    <a class="btn btn-outline-primary btn-sm" href="<%= invites.backup %>" target="_blank" rel="noreferrer">Invite Backup</a>
+                  <% } %>
+                  <% if (invites.verification) { %>
+                    <a class="btn btn-outline-primary btn-sm" href="<%= invites.verification %>" target="_blank" rel="noreferrer">Invite Verification</a>
+                  <% } %>
+                </div>
+                <div class="text-muted small mt-2">
+                  Tip: the invite page lets you pick the server and adjust permissions.
+                </div>
+              <% } %>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h6 mb-2">Verification Setup</h2>
+              <div class="row g-3">
+                <div class="col-12 col-lg-6">
+                  <ul class="mb-0">
+                    <li>Create roles: <code>Unverified</code> (temp) and <code>Verified</code>.</li>
+                    <li>Move the bot role above those roles (role hierarchy).</li>
+                    <li>Enable intents (Developer Portal): <strong>Server Members</strong> + <strong>Message Content</strong>.</li>
+                    <li>Go to <a href="/admin/verification/settings">Verification Settings</a> and set roles + questions.</li>
+                    <li>Members can use <code>/verify</code> to get the verification link.</li>
+                  </ul>
+                </div>
+                <div class="col-12 col-lg-6">
+                  <div class="alert alert-info mb-0">
+                    Public base URL: <code><%= baseUrl %></code><br />
+                    <% const chosen = typeof activeGuildId !== 'undefined' ? String(activeGuildId || '') : ''; %>
+                    Members verify at:
+                    <code><%= chosen ? `${baseUrl}/verify/${chosen}` : `${baseUrl}/verify/<guildId>` %></code>
+                    <% if (!chosen) { %>
+                      (replace <code>&lt;guildId&gt;</code>)
+                    <% } %>
+                  </div>
+                  <div class="text-muted small mt-2">
+                    If you are not hosting publicly, members must access the same URL you host the dashboard on.
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mt-3">
+        <div class="card-body">
+          <h2 class="h6 mb-2">Slash Commands</h2>
+
+          <div class="accordion" id="commandsAccordion">
+            <div class="accordion-item">
+              <h2 class="accordion-header" id="headingEconomy">
+                <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseEconomy" aria-expanded="true" aria-controls="collapseEconomy">
+                  Economy Bot
+                </button>
+              </h2>
+              <div id="collapseEconomy" class="accordion-collapse collapse show" aria-labelledby="headingEconomy" data-bs-parent="#commandsAccordion">
+                <div class="accordion-body">
+                  <% if (!commands.economy.length) { %>
+                    <div class="text-muted">No commands loaded.</div>
+                  <% } else { %>
+                    <div class="table-responsive">
+                      <table class="table table-sm align-middle mb-0">
+                        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+                        <tbody>
+                          <% commands.economy.forEach(c => { %>
+                            <tr>
+                              <td><code>/<%= c.name %></code></td>
+                              <td class="text-muted"><%= c.description %></td>
+                            </tr>
+                          <% }) %>
+                        </tbody>
+                      </table>
+                    </div>
+                  <% } %>
+                </div>
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <h2 class="accordion-header" id="headingBackup">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseBackup" aria-expanded="false" aria-controls="collapseBackup">
+                  Backup Bot
+                </button>
+              </h2>
+              <div id="collapseBackup" class="accordion-collapse collapse" aria-labelledby="headingBackup" data-bs-parent="#commandsAccordion">
+                <div class="accordion-body">
+                  <% if (!commands.backup.length) { %>
+                    <div class="text-muted">No commands loaded.</div>
+                  <% } else { %>
+                    <div class="table-responsive">
+                      <table class="table table-sm align-middle mb-0">
+                        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+                        <tbody>
+                          <% commands.backup.forEach(c => { %>
+                            <tr>
+                              <td><code>/<%= c.name %></code></td>
+                              <td class="text-muted"><%= c.description %></td>
+                            </tr>
+                          <% }) %>
+                        </tbody>
+                      </table>
+                    </div>
+                  <% } %>
+                </div>
+              </div>
+            </div>
+
+            <div class="accordion-item">
+              <h2 class="accordion-header" id="headingVerification">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseVerification" aria-expanded="false" aria-controls="collapseVerification">
+                  Verification Bot
+                </button>
+              </h2>
+              <div id="collapseVerification" class="accordion-collapse collapse" aria-labelledby="headingVerification" data-bs-parent="#commandsAccordion">
+                <div class="accordion-body">
+                  <% if (!commands.verification.length) { %>
+                    <div class="text-muted">No commands loaded.</div>
+                  <% } else { %>
+                    <div class="table-responsive">
+                      <table class="table table-sm align-middle mb-0">
+                        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+                        <tbody>
+                          <% commands.verification.forEach(c => { %>
+                            <tr>
+                              <td><code>/<%= c.name %></code></td>
+                              <td class="text-muted"><%= c.description %></td>
+                            </tr>
+                          <% }) %>
+                        </tbody>
+                      </table>
+                    </div>
+                  <% } %>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="text-muted small mt-3">
+            If commands don’t show up in Discord, re-run <code>npm run register</code> (use <code>DEV_GUILD_ID</code> for instant updates).
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="bg-light">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <h1 class="h4 mb-3">Admin Accounts</h1>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="row g-3">
+        <div class="col-12 col-lg-5">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h6">Add Account</h2>
+              <form method="post" action="/admin/accounts" class="row g-2">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <div class="col-12">
+                  <label class="form-label">Email</label>
+                  <input class="form-control" type="email" name="email" required />
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Password</label>
+                  <input class="form-control" type="password" name="password" required />
+                  <div class="form-text">Minimum 10 characters. Stored as a secure hash.</div>
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Role</label>
+                  <select class="form-select" name="role">
+                    <option value="admin" selected>admin</option>
+                    <option value="owner">owner</option>
+                  </select>
+                </div>
+                <div class="col-12 d-flex">
+                  <button class="btn btn-primary ms-auto" type="submit">Create</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-lg-7">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h6">Existing Accounts</h2>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Email</th>
+                      <th>Role</th>
+                      <th>Status</th>
+                      <th class="text-end">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% users.forEach(u => { %>
+                      <tr>
+                        <td class="fw-semibold"><%= u.email %></td>
+                        <td><span class="badge text-bg-secondary"><%= u.role %></span></td>
+                        <td>
+                          <% if (u.disabled) { %>
+                            <span class="badge text-bg-danger">disabled</span>
+                          <% } else { %>
+                            <span class="badge text-bg-success">active</span>
+                          <% } %>
+                          <% if (String(u._id) === meId) { %>
+                            <span class="badge text-bg-info ms-1">you</span>
+                          <% } %>
+                        </td>
+                        <td class="text-end">
+                          <% if (String(u._id) !== meId) { %>
+                            <% if (u.disabled) { %>
+                              <form method="post" action="/admin/accounts/enable/<%= u._id %>" class="d-inline">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                                <button class="btn btn-outline-success btn-sm" type="submit">Enable</button>
+                              </form>
+                            <% } else { %>
+                              <form method="post" action="/admin/accounts/disable/<%= u._id %>" class="d-inline">
+                                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                                <button class="btn btn-outline-danger btn-sm" type="submit" onclick="return confirm('Disable this account?')">
+                                  Disable
+                                </button>
+                              </form>
+                            <% } %>
+                          <% } else { %>
+                            <span class="text-muted small">—</span>
+                          <% } %>
+                        </td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>
+

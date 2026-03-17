@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="bg-light">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h1 class="h4 m-0">Pending Verifications</h1>
+        <a class="btn btn-outline-secondary btn-sm" href="/admin/verification/settings">Back</a>
+      </div>
+
+      <% if (!pending.length) { %>
+        <div class="alert alert-success">No pending verifications.</div>
+      <% } %>
+
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>User</th>
+              <th>Risk</th>
+              <th>Created</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% pending.forEach(p => { %>
+              <tr>
+                <td><code><%= p.verificationId %></code></td>
+                <td><code><%= p.discordId %></code></td>
+                <td><%= p.riskScore %></td>
+                <td class="text-muted small"><%= p.createdAt.toISOString() %></td>
+                <td class="text-end">
+                  <form method="post" action="/admin/verification/approve/<%= p.verificationId %>" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <button class="btn btn-outline-success btn-sm" type="submit">Approve</button>
+                  </form>
+                  <form method="post" action="/admin/verification/deny/<%= p.verificationId %>" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <button class="btn btn-outline-danger btn-sm" type="submit">Deny</button>
+                  </form>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>
+

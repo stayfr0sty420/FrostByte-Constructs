@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="bg-light">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <h1 class="h4 mb-3">Logs</h1>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Content</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% logs.forEach(l => { %>
+              <tr>
+                <td><code><%= l.type %></code></td>
+                <td class="text-muted small"><%= l.data?.content || '' %></td>
+                <td class="text-muted small"><%= l.createdAt.toISOString() %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>
+

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../partials/head', { title }) %>
+  </head>
+  <body class="app">
+    <%- include('../partials/nav') %>
+    <main class="container py-5">
+      <div class="row justify-content-center">
+        <div class="col-12 col-lg-7">
+          <div class="card shadow-sm">
+            <div class="card-body p-4">
+              <h1 class="h4 mb-3">Verification Result</h1>
+              <% if (discordUser && discordUser.id) { %>
+                <div class="alert alert-info">
+                  ✅ Discord authorized: <strong><%= discordUser.username %></strong>
+                  <% if (discordUser.email) { %>
+                    <span class="text-white-50">(<%= discordUser.email %>)</span>
+                  <% } %>
+                </div>
+              <% } %>
+              <% if (result.ok) { %>
+                <% if (result.status === 'approved') { %>
+                  <div class="alert alert-success">✅ Successful Verification! You can return to Discord.</div>
+                  <% if (result.roleResult && result.roleResult.ok) { %>
+                    <div class="text-muted small">Role applied successfully.</div>
+                  <% } else if (result.roleResult && !result.roleResult.ok) { %>
+                    <div class="alert alert-warning mt-2">
+                      ⚠️ Verified, but role could not be applied: <%= result.roleResult.reason || 'unknown' %>
+                      <div class="text-white-50 small mt-1">Ask an admin to fix role permissions/hierarchy and try again.</div>
+                    </div>
+                  <% } %>
+                <% } else if (result.status === 'pending') { %>
+                  <div class="alert alert-warning">🕒 Pending review by an admin.</div>
+                <% } else { %>
+                  <div class="alert alert-danger">⛔ Verification denied.</div>
+                <% } %>
+                <div class="text-muted">Risk score: <%= result.riskScore %></div>
+              <% } else { %>
+                <div class="alert alert-danger"><%= result.reason %></div>
+              <% } %>
+              <div class="text-muted small mt-2">If you need to retry, run <code>/verify</code> again in Discord to get a new link.</div>
+              <div class="d-flex flex-wrap gap-2 mt-3">
+                <% if (typeof guildId !== 'undefined' && guildId) { %>
+                  <a class="btn btn-primary" href="https://discord.com/channels/<%= guildId %>" target="_blank" rel="noreferrer">Back to Discord</a>
+                <% } %>
+                <a class="btn btn-outline-light" href="/auth/discord/success">Open Dashboard</a>
+                <form method="post" action="/auth/logout" class="d-inline">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <button class="btn btn-outline-danger" type="submit">Logout</button>
+                </form>
+              </div>
+              <% if (result.ok && result.status === 'approved') { %>
+                <script>
+                  setTimeout(() => {
+                    window.location.href = '/auth/discord/success';
+                  }, 2500);
+                </script>
+              <% } %>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../partials/footer') %>
+  </body>
+</html>

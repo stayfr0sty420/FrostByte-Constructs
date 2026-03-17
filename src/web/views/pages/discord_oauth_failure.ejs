@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../partials/head', { title }) %>
+  </head>
+  <body class="app">
+    <%- include('../partials/nav') %>
+    <main class="container py-5">
+      <div class="row justify-content-center">
+        <div class="col-12 col-lg-7">
+          <div class="card shadow-sm">
+            <div class="card-body p-4">
+              <h1 class="h4 mb-3">Discord Authorization Failed</h1>
+              <div class="alert alert-danger mb-3">⛔ We couldn't complete Discord authorization.</div>
+              <div class="text-muted small">
+                Please go back to Discord and run <code>/verify</code> again to get a new link, then try again.
+              </div>
+              <div class="d-flex flex-wrap gap-2 mt-3">
+                <a class="btn btn-primary" href="https://discord.com/app" target="_blank" rel="noreferrer">Back to Discord</a>
+                <a class="btn btn-outline-light" href="/auth/discord">Try Again</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../partials/footer') %>
+  </body>
+</html>
+

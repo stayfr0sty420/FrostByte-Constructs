@@ -1,0 +1,1045 @@
+# NOTE: Secrets redacted. Replace placeholders with your own values in .env
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                    COMPLETE DISCORD BOT SYSTEM FLOW                        ║
+║                    Economy + Backup + Verification                         ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         ECONOMY BOT FLOW                                    ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+├── DATABASE SCHEMA (MongoDB)
+│   ├── users
+│   │   ├── discordId: String (unique)
+│   │   ├── username: String
+│   │   ├── balance: Number (default: 0)
+│   │   ├── bank: Number (default: 0)
+│   │   ├── bankMax: Number (default: 5000)
+│   │   ├── dailyStreak: Number (default: 0)
+│   │   ├── lastDaily: Date
+│   │   ├── level: Number (default: 1)
+│   │   ├── exp: Number (default: 0)
+│   │   ├── stats: {
+│   │   │   ├── str: Number (default: 5)
+│   │   │   ├── agi: Number (default: 5)
+│   │   │   ├── vit: Number (default: 5)
+│   │   │   ├── luck: Number (default: 5)
+│   │   │   └── crit: Number (default: 5)
+│   │   │   }
+│   │   ├── inventory: [{
+│   │   │   ├── itemId: String
+│   │   │   ├── quantity: Number
+│   │   │   └── refinement: Number (0-10)
+│   │   │   }]
+│   │   ├── equipped: {
+│   │   │   ├── headGear: String *
+│   │   │   ├── eyeGear: String *
+│   │   │   ├── faceGear: String *
+│   │   │   ├── rHand: String *
+│   │   │   ├── lHand: String *
+│   │   │   ├── robe: String *
+│   │   │   ├── shoes: String *
+│   │   │   ├── raccessory: String *
+│   │   │   └── laccessory: String *
+│   │   │   }
+│   │   ├── gearScore: Number
+│   │   ├── marriedTo: String
+│   │   ├── marriedSince: Date
+│   │   ├── pvpRating: Number (default: 1000)
+│   │   ├── pvpWins: Number
+│   │   ├── pvpLosses: Number
+│   │   ├── profileWallpaper: String (default: "default")
+│   │   ├── profileBio: String (default: "default")
+│   │   ├── profileTitle: String (default: "default")
+│   │   ├── profileFollowing: Number *
+│   │   ├── profileFollowers: Number *
+│   │   └── createdAt: Date
+│   │
+│   ├── items
+│   │   ├── itemId: String (unique)
+│   │   ├── name: String
+│   │   ├── description: String
+│   │   ├── type: String (headGear, eyeGear, faceGear, rHand, lHand, robe, shoes, raccessory, laccessory, consumable, material) *
+│   │   ├── rarity: String (common, uncommon, rare, superior, epic, pristine, legendary, mythic, transcendent, primordial)
+│   │   ├── price: Number
+│   │   ├── stats: {
+│   │   │   ├── str: Number
+│   │   │   ├── agi: Number
+│   │   │   ├── vit: Number
+│   │   │   ├── luck: Number
+│   │   │   └── crit: Number
+│   │   │   }
+│   │   ├── cardSlot: Number *
+│   │   ├── itemScore: Number *
+│   │   ├── sellable: Boolean
+│   │   ├── consumable: Boolean
+│   │   └── stackable: Boolean (default: true)
+│   │
+│   ├── cards *
+│   │   ├── cardId: String (unique)
+│   │   ├── name: String
+│   │   ├── description: String
+│   │   ├── type: String (headGear, eyeGear, faceGear, rHand, lHand, robe, shoes, raccessory, laccessory)
+│   │   ├── rarity: String (common, uncommon, rare, superior, epic, pristine, legendary, mythic, transcendent, primordial)
+│   │   ├── price: Number
+│   │   ├── stats: {
+│   │   │   ├── str: Number
+│   │   │   ├── agi: Number
+│   │   │   ├── vit: Number
+│   │   │   ├── luck: Number
+│   │   │   └── crit: Number
+│   │   │   }
+│   │   ├── cardScore: Number
+│   │   ├── sellable: Boolean
+│   │   ├── consumable: Boolean
+│   │   └── stackable: Boolean (default: true)
+│   │
+│   ├── itemCards *
+│   │   ├── itemCardId: String (unique)
+│   │   ├── itemId: String
+│   │   ├── cardId: String
+│   │   ├── cardSlot: Number
+│   │   └── addedAt: Date
+│   │
+│   ├── shop
+│   │   ├── items: [{
+│   │   │   ├── itemId: String
+│   │   │   ├── price: Number
+│   │   │   ├── stock: Number (-1 for unlimited)
+│   │   │   └── limited: Boolean
+│   │   │   }]
+│   │   └── refreshTime: Date
+│   │
+│   └── transactions
+│       ├── userId: String
+│       ├── type: String (daily, gamble, shop, pvp, hunt, refine, marriage)
+│       ├── amount: Number
+│       ├── balance: Number
+│       ├── timestamp: Date
+│       └── details: Object
+
+├── DISCORD COMMANDS
+│   ├── 💰 Economy Basics
+│   │   ├── /daily - Claim daily coins (base: 1000, streak: +100/day)
+│   │   ├── /balance [user] - Check coin balance
+│   │   ├── /deposit <amount/all> - Deposit to bank
+│   │   ├── /withdraw <amount/all> - Withdraw from bank
+│   │   └── /leaderboard [type] - View rankings (balance, level, pvp, gear score, gambling games, marriage duration) *
+│   │
+│   ├── 🏪 Shop & Items
+│   │   ├── /shop [category] - Browse shop items
+│   │   ├── /buy <item> <quantity> - Purchase items
+│   │   ├── /sell <item> <quantity> - Sell items (price = (item base price * rarity percentage (0.1 - 1.0)) + (card/s base price * rarity percentage (0.1 - 1.0))) *
+│   │   ├── /inventory [user] - View your items
+│   │   ├── /use <item> - Use consumable item
+│   │   └── /equip <item> - Equip weapon/armor
+│   │
+│   ├── 🎰 Gambling Games
+│   │   ├── /blackjack <bet> - Play blackjack vs dealer
+│   │   ├── /coinflip <bet> <heads/tails> - 50/50 double or nothing
+│   │   ├── /slots <bet> - 3x3 slot machine
+│   │   ├── /dice <bet> [number] - Roll 1-100, win if over/under
+│   │   └── /crash <bet> - Multiplier game, cash out anytime
+│   │
+│   ├── ⚔️ RPG Combat
+│   │   ├── /hunt - Hunt random mob (costs 50 energy)
+│   │   ├── /pvp <user> [bet] - Challenge to PVP
+│   │   ├── /stats [user] - View character stats
+│   │   └── /levelup <stat> - Spend stat points (3 per level)
+│   │
+│   ├── 🔧 Item System
+│   │   ├── /refine <item> <refineCrystal> - Upgrade item (+1 to +10)
+│   │   ├── /gacha <box> [amount] - Open loot boxes
+│   │   └── /craft <recipe> - Craft items from materials
+│   │
+│   └── 💑 Social
+│       ├── /profile [user] - View user profile
+│       ├── /marry <user> - Propose marriage (need ring from shop, and acceptance of the other user. Accept/Decline will consume the ring) *
+│       ├── /divorce - End marriage (lose ring 50% coins)
+│       ├── /profile wallpaper - change wallpaper
+│       ├── /profile bio - change bio *
+│       ├── /profile title - change title *
+│       ├── /profile follow - follow user *
+│       ├── /profile unfollow - unfollow user *
+│       └── /gift <user> <item> <quantity> - Give items
+
+├── GAMBLING GAME LOGICS (include user's LUCK stat in the algorithm) *
+│   ├── Blackjack
+│   │   ├── Deck: 52 cards (no jokers)
+│   │   ├── Dealer stands on 17
+│   │   ├── Blackjack pays 3:2
+│   │   ├── Double down allowed on first two cards
+│   │   └── Insurance when dealer shows Ace
+│   │
+│   ├── Slots
+│   │   ├── Grid: 3x3
+│   │   ├── Symbols: Cherry(2x), Bell(5x), Bar(10x), Seven(50x), Diamond(100x)
+│   │   ├── Paylines: 3 rows, 3 columns, 2 diagonals
+│   │   └── Weighted RNG: Common symbols appear more often
+│   │
+│   └── Crash Game
+│       ├── Multiplier starts at 1.00x
+│       ├── Increases by 0.01x every 100ms
+│       ├── Random crash point between 1.10x and 10.00x
+│       ├── Players can cash out anytime before crash
+│       └── Payout = bet × multiplier at cashout
+
+├── MOB HUNTING SYSTEM *
+│
+│   ├── Mob Types (By Rarity Tier)
+│   │
+│   │   ├── Common (50%)
+│   │   │   ├── Slime (LVL 1-5) 
+│   │   │   │   HP: 50 | ATK: 5 | DEF: 2 | EXP: 10
+│   │   │   └── Ratling (LVL 3-6)
+│   │   │       HP: 65 | ATK: 6 | DEF: 3 | EXP: 15
+│   │   │
+│   │   ├── Uncommon (25%)
+│   │   │   ├── Goblin (LVL 5-10)
+│   │   │   │   HP: 100 | ATK: 10 | DEF: 5 | EXP: 25
+│   │   │   └── Skeleton (LVL 8-12)
+│   │   │       HP: 120 | ATK: 12 | DEF: 6 | EXP: 35
+│   │   │
+│   │   ├── Rare (12%)
+│   │   │   ├── Orc (LVL 10-15)
+│   │   │   │   HP: 200 | ATK: 20 | DEF: 10 | EXP: 50
+│   │   │   └── Troll (LVL 15-20)
+│   │   │       HP: 350 | ATK: 30 | DEF: 15 | EXP: 100
+│   │   │
+│   │   ├── Superior (6%)
+│   │   │   └── Minotaur (LVL 18-23)
+│   │   │       HP: 450 | ATK: 38 | DEF: 18 | EXP: 180
+│   │   │
+│   │   ├── Epic (3.5%)
+│   │   │   └── Demon (LVL 20-25)
+│   │   │       HP: 500 | ATK: 40 | DEF: 20 | EXP: 250
+│   │   │
+│   │   ├── Pristine (1.8%)
+│   │   │   └── Archdemon (LVL 23-28)
+│   │   │       HP: 800 | ATK: 55 | DEF: 28 | EXP: 450
+│   │   │
+│   │   ├── Legendary (0.9%)
+│   │   │   └── Dragon (LVL 25-30)
+│   │   │       HP: 1000 | ATK: 60 | DEF: 30 | EXP: 600
+│   │   │
+│   │   ├── Mythic (0.5%)
+│   │   │   └── Demon Lord (LVL 30-35)
+│   │   │       HP: 2000 | ATK: 85 | DEF: 40 | EXP: 1200
+│   │   │
+│   │   ├── Transcendent (0.2%)
+│   │   │   └── Void Sovereign (LVL 35-40)
+│   │   │       HP: 3500 | ATK: 120 | DEF: 60 | EXP: 2500
+│   │   │
+│   │   └── Primordial (0.1%)
+│   │       └── World Devourer (LVL 40+)
+│   │           HP: 8000 | ATK: 180 | DEF: 100 | EXP: 5000
+│
+│   ├── Spawn Rates (Global Encounter Roll)
+│   │   ├── Common: 50%
+│   │   ├── Uncommon: 25%
+│   │   ├── Rare: 12%
+│   │   ├── Superior: 6%
+│   │   ├── Epic: 3.5%
+│   │   ├── Pristine: 1.8%
+│   │   ├── Legendary: 0.9%
+│   │   ├── Mythic: 0.5%
+│   │   ├── Transcendent: 0.2%
+│   │   └── Primordial: 0.1%
+│
+│   ├── Loot Drops (Scaled by Rarity Tier)
+│   │
+│   │   ├── Coins:
+│   │   │   Common: 50-100
+│   │   │   Uncommon: 100-200
+│   │   │   Rare: 200-400
+│   │   │   Superior: 400-700
+│   │   │   Epic: 700-1200
+│   │   │   Pristine: 1200-2000
+│   │   │   Legendary: 2000-3500
+│   │   │   Mythic: 3500-6000
+│   │   │   Transcendent: 6000-10000
+│   │   │   Primordial: 10000-25000
+│   │
+│   │   ├── Item Drop Rates (Base Roll Per Kill)
+│   │   │   Common Item: 60%
+│   │   │   Uncommon Item: 25%
+│   │   │   Rare Item: 10%
+│   │   │   Superior Item: 3%
+│   │   │   Epic Item: 1.2%
+│   │   │   Pristine Item: 0.5%
+│   │   │   Legendary Item: 0.2%
+│   │   │   Mythic Item: 0.07%
+│   │   │   Transcendent Item: 0.02%
+│   │   │   Primordial Item: 0.01%
+
+├── PVP COMBAT SYSTEM
+│   ├── Turn-based combat
+│   ├── Damage Formula: (user.str × 2) + random(1,10) - (opponent.vit ÷ 2)
+│   ├── Hit Chance: 80% + (user.agi × 0.5%)
+│   ├── Crit Chance: user.luck × 0.3% (Crit Damage: 2×)
+│   ├── Dodge Chance: opponent.agi × 0.3%
+│   ├── Defense: AGI and VIT increases defense *
+│   └── First to 0 HP loses
+
+├── LEVELING SYSTEM
+│   ├── EXP Formula: currentLevel × 100 × 1.5^currentLevel
+│   ├── Level Up Rewards:
+│   │   ├── +3 Stat Points
+│   │   ├── +100 Bank Capacity
+│   │   └── +10 Max HP
+│   └── Max Level: 100
+
+├── REFINEMENT SYSTEM (+1 to +10) *
+│   ├── Success Rates:
+│   │   ├── +1: 100%  | +2: 100%  | +3: 100%  | +4: 100%  | +5: 60%
+│   │   └── +6: 40%   | +7: 40%  | +8: 20%  | +9: 20%  | +10: 10%
+│   ├── Break Rates:
+│   │   ├── +1 to +4: 0%
+│   │   ├── +5: 40%
+│   │   ├── +6 to +7: 60%
+│   │   ├── +8 to +9: 20%
+│   │   └── +10: 90%
+│   └── +5 - +10 Safety Scrolls: Prevent destruction (shop item)
+
+├── GACHA BOX SYSTEM *
+│
+│   ├── Common Box (100 Coins)
+│   │   ├── Common: 70%
+│   │   ├── Uncommon: 25%
+│   │   └── Rare: 5%
+│   │   └── Pity: None
+│
+│   ├── Rare Box (500 Coins)
+│   │   ├── Uncommon: 40%
+│   │   ├── Rare: 35%
+│   │   ├── Superior: 15%
+│   │   ├── Epic: 8%
+│   │   └── Pristine: 2%
+│   │   └── Pity: Epic at 25 pulls
+│
+│   ├── Epic Box (2,000 Coins)
+│   │   ├── Rare: 25%
+│   │   ├── Superior: 25%
+│   │   ├── Epic: 25%
+│   │   ├── Pristine: 15%
+│   │   ├── Legendary: 7%
+│   │   └── Mythic: 3%
+│   │   └── Pity:
+│   │        ├── Legendary at 15 pulls
+│   │        └── Mythic at 40 pulls
+│
+│   ├── Mythic Box (10,000 Coins)
+│   │   ├── Epic: 20%
+│   │   ├── Pristine: 25%
+│   │   ├── Legendary: 30%
+│   │   ├── Mythic: 15%
+│   │   ├── Transcendent: 8%
+│   │   └── Primordial: 2%
+│   │   └── Pity:
+│   │        ├── Mythic at 10 pulls
+│   │        ├── Transcendent at 30 pulls
+│   │        └── Primordial at 100 pulls
+
+└── MARRIAGE SYSTEM
+    ├── Requirements:
+    │   ├── Ring item (from shop: ring also have rarities so price varies)
+    │   ├── Both players online
+    │   └── Not already married
+    ├── Process:
+    │   ├── /marry @user → sends proposal
+    │   ├── 24 hours to accept
+    │   └── Both click accept button
+    └── Benefits:
+        ├── +5% LUCK bonus
+        ├── Ring Stats will be embedded on both users *
+        ├── Shared bank (optional toggle)
+        ├── Vowbound Synergy (can be used before a pvp starts; embodies partner's gears' and stats rather than the users) *
+        ├── Marriage badge on profile
+        └── Claim daily married bonus separated from /daily: +200 coins /mdaily *
+
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         SERVER BACKUP BOT FLOW                              ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+├── DATABASE SCHEMA (SQLite/MongoDB)
+│   ├── backups
+│   │   ├── backupId: String (unique)
+│   │   ├── guildId: String
+│   │   ├── name: String
+│   │   ├── type: String (full, channels, roles, messages, bans, webhooks)
+│   │   ├── timestamp: Date
+│   │   ├── filePath: String
+│   │   ├── size: Number (bytes)
+│   │   ├── createdBy: String (discordId)
+│   │   ├── status: String (completed, failed, processing)
+│   │   └── metadata: Object
+│   │
+│   ├── schedules
+│   │   ├── scheduleId: String (unique)
+│   │   ├── guildId: String
+│   │   ├── interval: String (cron expression)
+│   │   ├── backupType: String
+│   │   ├── nextRun: Date
+│   │   ├── channelId: String (for notifications)
+│   │   ├── enabled: Boolean
+│   │   └── createdBy: String
+│   │
+│   └── templates
+│       ├── templateId: String (unique)
+│       ├── name: String
+│       ├── guildId: String
+│       ├── data: Object
+│       ├── createdBy: String
+│       └── createdAt: Date
+
+├── BACKUP TYPES & DATA COLLECTED
+│   ├── Full Server Backup
+│   │   ├── Server Settings: name, icon, region, verification level
+│   │   ├── Channels: all text, voice, categories with permissions
+│   │   ├── Roles: all roles with permissions, color, hoist
+│   │   ├── Emojis: all custom emojis
+│   │   ├── Webhooks: all webhook URLs and settings
+│   │   ├── Bans: list of banned users with reasons
+│   │   ├── Threads: all active and archived threads
+│   │   ├── Forum Posts: all posts with tags and comments
+│   │   └── Nicknames: all member nicknames
+│   │
+│   ├── Channel Backup
+│   │   ├── Channel Info: name, topic, nsfw, slowmode, bitrate (voice)
+│   │   ├── Permission Overwrites: role/user permissions
+│   │   └── Messages: last 1000 messages (author, content, attachments)
+│   │
+│   ├── Role Backup
+│   │   ├── Role Info: name, color, hoist, mentionable, position
+│   │   ├── Permissions: all permission flags
+│   │   └── Member Assignments: which members have this role
+│   │
+│   ├── Bot Backup
+│   │   ├── Bot Info: name, color, hoist, mentionable, position
+│   │   ├── Permissions: all permission flags
+│   │   ├── Auto-invite when backup is loaded: if possible
+│   │   └── Role Assignments: which bots have this role
+│   │
+│   ├── Message Backup
+│   │   ├── Message ID
+│   │   ├── Author ID & Username
+│   │   ├── Content
+│   │   ├── Attachments (URLs)
+│   │   ├── Embeds
+│   │   ├── Reactions
+│   │   └── Timestamp
+│   │
+│   └── Ban List Backup
+│       ├── User ID & Username
+│       ├── Ban Reason
+│       └── Ban Timestamp
+
+├── FILE STORAGE STRUCTURE
+│   └── /backups/
+│       └── /guildId/
+│           └── /backupId_timestamp/
+│               ├── metadata.json
+│               ├── server.json
+│               ├── channels.json
+│               ├── roles.json
+│               ├── messages/
+│               │   └── channelId.json
+│               ├── bans.json
+│               ├── webhooks.json
+│               ├── emojis.json
+│               └── threads.json
+
+├── DISCORD COMMANDS
+│   ├── /backup create [type] [name] - Create new backup
+│   ├── /backup list - Show all backups
+│   ├── /backup info <backupId> - View backup details
+│   ├── /backup restore <backupId> [options] - Restore from backup
+│   ├── /backup delete <backupId> - Delete backup
+│   ├── /backup download <backupId> - Get download link
+│   ├── /schedule add <interval> <type> - Schedule auto backup
+│   ├── /schedule list - Show all schedules
+│   ├── /schedule remove <scheduleId> - Delete schedule
+│   ├── /template save <name> - Save as template
+│   ├── /template apply <templateId> - Apply template
+│   └── /template list - Show all templates
+
+├── AUTO-BACKUP SCHEDULER
+│   ├── Intervals (node-cron)
+│   │   ├── Hourly: "0 * * * *"
+│   │   ├── Daily: "0 0 * * *"
+│   │   ├── Weekly: "0 0 * * 0"
+│   │   ├── Monthly: "0 0 1 * *"
+│   │   └── Custom: user-defined cron
+│   │
+│   ├── Retention Policy
+│   │   ├── Keep last 10 backups
+│   │   ├── Auto-delete older than 30 days
+│   │   └── Archive important backups (never delete)
+│   │
+│   └── WEBHOOK NOTIFICATIONS (Backup Logs)
+│       ├── Backup Started
+│       ├── Backup Progress (25%, 50%, 75%, 100%)
+│       ├── Backup Complete (with download link)
+│       ├── Backup Failed (with error)
+│       └── Daily Summary Report
+
+├── RESTORATION PROCESS
+│   ├── Full Restore
+│   │   ├── Option: Delete existing channels/roles
+│   │   ├── Option: Keep existing and merge
+│   │   └── Confirmation required (dangerous action)
+│   │
+│   ├── Selective Restore
+│   │   ├── Choose specific channels
+│   │   ├── Choose specific roles
+│   │   ├── Choose specific messages
+│   │   └── Preview changes before applying
+│   │
+│   └── Template System
+│       ├── Save current server as template
+│       ├── Apply template to new server
+│       ├── Export template (share code)
+│       └── Import template from code
+
+└── COMPRESSION & STORAGE
+    ├── Format: ZIP with maximum compression
+    ├── Password protection (optional)
+    ├── Local storage with auto-cleanup
+    └── Cloud backup support (optional: AWS S3, Google Drive)
+
+├── OTHER FEATURES *
+│   ├── 24/7 Scheduler
+│   │   └── 24/7 in VC
+│   │
+│   ├── Webhook Announcer
+│       ├── Write Announcements
+│       ├── With Template.
+│       ├── Specify which webhook to use (like Discohook but can be done via command like Mimu)
+│       ├── Thumbnails, Images, GIFs, Footer
+│       └── Channel/Thread/Forum/Post Selection
+
+
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                      VERIFICATION BOT FLOW                                  ║
+║                 (With Webhook Logging to Discord)                           ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+├── DATABASE SCHEMA (MongoDB)
+│   ├── verifications
+│   │   ├── discordId: String (unique)
+│   │   ├── username: String
+│   │   ├── email: String
+│   │   ├── ip: String
+│   │   ├── answers: {
+│   │   │   ├── q1: String (character name)
+│   │   │   ├── q2: String (how found server)
+│   │   │   └── phone: String (optional)
+│   │   │   }
+│   │   ├── location: {
+│   │   │   ├── lat: Number
+│   │   │   ├── lng: Number
+│   │   │   ├── city: String
+│   │   │   └── country: String
+│   │   │   }
+│   │   ├── userAgent: String
+│   │   ├── status: String (pending, approved, flagged, denied)
+│   │   ├── riskScore: Number (0-100)
+│   │   ├── flags: [String]
+│   │   ├── verifiedAt: Date
+│   │   ├── reviewedBy: String
+│   │   └── reviewedAt: Date
+│   │
+│   ├── iplogs
+│   │   ├── ip: String
+│   │   ├── discordId: String
+│   │   ├── username: String
+│   │   ├── timestamp: Date
+│   │   ├── location: {
+│   │   │   ├── country: String
+│   │   │   ├── region: String
+│   │   │   └── city: String
+│   │   │   }
+│   │   ├── isp: String
+│   │   ├── proxy: Boolean
+│   │   ├── vpn: Boolean
+│   │   ├── tor: Boolean
+│   │   ├── userAgent: String
+│   │   └── flags: [String]
+│   │
+│   ├── messagelogs
+│   │   ├── type: String (delete, edit, join, leave, ban, nick)
+│   │   ├── guildId: String
+│   │   ├── channelId: String
+│   │   ├── userId: String
+│   │   ├── username: String
+│   │   ├── data: Object
+│   │   │   ├── delete: { content, attachments }
+│   │   │   ├── edit: { before, after }
+│   │   │   ├── join: { accountAge }
+│   │   │   ├── leave: { timeInServer }
+│   │   │   ├── ban: { reason, moderator }
+│   │   │   └── nick: { old, new }
+│   │   │   }
+│   │   └── timestamp: Date
+│   │
+│   └── settings
+│       ├── guildId: String
+│       ├── verifiedRole: String (role ID)
+│       ├── tempRole: String (role ID)
+│       ├── logChannel: String (channel ID for logs)
+│       ├── verificationChannel: String (channel ID for verify button)
+│       ├── welcomeChannel: String (channel ID for welcomes)
+│       ├── questions: [String] (custom questions)
+│       ├── requireLocation: Boolean
+│       ├── requirePhone: Boolean
+│       ├── autoVerify: Boolean
+│       ├── logMessages: Boolean
+│       ├── logJoins: Boolean
+│       ├── logLeaves: Boolean
+│       ├── logBans: Boolean
+│       ├── logEdits: Boolean
+│       └── logDeletes: Boolean
+
+├── WEBHOOK LOGGER SYSTEM
+│   ├── webhookLogger.js
+│   │   ```javascript
+│   │   const { WebhookClient, EmbedBuilder } = require('discord.js');
+│   │   
+│   │   class WebhookLogger {
+│   │       constructor() {
+│   │           this.webhooks = {
+│   │               verification: null,
+│   │               backup: null,
+│   │               economy: null
+│   │           };
+│   │       }
+│   │       
+│   │       // Initialize webhooks from .env
+│   │       init(verificationUrl, backupUrl, economyUrl) {
+│   │           if (verificationUrl) {
+│   │               this.webhooks.verification = new WebhookClient({ url: verificationUrl });
+│   │           }
+│   │           if (backupUrl) {
+│   │               this.webhooks.backup = new WebhookClient({ url: backupUrl });
+│   │           }
+│   │           if (economyUrl) {
+│   │               this.webhooks.economy = new WebhookClient({ url: economyUrl });
+│   │           }
+│   │       }
+│   │       
+│   │       // Generic log function
+│   │       async log(webhookType, data) {
+│   │           const webhook = this.webhooks[webhookType];
+│   │           if (!webhook) return;
+│   │           
+│   │           const embed = new EmbedBuilder()
+│   │               .setTitle(data.title)
+│   │               .setColor(data.color)
+│   │               .setTimestamp();
+│   │           
+│   │           data.fields.forEach(field => {
+│   │               embed.addFields(field);
+│   │           });
+│   │           
+│   │           if (data.footer) embed.setFooter({ text: data.footer });
+│   │           if (data.thumbnail) embed.setThumbnail(data.thumbnail);
+│   │           
+│   │           await webhook.send({ embeds: [embed] });
+│   │       }
+│   │       
+│   │       // VERIFICATION WEBHOOK LOGS
+│   │       async logJoin(user, accountAge) {
+│   │           await this.log('verification', {
+│   │               title: "📥 Member Joined",
+│   │               color: 0x00FF00,
+│   │               fields: [
+│   │                   { name: "User", value: `${user.tag} (${user.id})`, inline: true },
+│   │                   { name: "Account Created", value: accountAge, inline: true },
+│   │                   { name: "Joined", value: `<t:${Math.floor(Date.now()/1000)}:R>`, inline: true }
+│   │               ],
+│   │               thumbnail: user.displayAvatarURL(),
+│   │               footer: `ID: ${user.id}`
+│   │           });
+│   │       }
+│   │       
+│   │       async logLeave(user, timeInServer, roles) {
+│   │           await this.log('verification', {
+│   │               title: "📤 Member Left",
+│   │               color: 0xFFFF00,
+│   │               fields: [
+│   │                   { name: "User", value: user.tag, inline: true },
+│   │                   { name: "Time in Server", value: timeInServer, inline: true },
+│   │                   { name: "Roles", value: roles || "None", inline: false }
+│   │               ],
+│   │               thumbnail: user.displayAvatarURL(),
+│   │               footer: `ID: ${user.id}`
+│   │           });
+│   │       }
+│   │       
+│   │       async logMessageDelete(message) {
+│   │           await this.log('verification', {
+│   │               title: "🗑️ Message Deleted",
+│   │               color: 0xFF0000,
+│   │               fields: [
+│   │                   { name: "User", value: message.author.tag, inline: true },
+│   │                   { name: "Channel", value: `<#${message.channel.id}>`, inline: true },
+│   │                   { name: "Content", value: message.content || "[No content]", inline: false }
+│   │               ],
+│   │               footer: `Message ID: ${message.id}`
+│   │           });
+│   │       }
+│   │       
+│   │       async logMessageEdit(oldMessage, newMessage) {
+│   │           await this.log('verification', {
+│   │               title: "📝 Message Edited",
+│   │               color: 0x0000FF,
+│   │               fields: [
+│   │                   { name: "User", value: newMessage.author.tag, inline: true },
+│   │                   { name: "Channel", value: `<#${newMessage.channel.id}>`, inline: true },
+│   │                   { name: "Before", value: oldMessage.content || "[No content]", inline: false },
+│   │                   { name: "After", value: newMessage.content || "[No content]", inline: false }
+│   │               ],
+│   │               footer: `Message ID: ${newMessage.id}`
+│   │           });
+│   │       }
+│   │       
+│   │       async logBan(user, reason, moderator) {
+│   │           await this.log('verification', {
+│   │               title: "🔨 User Banned",
+│   │               color: 0x8B0000,
+│   │               fields: [
+│   │                   { name: "User", value: user.tag, inline: true },
+│   │                   { name: "Moderator", value: moderator, inline: true },
+│   │                   { name: "Reason", value: reason || "No reason provided", inline: false }
+│   │               ],
+│   │               thumbnail: user.displayAvatarURL(),
+│   │               footer: `ID: ${user.id}`
+│   │           });
+│   │       }
+│   │       
+│   │       async logNicknameChange(user, oldNick, newNick) {
+│   │           await this.log('verification', {
+│   │               title: "✏️ Nickname Changed",
+│   │               color: 0x800080,
+│   │               fields: [
+│   │                   { name: "User", value: user.tag, inline: true },
+│   │                   { name: "Old Nickname", value: oldNick || "None", inline: true },
+│   │                   { name: "New Nickname", value: newNick || "None", inline: true }
+│   │               ],
+│   │               thumbnail: user.displayAvatarURL(),
+│   │               footer: `ID: ${user.id}`
+│   │           });
+│   │       }
+│   │       
+│   │       async logVerificationComplete(user, data) {
+│   │           await this.log('verification', {
+│   │               title: "✅ User Verified",
+│   │               color: 0x00FF00,
+│   │               fields: [
+│   │                   { name: "User", value: `${user.tag} (${user.id})`, inline: false },
+│   │                   { name: "IP Address", value: data.ip, inline: true },
+│   │                   { name: "Location", value: data.location || "Unknown", inline: true },
+│   │                   { name: "Risk Score", value: `${data.riskScore}%`, inline: true },
+│   │                   { name: "Accounts on IP", value: data.accountCount.toString(), inline: true },
+│   │                   { name: "Answers", value: `Q1: ${data.q1}\nQ2: ${data.q2}`, inline: false }
+│   │               ],
+│   │               thumbnail: user.displayAvatarURL(),
+│   │               footer: `Verified at <t:${Math.floor(Date.now()/1000)}:R>`
+│   │           });
+│   │       }
+│   │       
+│   │       async logFlaggedUser(user, reason, riskScore) {
+│   │           await this.log('verification', {
+│   │               title: "⚠️ User Flagged",
+│   │               color: 0xFFA500,
+│   │               fields: [
+│   │                   { name: "User", value: user.tag, inline: true },
+│   │                   { name: "Risk Score", value: `${riskScore}%`, inline: true },
+│   │                   { name: "Reason", value: reason, inline: false }
+│   │               ],
+│   │               thumbnail: user.displayAvatarURL(),
+│   │               footer: `ID: ${user.id}`
+│   │           });
+│   │       }
+│   │       
+│   │       // BACKUP WEBHOOK LOGS
+│   │       async logBackupStart(type, user) {
+│   │           await this.log('backup', {
+│   │               title: "🔄 Backup Started",
+│   │               color: 0xFFFF00,
+│   │               fields: [
+│   │                   { name: "Type", value: type, inline: true },
+│   │                   { name: "Started By", value: user, inline: true },
+│   │                   { name: "Status", value: "⏳ In Progress", inline: true }
+│   │               ]
+│   │           });
+│   │       }
+│   │       
+│   │       async logBackupComplete(type, size, duration, downloadUrl) {
+│   │           await this.log('backup', {
+│   │               title: "✅ Backup Complete",
+│   │               color: 0x00FF00,
+│   │               fields: [
+│   │                   { name: "Type", value: type, inline: true },
+│   │                   { name: "Size", value: size, inline: true },
+│   │                   { name: "Duration", value: duration, inline: true },
+│   │                   { name: "Download", value: `[Click Here](${downloadUrl})`, inline: false }
+│   │               ]
+│   │           });
+│   │       }
+│   │       
+│   │       async logBackupFailed(type, error) {
+│   │           await this.log('backup', {
+│   │               title: "❌ Backup Failed",
+│   │               color: 0xFF0000,
+│   │               fields: [
+│   │                   { name: "Type", value: type, inline: true },
+│   │                   { name: "Error", value: error, inline: false }
+│   │               ]
+│   │           });
+│   │       }
+│   │       
+│   │       // ECONOMY WEBHOOK LOGS
+│   │       async logDailyClaim(user, amount, streak) {
+│   │           await this.log('economy', {
+│   │               title: "💰 Daily Claimed",
+│   │               color: 0x00FF00,
+│   │               fields: [
+│   │                   { name: "User", value: user.tag, inline: true },
+│   │                   { name: "Amount", value: `${amount} coins`, inline: true },
+│   │                   { name: "Streak", value: `${streak} days`, inline: true }
+│   │               ],
+│   │               thumbnail: user.displayAvatarURL()
+│   │           });
+│   │       }
+│   │       
+│   │       async logBigWin(user, game, bet, win) {
+│   │           await this.log('economy', {
+│   │               title: "🎰 Big Win!",
+│   │               color: 0xFFD700,
+│   │               fields: [
+│   │                   { name: "User", value: user.tag, inline: true },
+│   │                   { name: "Game", value: game, inline: true },
+│   │                   { name: "Bet", value: `${bet} coins`, inline: true },
+│   │                   { name: "Won", value: `${win} coins`, inline: true },
+│   │                   { name: "Profit", value: `${win - bet} coins`, inline: true }
+│   │               ],
+│   │               thumbnail: user.displayAvatarURL()
+│   │           });
+│   │       }
+│   │   }
+│   │   
+│   │   module.exports = new WebhookLogger();
+│   │   ```
+
+├── DISCORD BOT EVENTS (Using Webhook Logger)
+│   ├── Event: guildMemberAdd
+│   │   ├── Actions:
+│   │   │   ├── Assign temporary role
+│   │   │   ├── Send DM with verification link
+│   │   │   └── Create pending verification
+│   │   └── WEBHOOK: logger.logJoin(user, accountAge)
+│   │
+│   ├── Event: guildMemberRemove
+│   │   └── WEBHOOK: logger.logLeave(user, timeInServer, roles)
+│   │
+│   ├── Event: messageDelete
+│   │   └── WEBHOOK: logger.logMessageDelete(message)
+│   │
+│   ├── Event: messageUpdate
+│   │   └── WEBHOOK: logger.logMessageEdit(oldMessage, newMessage)
+│   │
+│   ├── Event: guildBanAdd
+│   │   └── WEBHOOK: logger.logBan(user, reason, moderator)
+│   │
+│   ├── Event: guildMemberUpdate (nickname)
+│   │   └── WEBHOOK: logger.logNicknameChange(user, oldNick, newNick)
+│   │
+│   └── Event: Verification Complete
+│       └── WEBHOOK: logger.logVerificationComplete(user, data)
+
+├── DISCORD COMMANDS
+│   ├── /setup verification #channel - Set verification channel
+│   ├── /setup logs #channel - Set log channel
+│   ├── /setup role @verified-role - Set role for verified users
+│   ├── /setup temp-role @temp-role - Set role for unverified
+│   ├── /setup welcome #channel - Set welcome channel
+│   ├── /questions set [q1] [q2] - Set security questions
+│   ├── /questions toggle-phone - Make phone optional/required
+│   ├── /iplookup @user - Check IP history of user
+│   ├── /flag @user <reason> - Flag for manual review
+│   ├── /logs recent [number] - Show recent logs
+│   ├── /logs user @user - Show user's log history
+│   └── /verify - Manual verify button
+
+├── VERIFICATION WEBSITE FLOW
+│   ├── Route: GET /verify/:discordId
+│   │   └── Page: step1.ejs - IP Logging (auto)
+│   │
+│   ├── Route: GET /verify/step2/:discordId
+│   │   └── Page: step2.ejs - Security Questions
+│   │
+│   ├── Route: POST /verify/step2
+│   │   ├── Save answers
+│   │   └── Redirect to step3
+│   │
+│   ├── Route: GET /verify/step3/:discordId
+│   │   └── Page: step3.ejs - Location Request
+│   │
+│   ├── Route: POST /api/location
+│   │   ├── Save GPS coordinates
+│   │   └── Return success
+│   │
+│   ├── Route: GET /verify/step4/:discordId
+│   │   └── Page: step4.ejs - Discord Login
+│   │
+│   ├── Route: GET /auth/discord
+│   │   ├── Start OAuth2 flow
+│   │   └── Redirect to Discord
+│   │
+│   ├── Route: GET /auth/discord/callback
+│   │   ├── Get user data from Discord
+│   │   ├── Combine with session data
+│   │   ├── Calculate risk score
+│   │   ├── Save verification to database
+│   │   ├── Trigger Discord bot to add role
+│   │   ├── 📤 WEBHOOK: logger.logVerificationComplete(user, data)
+│   │   └── Redirect to /complete
+│   │
+│   └── Route: GET /complete
+│       └── Page: complete.ejs
+
+├── IP LOGS DATABASE & DETECTION
+│   ├── Multiple Account Detection
+│   │   ├── Query: Find all users with same IP
+│   │   ├── Count: Number of accounts
+│   │   └── Flag: If count > 3
+│   │
+│   ├── VPN/Proxy Detection (ip-api.com)
+│   │   ├── Check: proxy, vpn, tor flags
+│   │   └── Flag: If true
+│   │
+│   ├── Geolocation Mismatch
+│   │   ├── Compare IP vs GPS location
+│   │   └── Flag: If distance > 100km
+│   │
+│   └── Risk Score Calculation
+│       ├── Base: 0
+│       ├── Multiple Accounts: +10 each (max 50)
+│       ├── VPN/Proxy: +30
+│       ├── Location Mismatch: +20
+│       ├── New Account (<7 days): +20
+│       ├── No Email Verified: +15
+│       └── Levels:
+│           ├── 0-30: Low (Auto-Approve)
+│           ├── 31-60: Medium (Manual Review)
+│           └── 61-100: High (Auto-Deny)
+
+├── WEB DASHBOARD (Admin Panel)
+│   ├── Routes
+│   │   ├── GET /admin - Dashboard Home
+│   │   ├── GET /admin/iplogs - IP Logs Viewer
+│   │   ├── GET /admin/verifications/pending - Pending Reviews
+│   │   ├── POST /admin/verifications/approve/:id - Approve User
+│   │   ├── POST /admin/verifications/deny/:id - Deny User
+│   │   ├── GET /admin/logs - Message Logs Viewer
+│   │   ├── GET /admin/settings - Bot Settings
+│   │   ├── POST /admin/settings - Save Settings
+│   │   ├── GET /admin/webhook/test - Test Webhook
+│   │   └── POST /admin/webhook/setup - Configure Webhook
+│   │
+│   └── Pages: dashboard.ejs, iplogs.ejs, pending.ejs, logs.ejs, settings.ejs
+
+├── API ENDPOINTS
+│   ├── POST /api/discord/verify/:userId - Add verified role
+│   ├── POST /api/discord/temp-role/:userId - Add temp role
+│   ├── GET /api/discord/channels - List channels
+│   ├── GET /api/discord/roles - List roles
+│   ├── POST /api/webhook/test - Test webhook
+│   └── GET /api/stats - Dashboard stats
+
+└── WEBHOOK LOGGING SUMMARY
+    ├── VERIFICATION WEBHOOK LOGS:
+    │   ├── 📥 Member Joins
+    │   ├── 📤 Member Leaves
+    │   ├── 🗑️ Message Deletes
+    │   ├── 📝 Message Edits
+    │   ├── 🔨 User Bans
+    │   ├── ✏️ Nickname Changes
+    │   ├── ✅ Verifications Complete
+    │   └── ⚠️ Flagged Users
+    │
+    ├── BACKUP WEBHOOK LOGS:
+    │   ├── 🔄 Backup Started
+    │   ├── ✅ Backup Complete
+    │   └── ❌ Backup Failed
+    │
+    ├── ECONOMY WEBHOOK LOGS:
+    │   ├── 💰 Daily Claims
+    │   └── 🎰 Big Wins
+    │
+    └── All logs sent to respective Discord channels via webhooks
+
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                         COMPLETE .ENV WITH WEBHOOKS                         ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+# DISCORD BOT CONFIG
+<REDACTED>
+CLIENT_ID=your_oauth_client_id_here
+<REDACTED>
+<REDACTED>
+
+# DATABASE
+<REDACTED>
+
+# SESSION
+<REDACTED>
+PORT=3000
+NODE_ENV=production
+
+# 🌐 WEBHOOK URLS (Gawin mo sa Discord)
+<REDACTED>
+<REDACTED>
+<REDACTED>
+
+# LOGS CONFIG
+LOG_JOINS=true
+LOG_LEAVES=true
+LOG_DELETES=true
+LOG_EDITS=true
+LOG_BANS=true
+LOG_VERIFICATIONS=true
+LOG_NICKNAMES=true
+LOG_BACKUPS=true
+LOG_ECONOMY=true
+
+
+╔════════════════════════════════════════════════════════════════════════════╗
+║                      PAANO GUMAWA NG WEBHOOK SA DISCORD                     ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│  STEP 1: Open Discord Server                                               │
+│  → Right-click sa channel (e.g. #logs)                                     │
+│  → Click "Edit Channel"                                                    │
+│                                                                            │
+│  STEP 2: Go to Integrations                                                │
+│  → Click "Integrations" sa left sidebar                                    │
+│  → Click "Webhooks"                                                        │
+│  → Click "Create Webhook"                                                  │
+│                                                                            │
+│  STEP 3: Configure Webhook                                                 │
+│  → Name: "Verification Logs" (or any name)                                 │
+│  → Channel: piliin kung saan channel papadala                              │
+│  → Click "Copy Webhook URL"                                                │
+│                                                                            │
+│  STEP 4: I-paste sa .env                                                   │
+│  → VERIFICATION_WEBHOOK_URL=<DISCORD_WEBHOOK_URL_REDACTED>        │
+│  → BACKUP_WEBHOOK_URL=<DISCORD_WEBHOOK_URL_REDACTED>              │
+│  → ECONOMY_WEBHOOK_URL=<DISCORD_WEBHOOK_URL_REDACTED>             │
+└────────────────────────────────────────────────────────────────────────────┘

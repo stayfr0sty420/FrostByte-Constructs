@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <%- include('../partials/head', { title }) %>
+  </head>
+  <body class="bg-light">
+    <%- include('../partials/nav') %>
+    <main class="container py-4">
+      <div class="row justify-content-center">
+        <div class="col-12 col-lg-7">
+          <div class="card shadow-sm">
+            <div class="card-body p-4">
+              <h1 class="h4 mb-2">Verification</h1>
+              <p class="text-muted">
+                Privacy notice: this form stores your IP address and (if you allow it) your browser location for security and multi-account detection.
+              </p>
+
+              <form method="post" action="/verify/<%= guildId %>">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <input type="hidden" name="geoLat" id="geoLat" />
+                <input type="hidden" name="geoLon" id="geoLon" />
+                <input type="hidden" name="geoAcc" id="geoAcc" />
+
+                <div class="mb-3">
+                  <label class="form-label"><%= cfg.verification.question1 %></label>
+                  <input class="form-control" name="answer1" required />
+                </div>
+                <div class="mb-3">
+                  <label class="form-label"><%= cfg.verification.question2 %></label>
+                  <input class="form-control" name="answer2" required />
+                </div>
+                <div class="mb-3">
+                  <label class="form-label"><%= cfg.verification.question3 || 'Optional question' %></label>
+                  <input class="form-control" name="answer3" />
+                </div>
+
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                  <button class="btn btn-primary" type="submit">Submit</button>
+                  <button class="btn btn-outline-secondary" type="button" id="geoBtn">Allow Location (Optional)</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      document.getElementById('geoBtn')?.addEventListener('click', () => {
+        if (!navigator.geolocation) return alert('Geolocation not supported.');
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            document.getElementById('geoLat').value = pos.coords.latitude;
+            document.getElementById('geoLon').value = pos.coords.longitude;
+            document.getElementById('geoAcc').value = pos.coords.accuracy;
+            alert('Location captured.');
+          },
+          () => alert('Location permission denied.'),
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      });
+    </script>
+
+    <%- include('../partials/footer') %>
+  </body>
+</html>
+

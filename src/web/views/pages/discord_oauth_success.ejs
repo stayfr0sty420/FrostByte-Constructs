@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../partials/head', { title }) %>
+  </head>
+  <body class="app bot-hub">
+    <main class="container py-5 hub-stage">
+      <div class="float-orb orb-1"></div>
+      <div class="float-orb orb-2"></div>
+      <div class="float-orb orb-3"></div>
+
+      <header class="hub-header">
+        <div class="brand">
+          <div class="brand-icon" data-fallback="RS">
+            <img src="/assets/images/bots/Rodstarkian_Bot.png" alt="Rodstarkian Bot logo" loading="lazy" data-fallback-img />
+            <span class="brand-fallback">RS</span>
+          </div>
+          <div>
+            <div class="brand-title">Rodstarkian Suite</div>
+            <div class="brand-sub">Bot Hub</div>
+          </div>
+        </div>
+        <div class="hub-actions">
+          <% if (discordUser && discordUser.id) { %>
+            <div class="user-pill">
+              <div class="user-name"><%= discordUser.username %></div>
+              <% if (discordUser.email) { %>
+                <div class="user-email"><%= discordUser.email %></div>
+              <% } %>
+            </div>
+            <form method="post" action="/auth/logout" class="d-inline">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <button class="btn btn-outline-light" type="submit">Logout</button>
+            </form>
+          <% } else { %>
+            <a class="btn btn-primary btn-glow" href="/auth/discord">Login with Discord</a>
+          <% } %>
+        </div>
+      </header>
+
+      <% if (discordUser && discordUser.id) { %>
+        <section class="hub-hero">
+          <div class="hero-copy">
+            <div class="hero-eyebrow">Authorized</div>
+            <h1 class="hero-title">Choose a bot and add it to your server.</h1>
+            <p class="hero-text">
+              Invite RoBot, Rodstarkian Vault, or God's Eye. After adding, the bots will appear in the Admin panel.
+            </p>
+            <div class="hero-meta text-muted small">Need admin access? Use the Admin Login from the home page.</div>
+          </div>
+          <div class="glass-card switcher-card">
+            <div class="switcher-title">Quick Invite</div>
+            <div class="switcher-preview">
+              <div class="bot-icon bot-icon-lg" data-fallback="<%= bots[0] ? bots[0].short : 'B' %>">
+                <% if (bots[0] && bots[0].icon) { %>
+                  <img data-bot-preview data-fallback-img src="<%= bots[0].icon %>" alt="<%= bots[0].name %> logo" />
+                <% } %>
+                <span class="bot-fallback"><%= bots[0] ? bots[0].short : 'B' %></span>
+              </div>
+              <div>
+                <div class="preview-name" data-bot-name><%= bots[0] ? bots[0].name : 'Bot' %></div>
+                <div class="text-muted small" data-bot-desc><%= bots[0] ? bots[0].description : '' %></div>
+              </div>
+            </div>
+            <div class="switcher-row">
+              <select class="form-select" data-bot-select aria-label="Select a bot">
+                <% bots.forEach(b => { %>
+                  <option value="<%= b.url %>" data-icon="<%= b.icon || '' %>" data-name="<%= b.name %>" data-desc="<%= b.description %>">
+                    <%= b.name %>
+                  </option>
+                <% }) %>
+              </select>
+              <a class="btn btn-primary btn-glow" data-bot-invite href="<%= bots[0] ? bots[0].url : '#' %>" target="_blank" rel="noreferrer">
+                Add to Discord
+              </a>
+            </div>
+            <div class="text-muted small mt-2">Pick a bot and choose the server during Discord authorization.</div>
+          </div>
+        </section>
+
+        <section class="bot-grid">
+          <% bots.forEach((b, i) => { %>
+            <div class="bot-card glass-card">
+              <div class="bot-head">
+                <div class="bot-icon" data-fallback="<%= b.short %>">
+                  <% if (b.icon) { %>
+                    <img src="<%= b.icon %>" alt="<%= b.name %> logo" loading="lazy" data-fallback-img />
+                  <% } %>
+                  <span class="bot-fallback"><%= b.short %></span>
+                </div>
+                <div>
+                  <div class="bot-name"><%= b.name %></div>
+                  <div class="bot-desc text-muted small"><%= b.description %></div>
+                </div>
+              </div>
+              <div class="bot-tags">
+                <% (b.tags || []).forEach(t => { %>
+                  <span class="tag"><%= t %></span>
+                <% }) %>
+              </div>
+              <div class="bot-actions">
+                <a class="btn btn-primary btn-glow w-100" href="<%= b.url %>" target="_blank" rel="noreferrer">Add to Discord</a>
+              </div>
+            </div>
+          <% }) %>
+        </section>
+      <% } else { %>
+        <div class="row justify-content-center">
+          <div class="col-12 col-lg-6">
+            <div class="glass-card login-card text-center">
+              <h1 class="h5 mb-2">Login Required</h1>
+              <p class="text-muted small mb-3">Sign in with Discord to access the bot invite hub.</p>
+              <a class="btn btn-discord w-100" href="/auth/discord">Login with Discord</a>
+            </div>
+          </div>
+        </div>
+      <% } %>
+    </main>
+    <%- include('../partials/footer') %>
+  </body>
+</html>

@@ -1,0 +1,49 @@
+{
+  "name": "discord-bot-system",
+  "version": "1.0.0",
+  "description": "Discord.js v14 bot system: Economy + Backup + Verification with Express dashboard (EJS) and MongoDB.",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "register": "node src/scripts/registerCommands.js all",
+    "register:economy": "node src/scripts/registerCommands.js economy",
+    "register:backup": "node src/scripts/registerCommands.js backup",
+    "register:verification": "node src/scripts/registerCommands.js verification",
+    "db:info": "node src/scripts/dbInfo.js",
+    "seed": "node src/scripts/seed.js"
+  },
+  "dependencies": {
+    "@discordjs/voice": "^0.16.1",
+    "archiver": "^7.0.1",
+    "bcryptjs": "^3.0.2",
+    "bootstrap": "^5.3.3",
+    "compression": "^1.8.1",
+    "connect-mongo": "^5.1.0",
+    "cookie-parser": "^1.4.7",
+    "cron-parser": "^4.9.0",
+    "csurf": "^1.11.0",
+    "dayjs": "^1.11.13",
+    "discord.js": "^14.19.3",
+    "dotenv": "^16.6.1",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.1",
+    "express-session": "^1.18.2",
+    "geoip-lite": "^1.4.10",
+    "helmet": "^7.2.0",
+    "mongoose": "^8.13.2",
+    "morgan": "^1.10.1",
+    "nanoid": "^5.1.5",
+    "node-cron": "^3.0.3",
+    "passport": "^0.7.0",
+    "passport-discord": "^0.1.4",
+    "pino": "^9.7.0",
+    "pino-pretty": "^13.1.2",
+    "zod": "^3.25.76"
+  }
+}

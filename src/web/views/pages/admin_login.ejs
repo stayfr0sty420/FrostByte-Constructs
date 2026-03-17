@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../partials/head', { title }) %>
+  </head>
+  <body class="app landing auth-page">
+    <main class="container py-5 landing-stage">
+      <div class="float-orb orb-1"></div>
+      <div class="float-orb orb-2"></div>
+      <div class="float-orb orb-3"></div>
+
+      <header class="landing-header">
+        <div class="brand">
+          <div class="brand-icon" data-fallback="RS">
+            <img src="/assets/images/bots/Rodstarkian_Bot.png" alt="Rodstarkian Bot logo" loading="lazy" data-fallback-img />
+            <span class="brand-fallback">RS</span>
+          </div>
+          <div>
+            <div class="brand-title">Rodstarkian Suite</div>
+            <div class="brand-sub">Admin Portal</div>
+          </div>
+        </div>
+        <div class="header-actions">
+          <a class="btn btn-ghost" href="/">User Login</a>
+          <a class="btn btn-primary btn-glow" href="/admin/login">Admin Login</a>
+        </div>
+      </header>
+
+      <div class="landing-grid auth-grid">
+        <section class="hero-copy">
+          <div class="hero-eyebrow">Secure Access</div>
+          <h1 class="hero-title">Admin Sign In</h1>
+          <p class="hero-text">
+            Manage approvals, verification settings, backups, and logs from one secure dashboard.
+          </p>
+          <div class="hero-meta text-muted small">
+            Use your owner/admin credentials. If this is your first time, open <code>/admin/setup</code> to create the owner account.
+          </div>
+        </section>
+
+        <aside class="glass-card auth-card">
+          <h2 class="h5 mb-2">Login</h2>
+          <p class="text-muted small mb-3">Enter your admin email and password.</p>
+
+          <% if (error) { %>
+            <div class="alert alert-danger"><%= error %></div>
+          <% } %>
+
+          <form method="post" action="/admin/login">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <input type="hidden" name="returnTo" value="<%= returnTo %>" />
+
+            <div class="mb-3">
+              <label class="form-label">Email</label>
+              <input class="form-control" type="email" name="email" placeholder="you@example.com" required />
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Password</label>
+              <input class="form-control" type="password" name="password" placeholder="••••••••••" required />
+            </div>
+
+            <button class="btn btn-primary w-100" type="submit">Login</button>
+          </form>
+        </aside>
+      </div>
+    </main>
+    <%- include('../partials/footer') %>
+  </body>
+</html>

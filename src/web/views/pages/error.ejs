@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../partials/head', { title }) %>
+  </head>
+  <body class="app">
+    <%- include('../partials/nav') %>
+    <main class="container py-5">
+      <div class="alert alert-danger">
+        <h1 class="h5 mb-2"><%= title %></h1>
+        <div><%= message %></div>
+      </div>
+      <a href="/" class="btn btn-secondary">Home</a>
+    </main>
+    <%- include('../partials/footer') %>
+  </body>
+</html>

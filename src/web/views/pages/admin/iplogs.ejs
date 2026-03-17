@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <h1 class="h4 m-0">IP Logs</h1>
+        <a class="btn btn-outline-secondary btn-sm" href="/admin/verification/settings">Back</a>
+      </div>
+
+      <div class="alert alert-warning ip-logs-alert">
+        Admin-only: IP logs may contain personal data. Keep this private and follow your local privacy laws.
+      </div>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <div class="input-group input-group-sm log-search">
+          <span class="input-group-text">Search</span>
+          <input class="form-control" type="search" placeholder="Search IP logs..." data-log-search />
+        </div>
+        <div class="text-muted small" data-log-count></div>
+      </div>
+
+      <div class="table-responsive ip-logs-table-wrap">
+        <table class="table table-sm align-middle ip-logs-table">
+          <thead>
+            <tr>
+              <th>Observed IP</th>
+              <th>Public IP</th>
+              <th>User / Email</th>
+              <th>Geo</th>
+              <th>IP Geo</th>
+              <th>Count</th>
+              <th>Last Seen</th>
+              <th>Flag</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-log-empty style="<%= logs.length ? 'display:none;' : '' %>">
+              <td colspan="9" class="text-muted small">No logs yet.</td>
+            </tr>
+            <% logs.forEach(l => { %>
+              <%
+                const searchText = [
+                  l.ip,
+                  l.publicIp,
+                  l.discordId,
+                  l.email,
+                  l.flaggedReason,
+                  l.ipGeo?.city,
+                  l.ipGeo?.region,
+                  l.ipGeo?.country,
+                  l.ipGeo?.timezone,
+                  l.geo?.lat,
+                  l.geo?.lon
+                ]
+                  .map((v) => String(v || '').trim())
+                  .filter(Boolean)
+                  .join(' ')
+                  .toLowerCase();
+              %>
+              <tr class="ip-log-row <%= l.flagged ? 'is-flagged' : '' %>" data-log-row data-search="<%= searchText %>">
+                <td><code><%= l.ip %></code></td>
+                <td class="text-muted small">
+                  <% if (l.publicIp) { %>
+                    <code><%= l.publicIp %></code>
+                    <% if (l.publicIpUpdatedAt) { %>
+                      <div class="text-white-50">Updated: <%= new Date(l.publicIpUpdatedAt).toISOString() %></div>
+                    <% } %>
+                  <% } %>
+                </td>
+                <td class="text-muted small">
+                  <div><%= l.discordId ? l.discordId : '(visit only)' %></div>
+                  <% if (l.email) { %>
+                    <div class="text-white-50"><%= l.email %></div>
+                  <% } %>
+                </td>
+                <td class="text-muted small">
+                  <% if (l.geo && l.geo.lat !== null && l.geo.lon !== null) { %>
+                    <code><%= l.geo.lat %>, <%= l.geo.lon %></code>
+                    <% if (l.geo.accuracy !== null) { %>
+                      <span class="text-muted">±<%= Math.round(l.geo.accuracy) %>m</span>
+                    <% } %>
+                    <div>
+                      <a class="link-danger" href="https://www.google.com/maps?q=<%= encodeURIComponent(String(l.geo.lat) + ',' + String(l.geo.lon)) %>" target="_blank" rel="noreferrer">Map</a>
+                    </div>
+                    <% if (l.geoUpdatedAt) { %>
+                      <div class="text-white-50">Updated: <%= new Date(l.geoUpdatedAt).toISOString() %></div>
+                    <% } %>
+                  <% } %>
+                </td>
+                <td class="text-muted small">
+                  <% if (l.ipGeo && (l.ipGeo.city || l.ipGeo.region || l.ipGeo.country || (l.ipGeo.lat !== null && l.ipGeo.lon !== null))) { %>
+                    <div>
+                      <%= [l.ipGeo.city, l.ipGeo.region, l.ipGeo.country].filter(Boolean).join(', ') %>
+                      <% if (l.ipGeo.timezone) { %>
+                        <span class="text-white-50">(<%= l.ipGeo.timezone %>)</span>
+                      <% } %>
+                    </div>
+                    <% if (l.ipGeo.lat !== null && l.ipGeo.lon !== null) { %>
+                      <div>
+                        <a class="link-danger" href="https://www.google.com/maps?q=<%= encodeURIComponent(String(l.ipGeo.lat) + ',' + String(l.ipGeo.lon)) %>" target="_blank" rel="noreferrer">Map</a>
+                      </div>
+                    <% } %>
+                    <% if (l.ipGeoUpdatedAt) { %>
+                      <div class="text-white-50">Updated: <%= new Date(l.ipGeoUpdatedAt).toISOString() %></div>
+                    <% } %>
+                  <% } %>
+                </td>
+                <td><%= l.count %></td>
+                <td class="text-muted small"><%= new Date(l.lastSeenAt).toISOString() %></td>
+                <td><%= l.flagged ? (l.flaggedReason || 'flagged') : '' %></td>
+                <td class="text-end">
+                  <form method="post" action="/admin/verification/iplogs/delete/<%= l._id %>" class="d-inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <button
+                      class="btn btn-outline-danger btn-sm"
+                      type="submit"
+                      data-confirm="Delete this IP log entry? This will remove it from the database."
+                      data-confirm-title="Delete IP log?"
+                      data-confirm-ok="Delete"
+                      data-confirm-cancel="Cancel"
+                    >
+                      Delete
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

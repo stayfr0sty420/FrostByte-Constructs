@@ -1,0 +1,98 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark navbar-minimal">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="<%= adminUser ? '/admin/dashboard' : '/' %>">
+      <span class="brand">
+        <span class="brand-icon brand-icon-sm" data-fallback="RS">
+          <img src="/assets/images/bots/Rodstarkian_Bot.png" alt="Rodstarkian Bot logo" loading="lazy" data-fallback-img />
+          <span class="brand-fallback">RS</span>
+        </span>
+        <span class="brand-title">Rodstarkian Suite</span>
+      </span>
+    </a>
+    <% if (adminUser && activeGuildId) { %>
+      <span class="navbar-text small text-white-50 d-none d-lg-inline">
+        Server: <%= activeGuildName || activeGuildId %>
+      </span>
+    <% } %>
+    <button
+      class="navbar-toggler"
+      type="button"
+      data-bs-toggle="collapse"
+      data-bs-target="#navbarNav"
+      aria-controls="navbarNav"
+      aria-expanded="false"
+      aria-label="Toggle navigation"
+    >
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        <% if (adminUser) { %>
+        <li class="nav-item"><a class="nav-link" href="/admin/servers">Servers</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/dashboard">Dashboard</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/help">Help</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/economy/items">Items</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/economy/shop">Shop</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/economy/users">Users</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/backups">Backups</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/voice">Voice 24/7</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/verification/settings">Verification</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/logs">Logs</a></li>
+        <% if (adminUser.role === 'owner') { %>
+        <li class="nav-item"><a class="nav-link" href="/admin/accounts">Accounts</a></li>
+        <% } %>
+        <% } %>
+      </ul>
+      <ul class="navbar-nav ms-auto">
+        <% if (adminUser) { %>
+        <li class="nav-item">
+          <span class="user-pill me-3">
+            <span class="user-name">Admin</span>
+            <span class="user-email"><%= adminUser.email %></span>
+          </span>
+        </li>
+        <li class="nav-item">
+          <form method="post" action="/admin/logout" class="d-inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <button
+              class="btn btn-outline-light btn-sm"
+              type="submit"
+              data-confirm="Log out now?"
+              data-confirm-title="Log out?"
+              data-confirm-ok="Logout"
+              data-confirm-cancel="Stay"
+            >
+              Logout
+            </button>
+          </form>
+        </li>
+        <% } else if (discordUser) { %>
+        <li class="nav-item">
+          <span class="user-pill me-3">
+            <span class="user-name">Discord</span>
+            <span class="user-email"><%= discordUser.username %></span>
+          </span>
+        </li>
+        <li class="nav-item">
+          <form method="post" action="/auth/logout" class="d-inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <button
+              class="btn btn-outline-light btn-sm"
+              type="submit"
+              data-confirm="Log out now?"
+              data-confirm-title="Log out?"
+              data-confirm-ok="Logout"
+              data-confirm-cancel="Stay"
+            >
+              Logout
+            </button>
+          </form>
+        </li>
+        <% } else { %>
+        <li class="nav-item me-2"><a class="btn btn-primary btn-sm" href="/auth/discord">User Login</a></li>
+        <li class="nav-item"><a class="btn btn-outline-light btn-sm" href="/admin/login">Admin Login</a></li>
+        <% } %>
+      </ul>
+    </div>
+  </div>
+</nav>

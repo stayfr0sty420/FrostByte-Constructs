@@ -1,0 +1,64 @@
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="/admin/dashboard">Bot Dashboard</a>
+    <% if (adminUser && activeGuildId) { %>
+      <span class="navbar-text small text-white-50 d-none d-lg-inline">
+        Server: <%= activeGuildName || activeGuildId %>
+      </span>
+    <% } %>
+    <button
+      class="navbar-toggler"
+      type="button"
+      data-bs-toggle="collapse"
+      data-bs-target="#navbarNav"
+      aria-controls="navbarNav"
+      aria-expanded="false"
+      aria-label="Toggle navigation"
+    >
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        <% if (adminUser) { %>
+        <li class="nav-item"><a class="nav-link" href="/admin/servers">Servers</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/dashboard">Dashboard</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/help">Help</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/economy/items">Items</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/economy/shop">Shop</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/backups">Backups</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/schedules">Schedules</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/verification/settings">Verification</a></li>
+        <li class="nav-item"><a class="nav-link" href="/admin/logs">Logs</a></li>
+        <% if (adminUser.role === 'owner') { %>
+        <li class="nav-item"><a class="nav-link" href="/admin/accounts">Accounts</a></li>
+        <% } %>
+        <% } %>
+      </ul>
+      <ul class="navbar-nav ms-auto">
+        <% if (adminUser) { %>
+        <li class="nav-item">
+          <span class="navbar-text me-3">Admin: <%= adminUser.email %></span>
+        </li>
+        <li class="nav-item">
+          <form method="post" action="/admin/logout" class="d-inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <button class="btn btn-outline-light btn-sm" type="submit">Logout</button>
+          </form>
+        </li>
+        <% } else if (discordUser) { %>
+        <li class="nav-item">
+          <span class="navbar-text me-3">Discord: <%= discordUser.username %></span>
+        </li>
+        <li class="nav-item">
+          <form method="post" action="/auth/logout" class="d-inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <button class="btn btn-outline-light btn-sm" type="submit">Logout</button>
+          </form>
+        </li>
+        <% } else { %>
+        <li class="nav-item"><a class="btn btn-outline-light btn-sm" href="/admin/login">Admin Login</a></li>
+        <% } %>
+      </ul>
+    </div>
+  </div>
+</nav>

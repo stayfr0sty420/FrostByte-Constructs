@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page backups-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type %>"><%= flash.message %></div>
+      <% } %>
+
+      <section class="backup-hero">
+        <div class="backup-hero-grid">
+          <div class="backup-hero-copy">
+            <div class="hero-eyebrow">Backup Center</div>
+            <h1 class="hero-title">Protect your server with clean restores.</h1>
+            <p class="hero-text">
+              Create full or selective backups, restore fast, and keep your server clean with auto‑pruning. Designed to
+              stay reliable even during cross‑server recovery.
+            </p>
+            <div class="backup-callout">
+              <strong>Cross‑server restore:</strong> restore a backup into a different server by supplying the target guild
+              ID. For a full rebuild, enable <strong>Wipe first</strong> to clear existing channels/roles.
+            </div>
+          </div>
+
+          <div class="backup-hero-stack">
+            <div class="card backup-card">
+              <div class="card-body">
+                <h2 class="h6 text-uppercase text-muted">Create Backup</h2>
+                <form method="post" action="/admin/backups/create" class="backup-form">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <div class="row g-2">
+                    <div class="col-12">
+                      <input class="form-control" name="name" placeholder="Backup name (optional)" />
+                    </div>
+                    <div class="col-12 col-md-7">
+                      <select class="form-select" name="type">
+                        <option value="full">full</option>
+                        <option value="channels">channels</option>
+                        <option value="roles">roles</option>
+                        <option value="messages">messages</option>
+                        <option value="bans">bans</option>
+                        <option value="webhooks">webhooks</option>
+                        <option value="emojis">emojis</option>
+                        <option value="threads">threads</option>
+                        <option value="nicknames">nicknames</option>
+                        <option value="bots">bots</option>
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-5 d-flex align-items-center">
+                      <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="1" id="archiveBackup" name="archive" />
+                        <label class="form-check-label" for="archiveBackup">Archive</label>
+                      </div>
+                    </div>
+                    <div class="col-12">
+                      <button class="btn btn-primary w-100" type="submit">Create Backup</button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <div class="card backup-card">
+              <div class="card-body">
+                <h2 class="h6 text-uppercase text-muted">Restore Backup</h2>
+                <form method="post" action="/admin/backups/restore" class="backup-form">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <% if (!backups.length) { %>
+                    <p class="text-muted small mb-2">No backups yet. Create one first.</p>
+                    <button class="btn btn-outline-primary w-100" type="submit" disabled>Restore Backup</button>
+                  <% } else { %>
+                    <div class="row g-2">
+                      <div class="col-12">
+                        <select class="form-select" name="backupId" required>
+                          <% backups.forEach(b => { %>
+                            <option value="<%= b.backupId %>"><%= b.name || b.type %> — <%= b.backupId %></option>
+                          <% }) %>
+                        </select>
+                      </div>
+                      <div class="col-12">
+                        <input class="form-control" name="targetGuildId" placeholder="Target guild ID (optional)" />
+                      </div>
+                      <div class="col-12">
+                        <div class="backup-toggle-grid">
+                          <label class="form-check">
+                            <input class="form-check-input" type="checkbox" name="prune" value="1" checked />
+                            <span class="form-check-label">Prune extra channels/roles</span>
+                          </label>
+                          <label class="form-check">
+                            <input class="form-check-input" type="checkbox" name="wipe" value="1" />
+                            <span class="form-check-label">Wipe first (recommended for cross‑server)</span>
+                          </label>
+                          <label class="form-check">
+                            <input class="form-check-input" type="checkbox" name="restoreMessages" value="1" />
+                            <span class="form-check-label">Restore messages</span>
+                          </label>
+                          <label class="form-check">
+                            <input class="form-check-input" type="checkbox" name="restoreBans" value="1" />
+                            <span class="form-check-label">Restore bans</span>
+                          </label>
+                        </div>
+                      </div>
+                      <div class="col-12">
+                        <button
+                          class="btn btn-outline-primary w-100"
+                          type="submit"
+                          data-confirm="Restore this backup now?"
+                          data-confirm-title="Restore backup?"
+                          data-confirm-ok="Restore"
+                          data-confirm-cancel="Cancel"
+                        >
+                          Restore Backup
+                        </button>
+                      </div>
+                    </div>
+                  <% } %>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="backup-feature-grid">
+        <article class="backup-feature-card">
+          <h2 class="backup-feature-title">Backup Features</h2>
+          <ul class="backup-feature-list">
+            <li>Full server backups</li>
+            <li>Channel backups</li>
+            <li>Role backups</li>
+            <li>Message backups</li>
+            <li>Ban list backups</li>
+            <li>Emoji backups</li>
+            <li>Webhook backups</li>
+            <li>Thread backups</li>
+          </ul>
+        </article>
+
+        <article class="backup-feature-card">
+          <h2 class="backup-feature-title">Server Data Protection</h2>
+          <ul class="backup-feature-list">
+            <li>Server settings and configuration</li>
+            <li>Channels and categories w/ config</li>
+            <li>Roles w/ colors, images, and permissions</li>
+            <li>Bot list, info, and perms</li>
+            <li>Emojis and stickers</li>
+            <li>Threads</li>
+            <li>Forum posts</li>
+            <li>Member roles and nicknames</li>
+          </ul>
+        </article>
+
+        <article class="backup-feature-card">
+          <h2 class="backup-feature-title">Message Backups</h2>
+          <ul class="backup-feature-list">
+            <li>Message content</li>
+            <li>Attachments</li>
+            <li>Webhooks</li>
+            <li>Embeds</li>
+            <li>Reactions</li>
+            <li>Author information</li>
+            <li>Timestamps</li>
+          </ul>
+        </article>
+
+        <article class="backup-feature-card">
+          <h2 class="backup-feature-title">Backup Management</h2>
+          <ul class="backup-feature-list">
+            <li>Create backups manually</li>
+            <li>Scheduled automatic backups</li>
+            <li>Backup restore options</li>
+            <li>Selective restore options</li>
+            <li>Backup templates</li>
+            <li>Backup download links</li>
+          </ul>
+        </article>
+
+        <article class="backup-feature-card">
+          <h2 class="backup-feature-title">Automation</h2>
+          <ul class="backup-feature-list">
+            <li>Hourly / Daily / Weekly schedules</li>
+            <li>Backup retention policies</li>
+            <li>Automatic cleanup of old backups</li>
+            <li>Revert to last known good state</li>
+          </ul>
+        </article>
+
+        <article class="backup-feature-card">
+          <h2 class="backup-feature-title">Storage</h2>
+          <ul class="backup-feature-list">
+            <li>Compressed backup archives</li>
+            <li>Local storage system</li>
+            <li>Optional cloud storage integration</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="card backup-table-card">
+        <div class="card-body">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h2 class="h5 m-0">Latest Backups</h2>
+            <span class="text-muted small"><%= backups.length %> total</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle backups-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Size</th>
+                  <th>Archived</th>
+                  <th>Created</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% backups.forEach(b => { %>
+                  <tr>
+                    <td data-label="ID"><code><%= b.backupId %></code></td>
+                    <td data-label="Name"><%= b.name || b.type %></td>
+                    <td data-label="Type"><%= b.type %></td>
+                    <td data-label="Status"><%= b.status %></td>
+                    <td data-label="Size" class="text-muted small"><%= b.size ? (b.size / (1024 * 1024)).toFixed(2) + ' MB' : '0 MB' %></td>
+                    <td data-label="Archived"><%= b.archived ? 'yes' : 'no' %></td>
+                    <td data-label="Created" class="text-muted small"><%= b.createdAt.toISOString() %></td>
+                    <td data-label="Actions" class="text-end">
+                      <div class="backup-actions">
+                        <a class="btn btn-outline-secondary btn-sm" href="/admin/backups/download/<%= b.backupId %>">Download</a>
+                        <form method="post" action="/admin/backups/restore/<%= b.backupId %>" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <button
+                            class="btn btn-outline-primary btn-sm"
+                            type="submit"
+                            data-confirm="Restore roles/channels from this backup?"
+                            data-confirm-title="Quick restore?"
+                            data-confirm-ok="Restore"
+                            data-confirm-cancel="Cancel"
+                          >
+                            Quick Restore
+                          </button>
+                        </form>
+                        <form method="post" action="/admin/backups/delete/<%= b.backupId %>" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <button
+                            class="btn btn-outline-danger btn-sm"
+                            type="submit"
+                            data-confirm="Delete this backup?"
+                            data-confirm-title="Delete backup?"
+                            data-confirm-ok="Delete"
+                            data-confirm-cancel="Cancel"
+                          >
+                            Delete
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

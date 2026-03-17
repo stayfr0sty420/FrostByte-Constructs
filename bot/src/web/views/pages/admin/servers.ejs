@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="bg-light">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+        <h1 class="h4 mb-0">Servers & Approvals</h1>
+        <div class="text-muted small">Invite the bots to a server → approve it here → features unlock.</div>
+      </div>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Server</th>
+                  <th>Guild ID</th>
+                  <th>Bots</th>
+                  <th>Status</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (!servers.length) { %>
+                  <tr>
+                    <td colspan="5" class="text-muted py-4">
+                      No servers found in the database yet. Add the bots to a server and refresh.
+                    </td>
+                  </tr>
+                <% } %>
+
+                <% servers.forEach(s => { %>
+                  <% const allBots = s.presence.economy && s.presence.backup && s.presence.verification; %>
+                  <tr>
+                    <td class="fw-semibold"><%= s.name %></td>
+                    <td><code><%= s.guildId %></code></td>
+                    <td>
+                      <span class="badge <%= s.presence.economy ? 'text-bg-success' : 'text-bg-secondary' %>">E</span>
+                      <span class="badge <%= s.presence.backup ? 'text-bg-success' : 'text-bg-secondary' %>">B</span>
+                      <span class="badge <%= s.presence.verification ? 'text-bg-success' : 'text-bg-secondary' %>">V</span>
+                      <% if (!allBots) { %>
+                        <span class="text-muted small ms-1">(missing)</span>
+                      <% } %>
+                    </td>
+                    <td>
+                      <% const badge = s.status === 'approved' ? 'success' : (s.status === 'rejected' ? 'danger' : 'warning'); %>
+                      <div class="d-flex flex-column">
+                        <div><span class="badge text-bg-<%= badge %>"><%= s.status %></span></div>
+                        <% if (s.reviewedAt) { %>
+                          <div class="text-muted small">
+                            <%= new Date(s.reviewedAt).toISOString().slice(0, 19).replace('T', ' ') %>
+                            <%= s.reviewedBy ? ` • ${s.reviewedBy}` : '' %>
+                          </div>
+                        <% } %>
+                      </div>
+                    </td>
+                    <td class="text-end">
+                      <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
+                        <form method="post" action="/admin/servers/select" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <input type="hidden" name="guildId" value="<%= s.guildId %>" />
+                          <button class="btn btn-outline-primary btn-sm" type="submit" <%= (s.status !== 'approved' || !allBots) ? 'disabled' : '' %>>
+                            Manage
+                          </button>
+                        </form>
+
+                        <% if (s.status !== 'approved') { %>
+                          <form method="post" action="/admin/servers/approve/<%= s.guildId %>" class="d-inline">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                            <button class="btn btn-success btn-sm" type="submit" <%= !allBots ? 'disabled' : '' %>>
+                              Approve
+                            </button>
+                          </form>
+                        <% } %>
+
+                        <% if (s.status !== 'rejected') { %>
+                          <form method="post" action="/admin/servers/reject/<%= s.guildId %>" class="d-inline">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                            <button class="btn btn-outline-danger btn-sm" type="submit" onclick="return confirm('Reject this server? Bots will stop working there.')">
+                              Reject
+                            </button>
+                          </form>
+                        <% } %>
+                      </div>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../partials/head', { title }) %>
+  </head>
+  <body class="app">
+    <%- include('../partials/nav') %>
+    <main class="container py-5">
+      <div class="alert alert-warning">
+        <%= (typeof message !== 'undefined' && message) ? message : 'Verification is disabled for this server.' %>
+      </div>
+    </main>
+    <%- include('../partials/footer') %>
+  </body>
+</html>

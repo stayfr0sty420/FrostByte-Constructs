@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <h1 class="h4 mb-3">Verification Settings</h1>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="alert alert-info">
+        Share this verification link to members (or tell them to run <code>/verify</code> in Discord):
+        <div class="mt-2">
+          <% const base = publicBaseUrl || 'http://localhost:3000'; %>
+          <code><%= `${base}/verify/${cfg.guildId}` %></code>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mb-3">
+        <div class="card-body">
+          <h2 class="h6 mb-2">Setup Checklist</h2>
+          <ol class="mb-0">
+            <li>Make sure this server is <strong>Approved</strong> in <a href="/admin/servers">Servers</a>.</li>
+            <li>Create roles: <code>Unverified</code> (temp) and <code>Verified</code>.</li>
+            <li>Move the Verification role <strong>above</strong> those roles (role hierarchy).</li>
+            <li>Give Verification <strong>Manage Roles</strong> permission.</li>
+            <li>Enable intents (Developer Portal): <strong>Server Members</strong> + <strong>Message Content</strong>.</li>
+            <li>Set Temp Role + Verified Role below, then enable verification.</li>
+            <li>Share the verification link to members. Approve pending requests if needed.</li>
+          </ol>
+          <div class="text-muted small mt-2">
+            Note: browser geolocation requires a secure context (HTTPS) except on <code>localhost</code>.
+          </div>
+        </div>
+      </div>
+
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <form method="post" action="/admin/verification/settings" class="row g-2">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+
+            <div class="col-12 d-flex gap-2 align-items-center">
+              <div class="form-check form-switch">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  role="switch"
+                  name="enabled"
+                  value="1"
+                  <%= cfg.verification.enabled ? 'checked' : '' %>
+                />
+                <label class="form-check-label">Enabled</label>
+              </div>
+
+              <div class="form-check form-switch ms-3">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  role="switch"
+                  name="requireLocation"
+                  value="1"
+                  <%= (typeof cfg.verification.requireLocation === 'boolean' ? cfg.verification.requireLocation : true) ? 'checked' : '' %>
+                />
+                <label class="form-check-label">Require location</label>
+              </div>
+
+              <div class="form-check form-switch ms-3">
+                <input
+                  class="form-check-input"
+                  type="checkbox"
+                  role="switch"
+                  name="autoApprove"
+                  value="1"
+                  <%= (typeof cfg.verification.autoApprove === 'boolean' ? cfg.verification.autoApprove : true) ? 'checked' : '' %>
+                />
+                <label class="form-check-label">Auto-approve (give role)</label>
+              </div>
+            </div>
+
+            <div class="col-12 col-md-4">
+              <label class="form-label">Temp Role (Join Gate)</label>
+              <select class="form-select" name="tempRoleId">
+                <option value="">(none)</option>
+                <% roles.forEach(r => { %>
+                  <option value="<%= r.id %>" <%= cfg.verification.tempRoleId === r.id ? 'selected' : '' %>>
+                    <%= r.name %>
+                  </option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Verified Role</label>
+              <select class="form-select" name="verifiedRoleId">
+                <option value="">(none)</option>
+                <% roles.forEach(r => { %>
+                  <option value="<%= r.id %>" <%= cfg.verification.verifiedRoleId === r.id ? 'selected' : '' %>>
+                    <%= r.name %>
+                  </option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Log Channel (Verification)</label>
+              <select class="form-select" name="logChannelId">
+                <option value="">(none)</option>
+                <% channels.forEach(c => { %>
+                  <option value="<%= c.id %>" <%= cfg.verification.logChannelId === c.id ? 'selected' : '' %>>
+                    <%= c.name %>
+                  </option>
+                <% }) %>
+              </select>
+            </div>
+
+            <div class="col-12">
+              <div class="text-muted small">
+                If <strong>Auto-approve</strong> is ON, members receive the Verified role immediately after completing the website + Discord OAuth2.
+                Risk scoring is still logged for monitoring.
+              </div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">Question 1 (required)</label>
+              <input class="form-control" name="question1" value="<%= cfg.verification.question1 %>" required />
+            </div>
+            <div class="col-12">
+              <label class="form-label">Question 2 (required)</label>
+              <input class="form-control" name="question2" value="<%= cfg.verification.question2 %>" required />
+            </div>
+            <div class="col-12">
+              <label class="form-label">Question 3 (optional)</label>
+              <input class="form-control" name="question3" value="<%= cfg.verification.question3 %>" />
+            </div>
+
+            <div class="col-12"><hr /></div>
+
+            <div class="col-12">
+              <h2 class="h6 mb-2">Log Toggles</h2>
+              <div class="log-section">
+                <div class="log-section-title">Message Events</div>
+                <div class="row g-2 log-grid">
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logMessageDeletes" value="1" <%= cfg.logs.logMessageDeletes ? 'checked' : '' %> />
+                      <label class="form-check-label">Message Delete</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logMessageEdits" value="1" <%= cfg.logs.logMessageEdits ? 'checked' : '' %> />
+                      <label class="form-check-label">Message Edit</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logImageDeletes" value="1" <%= cfg.logs.logImageDeletes ? 'checked' : '' %> />
+                      <label class="form-check-label">Image Delete</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logBulkMessageDeletes" value="1" <%= cfg.logs.logBulkMessageDeletes ? 'checked' : '' %> />
+                      <label class="form-check-label">Bulk Message Delete</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logInviteInfo" value="1" <%= cfg.logs.logInviteInfo ? 'checked' : '' %> />
+                      <label class="form-check-label">Invites/Invite Info</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logModeratorCommands" value="1" <%= cfg.logs.logModeratorCommands ? 'checked' : '' %> />
+                      <label class="form-check-label">Moderator Commands</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="log-section">
+                <div class="log-section-title">Member Events</div>
+                <div class="row g-2 log-grid">
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberJoins" value="1" <%= cfg.logs.logMemberJoins ? 'checked' : '' %> />
+                      <label class="form-check-label">Member Join</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberLeaves" value="1" <%= cfg.logs.logMemberLeaves ? 'checked' : '' %> />
+                      <label class="form-check-label">Member Leave</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberRoleAdds" value="1" <%= cfg.logs.logMemberRoleAdds ? 'checked' : '' %> />
+                      <label class="form-check-label">Member Role Add</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberRoleRemoves" value="1" <%= cfg.logs.logMemberRoleRemoves ? 'checked' : '' %> />
+                      <label class="form-check-label">Member Role Remove</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberTimeouts" value="1" <%= cfg.logs.logMemberTimeouts ? 'checked' : '' %> />
+                      <label class="form-check-label">Member Timeout</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberBans" value="1" <%= cfg.logs.logMemberBans ? 'checked' : '' %> />
+                      <label class="form-check-label">Member Ban</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberUnbans" value="1" <%= cfg.logs.logMemberUnbans ? 'checked' : '' %> />
+                      <label class="form-check-label">Member Unban</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logNicknameChanges" value="1" <%= cfg.logs.logNicknameChanges ? 'checked' : '' %> />
+                      <label class="form-check-label">Nickname Change</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="log-section">
+                <div class="log-section-title">Role Events</div>
+                <div class="row g-2 log-grid">
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logRoleCreates" value="1" <%= cfg.logs.logRoleCreates ? 'checked' : '' %> />
+                      <label class="form-check-label">Role Create</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logRoleDeletes" value="1" <%= cfg.logs.logRoleDeletes ? 'checked' : '' %> />
+                      <label class="form-check-label">Role Delete</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logRoleUpdates" value="1" <%= cfg.logs.logRoleUpdates ? 'checked' : '' %> />
+                      <label class="form-check-label">Role Update</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="log-section">
+                <div class="log-section-title">Channel Events</div>
+                <div class="row g-2 log-grid">
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logChannelCreates" value="1" <%= cfg.logs.logChannelCreates ? 'checked' : '' %> />
+                      <label class="form-check-label">Channel Create</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logChannelUpdates" value="1" <%= cfg.logs.logChannelUpdates ? 'checked' : '' %> />
+                      <label class="form-check-label">Channel Update</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logChannelDeletes" value="1" <%= cfg.logs.logChannelDeletes ? 'checked' : '' %> />
+                      <label class="form-check-label">Channel Delete</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="log-section">
+                <div class="log-section-title">Emoji Events</div>
+                <div class="row g-2 log-grid">
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logEmojiCreates" value="1" <%= cfg.logs.logEmojiCreates ? 'checked' : '' %> />
+                      <label class="form-check-label">Emoji Create</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logEmojiUpdates" value="1" <%= cfg.logs.logEmojiUpdates ? 'checked' : '' %> />
+                      <label class="form-check-label">Emoji Name Change</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logEmojiDeletes" value="1" <%= cfg.logs.logEmojiDeletes ? 'checked' : '' %> />
+                      <label class="form-check-label">Emoji Delete</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="log-section">
+                <div class="log-section-title">Voice Events</div>
+                <div class="row g-2 log-grid">
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logVoiceJoins" value="1" <%= cfg.logs.logVoiceJoins ? 'checked' : '' %> />
+                      <label class="form-check-label">Voice Channel Join</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logVoiceLeaves" value="1" <%= cfg.logs.logVoiceLeaves ? 'checked' : '' %> />
+                      <label class="form-check-label">Voice Channel Leave</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logVoiceMoves" value="1" <%= cfg.logs.logVoiceMoves ? 'checked' : '' %> />
+                      <label class="form-check-label">Voice Channel Move</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="log-section">
+                <div class="log-section-title">System Events</div>
+                <div class="row g-2 log-grid">
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logVerifications" value="1" <%= cfg.logs.logVerifications ? 'checked' : '' %> />
+                      <label class="form-check-label">Verifications</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logBackups" value="1" <%= cfg.logs.logBackups ? 'checked' : '' %> />
+                      <label class="form-check-label">Backups</label>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <div class="form-check form-switch log-item">
+                      <input class="form-check-input" type="checkbox" role="switch" name="logEconomy" value="1" <%= cfg.logs.logEconomy ? 'checked' : '' %> />
+                      <label class="form-check-label">Economy</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12 d-flex">
+              <button class="btn btn-primary ms-auto" type="submit">Save</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card shadow-sm mt-3">
+        <div class="card-body">
+          <h2 class="h6 mb-2">Test Actions</h2>
+          <p class="text-muted small mb-3">
+            Use this to test role assignment (make sure the bot role is above the target roles).
+          </p>
+          <div class="row g-2">
+            <div class="col-12 col-md-6">
+              <form method="post" action="/admin/verification/test/temp-role" class="d-flex gap-2">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <input class="form-control" name="userId" placeholder="User ID" required />
+                <button class="btn btn-outline-secondary" type="submit">Temp Role</button>
+              </form>
+            </div>
+            <div class="col-12 col-md-6">
+              <form method="post" action="/admin/verification/test/verified-role" class="d-flex gap-2">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <input class="form-control" name="userId" placeholder="User ID" required />
+                <button class="btn btn-outline-success" type="submit">Verified Role</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        <a class="btn btn-outline-primary btn-sm" href="/admin/verification/pending">Pending Reviews</a>
+        <a class="btn btn-outline-primary btn-sm" href="/admin/verification/iplogs">IP Logs</a>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

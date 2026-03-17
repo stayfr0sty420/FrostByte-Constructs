@@ -1,0 +1,800 @@
+const fs = require('fs/promises');
+const path = require('path');
+const { WebhookClient, ChannelType } = require('discord.js');
+const Backup = require('../../db/models/Backup');
+const { logger } = require('../../config/logger');
+const { sendLog } = require('../discord/loggingService');
+
+async function fileExists(filePath) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readJson(filePath) {
+  const raw = await fs.readFile(filePath, 'utf8');
+  return JSON.parse(raw);
+}
+
+function toBigIntOrNull(value) {
+  try {
+    if (value === null || value === undefined || value === '') return null;
+    return BigInt(String(value));
+  } catch {
+    return null;
+  }
+}
+
+function mapOverwriteIds(overwrites, roleIdMap, guildId) {
+  return (overwrites || []).map((o) => {
+    let id = o.id;
+    if (id === guildId) id = guildId;
+    else if (roleIdMap.has(id)) id = roleIdMap.get(id);
+    return {
+      id,
+      type: o.type,
+      allow: toBigIntOrNull(o.allow) ?? undefined,
+      deny: toBigIntOrNull(o.deny) ?? undefined
+    };
+  });
+}
+
+function roleKey(name) {
+  return String(name || '').toLowerCase();
+}
+
+async function restoreRoles(guild, rolesData, options = {}) {
+  const roleIdMap = new Map();
+  const reuseExisting = Boolean(options.reuseExisting);
+  let existingByName = new Map();
+
+  if (reuseExisting) {
+    const existing = await guild.roles.fetch().catch(() => null);
+    if (existing) {
+      for (const role of existing.values()) {
+        if (role.managed) continue;
+        if (role.id === guild.id) continue;
+        const key = roleKey(role.name);
+        const list = existingByName.get(key) || [];
+        list.push(role);
+        existingByName.set(key, list);
+      }
+    }
+  }
+
+  const takeExisting = (key) => {
+    const list = existingByName.get(key);
+    if (!list || !list.length) return null;
+    const role = list.shift();
+    if (!list.length) existingByName.delete(key);
+    else existingByName.set(key, list);
+    return role;
+  };
+
+  const roles = [...rolesData]
+    .filter((r) => r.id !== guild.id)
+    .filter((r) => !r.managed)
+    .sort((a, b) => a.position - b.position);
+
+  for (const r of roles) {
+    try {
+      const icon = r.iconURL || '';
+      const unicodeEmoji = r.unicodeEmoji || '';
+      const iconPayload = icon ? { icon } : unicodeEmoji ? { unicodeEmoji } : {};
+      const existing = reuseExisting ? takeExisting(roleKey(r.name)) : null;
+      if (existing) {
+        await existing
+          .edit({
+            name: r.name,
+            color: r.color,
+            hoist: r.hoist,
+            mentionable: r.mentionable,
+            permissions: toBigIntOrNull(r.permissions) ?? undefined,
+            ...iconPayload
+          })
+          .catch(() => null);
+        roleIdMap.set(r.id, existing.id);
+      } else {
+        const created = await guild.roles.create({
+          name: r.name,
+          color: r.color,
+          hoist: r.hoist,
+          mentionable: r.mentionable,
+          permissions: toBigIntOrNull(r.permissions) ?? undefined,
+          ...iconPayload,
+          reason: 'Restore from backup'
+        });
+        roleIdMap.set(r.id, created.id);
+      }
+    } catch (err) {
+      logger.warn({ err, roleName: r.name }, 'Role restore failed');
+    }
+  }
+
+  if (roles.length) {
+    const positions = roles
+      .map((r) => ({ id: roleIdMap.get(r.id), position: r.position }))
+      .filter((p) => p.id);
+    if (positions.length) {
+      await guild.roles.setPositions(positions).catch(() => null);
+    }
+  }
+
+  return roleIdMap;
+}
+
+function mapChannelId(channelIdMap, id) {
+  if (!id) return null;
+  const mapped = channelIdMap?.get?.(String(id));
+  return mapped || null;
+}
+
+async function restoreServerSettings(guild, serverData, channelIdMap = new Map()) {
+  if (!serverData || typeof serverData !== 'object') return;
+  const payload = {};
+
+  if (serverData.name) payload.name = String(serverData.name).slice(0, 100);
+  if (serverData.iconURL) payload.icon = serverData.iconURL;
+  if (serverData.verificationLevel !== null && serverData.verificationLevel !== undefined) {
+    payload.verificationLevel = serverData.verificationLevel;
+  }
+  if (serverData.defaultMessageNotifications !== null && serverData.defaultMessageNotifications !== undefined) {
+    payload.defaultMessageNotifications = serverData.defaultMessageNotifications;
+  }
+  if (serverData.explicitContentFilter !== null && serverData.explicitContentFilter !== undefined) {
+    payload.explicitContentFilter = serverData.explicitContentFilter;
+  }
+  if (serverData.preferredLocale) payload.preferredLocale = serverData.preferredLocale;
+  if (serverData.afkTimeout !== null && serverData.afkTimeout !== undefined) payload.afkTimeout = serverData.afkTimeout;
+
+  const afkChannel = mapChannelId(channelIdMap, serverData.afkChannelId);
+  if (afkChannel) payload.afkChannel = afkChannel;
+
+  const systemChannel = mapChannelId(channelIdMap, serverData.systemChannelId);
+  if (systemChannel) payload.systemChannel = systemChannel;
+
+  const rulesChannel = mapChannelId(channelIdMap, serverData.rulesChannelId);
+  if (rulesChannel) payload.rulesChannel = rulesChannel;
+
+  const publicUpdatesChannel = mapChannelId(channelIdMap, serverData.publicUpdatesChannelId);
+  if (publicUpdatesChannel) payload.publicUpdatesChannel = publicUpdatesChannel;
+
+  if (!Object.keys(payload).length) return;
+
+  try {
+    await guild.edit(payload);
+  } catch (err) {
+    logger.warn({ err }, 'Server settings restore failed');
+  }
+}
+
+async function restoreChannels(guild, channelsData, roleIdMap, options = {}) {
+  const channelIdMap = new Map();
+  const categories = channelsData.filter((c) => String(c.type) === '4'); // ChannelType.GuildCategory
+  const others = channelsData.filter((c) => String(c.type) !== '4');
+  const categoryNameById = new Map(categories.map((c) => [String(c.id), String(c.name || '')]));
+  const reuseExisting = Boolean(options.reuseExisting);
+
+  let existingByKey = new Map();
+  if (reuseExisting) {
+    const existing = await guild.channels.fetch().catch(() => null);
+    if (existing) {
+      for (const ch of existing.values()) {
+        if (ch.isThread?.()) continue;
+        const parentName = ch.parent?.name || '';
+        const key = channelKey(ch.type, ch.name, parentName);
+        const list = existingByKey.get(key) || [];
+        list.push(ch);
+        existingByKey.set(key, list);
+      }
+    }
+  }
+
+  const takeExisting = (key) => {
+    const list = existingByKey.get(key);
+    if (!list || !list.length) return null;
+    const ch = list.shift();
+    if (!list.length) existingByKey.delete(key);
+    else existingByKey.set(key, list);
+    return ch;
+  };
+
+  categories.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  others.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+  for (const c of categories) {
+    try {
+      const key = channelKey(c.type, c.name, '');
+      const existing = reuseExisting ? takeExisting(key) : null;
+      if (existing) {
+        channelIdMap.set(c.id, existing.id);
+        await existing
+          .edit({
+            name: c.name,
+            permissionOverwrites: mapOverwriteIds(c.permissionOverwrites, roleIdMap, guild.id)
+          })
+          .catch(() => null);
+      } else {
+        const created = await guild.channels.create({
+          name: c.name,
+          type: c.type,
+          permissionOverwrites: mapOverwriteIds(c.permissionOverwrites, roleIdMap, guild.id)
+        });
+        channelIdMap.set(c.id, created.id);
+      }
+    } catch (err) {
+      logger.warn({ err, channelName: c.name }, 'Category restore failed');
+    }
+  }
+
+  for (const c of others) {
+    try {
+      const parentId = c.parentId && channelIdMap.has(c.parentId) ? channelIdMap.get(c.parentId) : null;
+      const parentName = c.parentId ? categoryNameById.get(String(c.parentId)) || '' : '';
+      const key = channelKey(c.type, c.name, parentName);
+      const existing = reuseExisting ? takeExisting(key) : null;
+      const payload = {
+        name: c.name,
+        topic: c.topic || undefined,
+        nsfw: Boolean(c.nsfw),
+        rateLimitPerUser: c.rateLimitPerUser ?? undefined,
+        bitrate: c.bitrate || undefined,
+        userLimit: c.userLimit || undefined,
+        parent: parentId || undefined,
+        permissionOverwrites: mapOverwriteIds(c.permissionOverwrites, roleIdMap, guild.id),
+        availableTags: c.availableTags || undefined,
+        defaultAutoArchiveDuration: c.defaultAutoArchiveDuration || undefined
+      };
+      if (existing) {
+        channelIdMap.set(c.id, existing.id);
+        await existing.edit(payload).catch(() => null);
+      } else {
+        const created = await guild.channels.create({
+          ...payload,
+          type: c.type
+        });
+        channelIdMap.set(c.id, created.id);
+      }
+    } catch (err) {
+      logger.warn({ err, channelName: c.name }, 'Channel restore failed');
+    }
+  }
+
+  return channelIdMap;
+}
+
+function channelKey(type, name, parentName = '') {
+  return `${String(type)}|${String(name || '').toLowerCase()}|${String(parentName || '').toLowerCase()}`;
+}
+
+function buildDesiredChannelCounts(channelsData) {
+  const counts = new Map();
+  const categoryNames = new Map(
+    channelsData.filter((c) => String(c.type) === '4').map((c) => [String(c.id), String(c.name || '')])
+  );
+
+  const addKey = (key) => counts.set(key, (counts.get(key) || 0) + 1);
+
+  for (const c of channelsData) {
+    const parentName = c.parentId ? categoryNames.get(String(c.parentId)) || '' : '';
+    addKey(channelKey(c.type, c.name, parentName));
+  }
+
+  return counts;
+}
+
+async function pruneChannels(guild, channelsData) {
+  if (!Array.isArray(channelsData) || !channelsData.length) return;
+  const counts = buildDesiredChannelCounts(channelsData);
+  const existing = await guild.channels.fetch().catch(() => null);
+  if (!existing) return;
+
+  const categories = [];
+  const others = [];
+  for (const ch of existing.values()) {
+    if (ch.isThread?.()) continue;
+    if (String(ch.type) === '4') categories.push(ch);
+    else others.push(ch);
+  }
+
+  const shouldKeep = (ch) => {
+    const parentName = ch.parent?.name || '';
+    const key = channelKey(ch.type, ch.name, parentName);
+    const count = counts.get(key) || 0;
+    if (count > 0) {
+      counts.set(key, count - 1);
+      return true;
+    }
+    return false;
+  };
+
+  for (const ch of others) {
+    if (shouldKeep(ch)) continue;
+    try {
+      await ch.delete('Prune channels not in backup');
+    } catch {
+      // ignore
+    }
+  }
+
+  for (const ch of categories) {
+    if (shouldKeep(ch)) continue;
+    try {
+      await ch.delete('Prune channels not in backup');
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function restoreEmojis(guild, emojisData, delayMs = 250) {
+  if (!Array.isArray(emojisData) || !emojisData.length) return;
+  const safeDelay = Math.max(0, Math.floor(delayMs || 0));
+  const existing = await guild.emojis.fetch().catch(() => null);
+  const existingByName = new Map();
+  if (existing) {
+    for (const e of existing.values()) {
+      if (!e.name) continue;
+      existingByName.set(String(e.name).toLowerCase(), e.id);
+    }
+  }
+
+  let count = 0;
+  for (const e of emojisData) {
+    const name = String(e?.name || '').trim().slice(0, 32);
+    if (!name) continue;
+    const url = String(e?.url || e?.imageURL || '').trim();
+    if (!url) continue;
+    if (existingByName.has(name.toLowerCase())) continue;
+    try {
+      await guild.emojis.create({ attachment: url, name, reason: 'Restore from backup' });
+      existingByName.set(name.toLowerCase(), 'created');
+      count += 1;
+      if (safeDelay > 0 && count % 3 === 0) await sleep(safeDelay);
+    } catch (err) {
+      logger.warn({ err, emojiName: name }, 'Emoji restore failed');
+    }
+  }
+}
+
+async function restoreWebhooks(guild, webhooksData, channelIdMap = new Map(), delayMs = 200) {
+  if (!Array.isArray(webhooksData) || !webhooksData.length) return;
+  const safeDelay = Math.max(0, Math.floor(delayMs || 0));
+  const channelCache = await guild.channels.fetch().catch(() => null);
+  const byChannel = new Map();
+
+  for (const hook of webhooksData) {
+    const channelId = channelIdMap.get(String(hook.channelId || '')) || hook.channelId;
+    if (!channelId) continue;
+    if (!byChannel.has(channelId)) byChannel.set(channelId, []);
+    byChannel.get(channelId).push(hook);
+  }
+
+  let createdCount = 0;
+  for (const [channelId, hooks] of byChannel.entries()) {
+    const channel = channelCache?.get?.(channelId) || (await guild.channels.fetch(channelId).catch(() => null));
+    if (!channel?.isTextBased?.()) continue;
+    if (typeof channel.createWebhook !== 'function') continue;
+
+    let existingNames = new Set();
+    try {
+      const existing = await channel.fetchWebhooks();
+      existingNames = new Set(existing.map((w) => String(w.name || '').toLowerCase()));
+    } catch {
+      existingNames = new Set();
+    }
+
+    for (const hook of hooks) {
+      const name = String(hook?.name || 'Webhook').slice(0, 80);
+      if (existingNames.has(name.toLowerCase())) continue;
+      try {
+        await channel.createWebhook({ name, reason: 'Restore from backup' });
+        existingNames.add(name.toLowerCase());
+        createdCount += 1;
+        if (safeDelay > 0 && createdCount % 5 === 0) await sleep(safeDelay);
+      } catch (err) {
+        logger.warn({ err, webhookName: name }, 'Webhook restore failed');
+      }
+    }
+  }
+}
+
+async function restoreThreads(guild, threadsData, channelIdMap = new Map(), delayMs = 200) {
+  if (!Array.isArray(threadsData) || !threadsData.length) return;
+  const safeDelay = Math.max(0, Math.floor(delayMs || 0));
+  const channelCache = await guild.channels.fetch().catch(() => null);
+  let createdCount = 0;
+
+  for (const t of threadsData) {
+    const parentId = channelIdMap.get(String(t.parentId || '')) || t.parentId;
+    if (!parentId) continue;
+    const parent = channelCache?.get?.(parentId) || (await guild.channels.fetch(parentId).catch(() => null));
+    if (!parent?.threads?.create) continue;
+
+    const name = String(t?.name || 'restored-thread').slice(0, 100);
+    const autoArchiveDuration = t?.autoArchiveDuration || undefined;
+
+    try {
+      let thread = null;
+      if (parent.type === ChannelType.GuildForum) {
+        thread = await parent.threads.create({
+          name,
+          autoArchiveDuration,
+          message: { content: 'Restored from backup.' }
+        });
+      } else {
+        thread = await parent.threads.create({
+          name,
+          autoArchiveDuration,
+          reason: 'Restore from backup'
+        });
+      }
+
+      if (thread && t?.locked) {
+        await thread.setLocked(true).catch(() => null);
+      }
+      if (thread && t?.archived) {
+        await thread.setArchived(true).catch(() => null);
+      }
+
+      createdCount += 1;
+      if (safeDelay > 0 && createdCount % 5 === 0) await sleep(safeDelay);
+    } catch (err) {
+      logger.warn({ err, threadName: name }, 'Thread restore failed');
+    }
+  }
+}
+
+async function restoreNicknames(guild, nicknamesData, membersCache = null, delayMs = 200) {
+  if (!Array.isArray(nicknamesData) || !nicknamesData.length) return;
+  const safeDelay = Math.max(0, Math.floor(delayMs || 0));
+  const members = membersCache || (await guild.members.fetch().catch(() => null));
+  if (!members) return;
+
+  let touched = 0;
+  for (const n of nicknamesData) {
+    const userId = String(n?.userId || '').trim();
+    if (!userId) continue;
+    const member = members.get(userId);
+    if (!member) continue;
+    const nickname = String(n?.nickname || '');
+    try {
+      if (nickname && member.nickname !== nickname) {
+        await member.setNickname(nickname, 'Restore from backup');
+        touched += 1;
+      } else if (!nickname && member.nickname) {
+        await member.setNickname(null, 'Restore from backup');
+        touched += 1;
+      }
+      if (safeDelay > 0 && touched % 10 === 0) await sleep(safeDelay);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+async function restoreRoleAssignments(guild, roleAssignments, roleIdMap = new Map(), membersCache = null, delayMs = 200) {
+  if (!Array.isArray(roleAssignments) || !roleAssignments.length) return;
+  const safeDelay = Math.max(0, Math.floor(delayMs || 0));
+  const members = membersCache || (await guild.members.fetch().catch(() => null));
+  if (!members) return;
+
+  let updates = 0;
+  for (const entry of roleAssignments) {
+    const originalRoleId = String(entry?.roleId || '').trim();
+    if (!originalRoleId) continue;
+    const newRoleId = roleIdMap.get(originalRoleId) || originalRoleId;
+    if (!newRoleId) continue;
+    const role = guild.roles.cache.get(newRoleId) || (await guild.roles.fetch(newRoleId).catch(() => null));
+    if (!role) continue;
+    const memberIds = Array.isArray(entry?.members) ? entry.members : [];
+    for (const id of memberIds) {
+      const member = members.get(String(id));
+      if (!member) continue;
+      if (member.roles.cache.has(newRoleId)) continue;
+      try {
+        await member.roles.add(newRoleId, 'Restore from backup');
+        updates += 1;
+        if (safeDelay > 0 && updates % 10 === 0) await sleep(safeDelay);
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+async function restoreMessages({ guild, backupDir, channelIdMap, maxPerChannel = 200, delayMs = 250 }) {
+  const messagesDir = path.join(backupDir, 'messages');
+  const entries = await fs.readdir(messagesDir).catch(() => []);
+  const safeDelay = Math.max(0, Math.floor(delayMs || 0));
+
+  const channelCache = await guild.channels.fetch().catch(() => null);
+
+  for (const file of entries) {
+    if (!file.endsWith('.json')) continue;
+    const oldChannelId = file.replace('.json', '');
+    const newChannelId = channelIdMap.get(oldChannelId) || oldChannelId;
+    if (!newChannelId) continue;
+
+    const channel = channelCache?.get?.(newChannelId) || (await guild.channels.fetch(newChannelId).catch(() => null));
+    if (!channel?.isTextBased?.()) continue;
+
+    const data = await readJson(path.join(messagesDir, file)).catch(() => []);
+    const msgs = Array.isArray(data) ? data.slice().reverse().slice(0, maxPerChannel) : [];
+    if (!msgs.length) continue;
+
+    let webhookClient = null;
+    let webhookRef = null;
+    try {
+      const hook = await channel.createWebhook({ name: 'Restore' });
+      webhookRef = hook;
+      webhookClient = new WebhookClient({ url: hook.url });
+    } catch {
+      webhookClient = null;
+    }
+
+    for (const m of msgs) {
+      const content = (m.content || '').slice(0, 1800);
+      const header = m.authorUsername ? `**${m.authorUsername}**:` : '**Unknown**:';
+      const text = `${header} ${content}`.slice(0, 2000);
+      try {
+        const attachments = Array.isArray(m.attachments) ? m.attachments : [];
+        const files = attachments.map((a) => a.url).filter(Boolean).slice(0, 3);
+        const embeds = Array.isArray(m.embeds) ? m.embeds.slice(0, 3) : [];
+        const payload = {
+          content: text,
+          embeds: embeds.length ? embeds : undefined,
+          files: files.length ? files : undefined
+        };
+        if (webhookClient) {
+          await webhookClient.send(payload);
+        } else {
+          const sent = await channel.send(payload);
+          if (Array.isArray(m.reactions) && m.reactions.length) {
+            for (const r of m.reactions.slice(0, 3)) {
+              const emoji = r?.emoji || '';
+              if (!emoji) continue;
+              await sent.react(emoji).catch(() => null);
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+      if (safeDelay > 0) await sleep(safeDelay);
+    }
+
+    if (webhookRef) {
+      await webhookRef.delete().catch(() => null);
+    }
+  }
+}
+
+async function restoreBans(guild, bansData) {
+  if (!Array.isArray(bansData)) return;
+  for (const b of bansData) {
+    const userId = b.userId || b.id;
+    if (!userId) continue;
+    try {
+      await guild.members.ban(userId, { reason: b.reason || 'Restore ban list' });
+    } catch {
+      // ignore
+    }
+  }
+}
+
+async function pruneRoles(guild, rolesData) {
+  if (!Array.isArray(rolesData) || !rolesData.length) return;
+  const desired = new Map();
+  for (const r of rolesData) {
+    if (r.managed) continue;
+    if (r.id === guild.id) continue;
+    const key = roleKey(r.name);
+    desired.set(key, (desired.get(key) || 0) + 1);
+  }
+
+  const existing = await guild.roles.fetch().catch(() => null);
+  if (!existing) return;
+  for (const role of existing.values()) {
+    if (role.managed) continue;
+    if (role.id === guild.id) continue;
+    const key = roleKey(role.name);
+    const count = desired.get(key) || 0;
+    if (count > 0) {
+      desired.set(key, count - 1);
+      continue;
+    }
+    try {
+      await role.delete('Prune roles not in backup');
+    } catch {
+      // ignore
+    }
+  }
+}
+
+async function wipeExisting(guild, { wipeChannels = true, wipeRoles = true } = {}) {
+  if (wipeChannels) {
+    const channels = await guild.channels.fetch().catch(() => null);
+    if (channels) {
+      for (const ch of channels.values()) {
+        try {
+          await ch.delete('Wipe before restore');
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  if (wipeRoles) {
+    const roles = await guild.roles.fetch().catch(() => null);
+    if (roles) {
+      for (const role of roles.values()) {
+        if (role.managed) continue;
+        if (role.id === guild.id) continue;
+        try {
+          await role.delete('Wipe before restore');
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+}
+
+async function restoreBackup({
+  discordClient,
+  guildId,
+  backupId,
+  options = {
+    restoreMessages: false,
+    maxMessagesPerChannel: 200,
+    wipe: false,
+    restoreBans: false,
+    pruneChannels: true,
+    pruneRoles: true,
+    targetGuildId: ''
+  }
+}) {
+  const sourceGuildId = String(options.sourceGuildId || guildId || '').trim();
+  const targetGuildId = String(options.targetGuildId || guildId || '').trim();
+  const pruneChannelsEnabled = typeof options.pruneChannels === 'boolean' ? options.pruneChannels : true;
+  const pruneRolesEnabled =
+    typeof options.pruneRoles === 'boolean' ? options.pruneRoles : typeof options.pruneChannels === 'boolean' ? options.pruneChannels : true;
+  const backup = await Backup.findOne({ guildId: sourceGuildId, backupId });
+  if (!backup) return { ok: false, reason: 'Backup not found.' };
+
+  await sendLog({
+    discordClient,
+    guildId: targetGuildId || guildId,
+    type: 'backup',
+    webhookCategory: 'backup',
+    content:
+      targetGuildId && targetGuildId !== sourceGuildId
+        ? `🔄 Restore started: \`${backupId}\` (from \`${sourceGuildId}\` → \`${targetGuildId}\`)`
+        : `🔄 Restore started: \`${backupId}\``
+  });
+
+  try {
+    const guild = await discordClient.guilds.fetch(targetGuildId || guildId);
+    const rolesPath = path.join(backup.path, 'roles.json');
+    const channelsPath = path.join(backup.path, 'channels.json');
+    const bansPath = path.join(backup.path, 'bans.json');
+    const serverPath = path.join(backup.path, 'server.json');
+    const emojisPath = path.join(backup.path, 'emojis.json');
+    const webhooksPath = path.join(backup.path, 'webhooks.json');
+    const threadsPath = path.join(backup.path, 'threads.json');
+    const nicknamesPath = path.join(backup.path, 'nicknames.json');
+    const roleAssignmentsPath = path.join(backup.path, 'role_assignments.json');
+
+    const hasRoles = await fileExists(rolesPath);
+    const hasChannels = await fileExists(channelsPath);
+    const hasBans = await fileExists(bansPath);
+    const hasServer = await fileExists(serverPath);
+    const hasEmojis = await fileExists(emojisPath);
+    const hasWebhooks = await fileExists(webhooksPath);
+    const hasThreads = await fileExists(threadsPath);
+    const hasNicknames = await fileExists(nicknamesPath);
+    const hasRoleAssignments = await fileExists(roleAssignmentsPath);
+
+    const rolesData = hasRoles ? await readJson(rolesPath) : [];
+    const channelsData = hasChannels ? await readJson(channelsPath) : [];
+    const serverData = hasServer ? await readJson(serverPath).catch(() => null) : null;
+    const emojisData = hasEmojis ? await readJson(emojisPath).catch(() => []) : [];
+    const webhooksData = hasWebhooks ? await readJson(webhooksPath).catch(() => []) : [];
+    const threadsData = hasThreads ? await readJson(threadsPath).catch(() => []) : [];
+    const nicknamesData = hasNicknames ? await readJson(nicknamesPath).catch(() => []) : [];
+    const roleAssignments = hasRoleAssignments ? await readJson(roleAssignmentsPath).catch(() => []) : [];
+
+    if (options.wipe && (hasRoles || hasChannels)) {
+      await wipeExisting(guild, { wipeChannels: hasChannels, wipeRoles: hasRoles });
+    } else {
+      if (pruneChannelsEnabled && hasChannels) {
+        await pruneChannels(guild, channelsData);
+      }
+      if (pruneRolesEnabled && hasRoles) {
+        await pruneRoles(guild, rolesData);
+      }
+    }
+
+    const roleIdMap = hasRoles
+      ? await restoreRoles(guild, rolesData, { reuseExisting: pruneRolesEnabled && !options.wipe })
+      : new Map();
+    const channelIdMap = hasChannels
+      ? await restoreChannels(guild, channelsData, roleIdMap, { reuseExisting: pruneChannelsEnabled && !options.wipe })
+      : new Map();
+
+    if (serverData) {
+      await restoreServerSettings(guild, serverData, channelIdMap);
+    }
+
+    if (hasEmojis) {
+      await restoreEmojis(guild, emojisData);
+    }
+
+    if (hasWebhooks) {
+      await restoreWebhooks(guild, webhooksData, channelIdMap);
+    }
+
+    if (hasThreads) {
+      await restoreThreads(guild, threadsData, channelIdMap);
+    }
+
+    let membersCache = null;
+    if (hasNicknames || hasRoleAssignments) {
+      membersCache = await guild.members.fetch().catch(() => null);
+    }
+
+    if (hasRoleAssignments) {
+      await restoreRoleAssignments(guild, roleAssignments, roleIdMap, membersCache);
+    }
+
+    if (hasNicknames) {
+      await restoreNicknames(guild, nicknamesData, membersCache);
+    }
+
+    if (options.restoreMessages) {
+      await restoreMessages({
+        guild,
+        backupDir: backup.path,
+        channelIdMap,
+        maxPerChannel: options.maxMessagesPerChannel ?? 200
+      });
+    }
+
+    if (options.restoreBans && hasBans) {
+      const bansData = await readJson(bansPath).catch(() => []);
+      await restoreBans(guild, bansData);
+    }
+
+    await sendLog({
+      discordClient,
+      guildId: targetGuildId || guildId,
+      type: 'backup',
+      webhookCategory: 'backup',
+      content:
+        targetGuildId && targetGuildId !== sourceGuildId
+          ? `✅ Restore complete: \`${backupId}\` (to \`${targetGuildId}\`)`
+          : `✅ Restore complete: \`${backupId}\``
+    });
+    return { ok: true };
+  } catch (err) {
+    await sendLog({
+      discordClient,
+      guildId: targetGuildId || guildId,
+      type: 'backup',
+      webhookCategory: 'backup',
+      content: `❌ Restore failed: \`${backupId}\` (${String(err?.message || err)})`
+    });
+    return { ok: false, reason: String(err?.message || err) };
+  }
+}
+
+module.exports = { restoreBackup };
