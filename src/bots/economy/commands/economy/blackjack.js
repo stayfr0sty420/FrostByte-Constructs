@@ -334,9 +334,15 @@ module.exports = {
     const bet = interaction.options.getInteger('bet', true);
     await interaction.deferReply();
 
+    const playerLabel = interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
+    const pre = new EmbedBuilder()
+      .setTitle(`${playerLabel} wagers ${formatCredits(bet, '🪙')} to play Blackjack 🃏`)
+      .setColor(0x3498db)
+      .setDescription(`🪙 Shuffling...`);
+    await interaction.editReply({ embeds: [pre], components: [] }).catch(() => null);
+
     await maybeSyncBlackjackActionEmojis(client, guildId);
 
-    const playerLabel = interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
     const emojis = await getEconomyEmojis(client, guildId);
     invalidateGuildEmojiCacheMany(guildId, [
       'RBHit',
@@ -355,11 +361,6 @@ module.exports = {
       (async () => (await resolveGuildEmoji(client, guildId, 'RBStand')) || (await resolveGuildEmoji(client, guildId, 'Stand')))(),
       (async () => (await resolveGuildEmoji(client, guildId, 'RBDouble')) || (await resolveGuildEmoji(client, guildId, 'Double')))()
     ]);
-    const pre = new EmbedBuilder()
-      .setTitle(`${playerLabel} wagers ${formatCredits(bet, emojis.currency)} to play Blackjack 🃏`)
-      .setColor(0x3498db)
-      .setDescription(`${emojis.coinSpin} Shuffling...`);
-    await interaction.editReply({ embeds: [pre], components: [] }).catch(() => null);
     await sleep(600);
 
     await getOrCreateUser({ guildId, discordId: interaction.user.id, username: interaction.user.username });

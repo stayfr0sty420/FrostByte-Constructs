@@ -521,6 +521,7 @@ module.exports = {
       return '';
     })();
     await interaction.deferReply();
+    await interaction.editReply({ content: '🪙 Preparing coinflip...' }).catch(() => null);
 
     const user = await getOrCreateUser({
       guildId,

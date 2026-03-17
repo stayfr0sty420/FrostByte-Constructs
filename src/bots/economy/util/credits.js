@@ -323,7 +323,8 @@ async function getEconomyEmojis(client, guildId) {
   const missingDice = !diceRes.foundAll || !diceBetTypeRes.foundAll;
 
   if (missingRequired || missingDice) {
-    await maybeSeedEconomyEmojis(client, guildId, { waitFull: true });
+    // Avoid blocking command responses; wait briefly for seeding, then fallback to unicode if needed.
+    await maybeSeedEconomyEmojis(client, guildId, { waitFull: false });
     [currency, heads, tails, coinSpin, slotSpinFrames] = await Promise.all([
       resolveGuildEmojiAny(client, guildId, CURRENCY_EMOJI_ALIASES),
       resolveGuildEmojiAny(client, guildId, HEADS_EMOJI_ALIASES),
