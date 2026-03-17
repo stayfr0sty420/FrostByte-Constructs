@@ -55,6 +55,16 @@ function isSnowflake(id) {
   return /^\d{15,22}$/.test(String(id || '').trim());
 }
 
+async function leaveGuildIfPresent(client, guildId) {
+  if (!client?.guilds || !guildId) return false;
+  const gId = String(guildId || '').trim();
+  if (!gId) return false;
+  const guild = client.guilds.cache.get(gId) || (await client.guilds.fetch(gId).catch(() => null));
+  if (!guild) return false;
+  await guild.leave().catch(() => null);
+  return true;
+}
+
 async function handleBackupRestore(req, res, backupId) {
   const guildId = req.session.activeGuildId;
   if (!backupId) {
@@ -303,8 +313,21 @@ router.post('/servers/delete/:guildId', requireAdmin, async (req, res) => {
     Template.deleteMany({ guildId })
   ]);
 
+  const discord = req.app.locals.discord || {};
+  const leaveResults = await Promise.all([
+    leaveGuildIfPresent(discord.economy, guildId),
+    leaveGuildIfPresent(discord.backup, guildId),
+    leaveGuildIfPresent(discord.verification, guildId)
+  ]);
+  const leftCount = leaveResults.filter(Boolean).length;
+
   if (req.session.activeGuildId === guildId) delete req.session.activeGuildId;
-  setFlash(req, { type: 'info', message: `Deleted server ${guildId} data.` });
+  setFlash(req, {
+    type: 'info',
+    message: leftCount
+      ? `Deleted server ${guildId} data and removed ${leftCount} bot(s).`
+      : `Deleted server ${guildId} data.`
+  });
   return res.redirect('/admin/servers');
 });
 
