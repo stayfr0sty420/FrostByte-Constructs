@@ -13,24 +13,19 @@ const User = require('../../../../db/models/User');
 const Transaction = require('../../../../db/models/Transaction');
 const { getEconomyAccountGuildId } = require('../../../../services/economy/accountScope');
 const {
-  resolveGuildEmoji,
   getEconomyEmojis,
   formatCredits,
   buildOutcomeFooter,
-  buildPushFooter,
-  invalidateGuildEmojiCacheMany
+  buildPushFooter
 } = require('../../util/credits');
 const { RoBotEmojis } = require('../../util/robotEmojiLookup');
-const { seedEconomyEmojisForGuild } = require('../../util/seedEconomyEmojis');
 const { sendLog } = require('../../../../services/discord/loggingService');
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const ACTION_EMOJI_SYNC_COOLDOWN_MS = 15 * 1000;
-const actionEmojiSyncCooldown = new Map(); // guildId -> lastAttemptAt
-const ACTION_EMOJI_NAMES = ['RBHit', 'RBStand', 'RBDouble', 'Hit', 'Stand', 'Double'];
+// Emoji IDs are resolved from static constants (no seeding/sync).
 
 function normalizeButtonEmoji(input, fallback = '') {
   const raw = String(input || '').trim();
@@ -38,31 +33,6 @@ function normalizeButtonEmoji(input, fallback = '') {
   if (m) return { animated: Boolean(m[1]), name: m[2], id: m[3] };
   if (raw) return raw;
   return fallback || '';
-}
-
-async function maybeSyncBlackjackActionEmojis(client, guildId) {
-  const gId = String(guildId || '').trim();
-  if (!gId || !client?.guilds) return;
-
-  const now = Date.now();
-  const last = actionEmojiSyncCooldown.get(gId) || 0;
-  if (now - last < ACTION_EMOJI_SYNC_COOLDOWN_MS) return;
-  actionEmojiSyncCooldown.set(gId, now);
-
-  const guild = client.guilds.cache.get(gId) || (await client.guilds.fetch(gId).catch(() => null));
-  if (!guild) return;
-
-  const res = await seedEconomyEmojisForGuild(guild, {
-    only: ACTION_EMOJI_NAMES,
-    refreshFromAssets: true,
-    preserveOld: false
-  }).catch(() => null);
-
-  if (!res) return;
-  const touched = [...(res.created || []), ...(res.refreshed || [])];
-  if (!touched.length) return;
-
-  invalidateGuildEmojiCacheMany(gId, [...ACTION_EMOJI_NAMES, 'BjHit', 'BjStand', 'BjDouble']);
 }
 
 function buildDeck() {
@@ -341,26 +311,7 @@ module.exports = {
       .setDescription(`${preSpin} Shuffling...`);
     await interaction.reply({ embeds: [pre], components: [] }).catch(() => null);
 
-    await maybeSyncBlackjackActionEmojis(client, guildId);
-
     const emojis = await getEconomyEmojis(client, guildId);
-    invalidateGuildEmojiCacheMany(guildId, [
-      'RBHit',
-      'RBStand',
-      'RBDouble',
-      'Hit',
-      'Stand',
-      'Double',
-      'BjHit',
-      'BjStand',
-      'BjDouble'
-    ]);
-
-    const [hitEmoji, standEmoji, doubleEmoji] = await Promise.all([
-      (async () => (await resolveGuildEmoji(client, guildId, 'RBHit')) || (await resolveGuildEmoji(client, guildId, 'Hit')))(),
-      (async () => (await resolveGuildEmoji(client, guildId, 'RBStand')) || (await resolveGuildEmoji(client, guildId, 'Stand')))(),
-      (async () => (await resolveGuildEmoji(client, guildId, 'RBDouble')) || (await resolveGuildEmoji(client, guildId, 'Double')))()
-    ]);
     await sleep(150);
 
     await getOrCreateUser({ guildId, discordId: interaction.user.id, username: interaction.user.username });
@@ -379,9 +330,9 @@ module.exports = {
       playerName: playerLabel,
       emojis,
       actionEmojis: {
-        hit: hitEmoji || emojis?.blackjackActions?.hit || '',
-        stand: standEmoji || emojis?.blackjackActions?.stand || '',
-        double: doubleEmoji || emojis?.blackjackActions?.double || ''
+        hit: emojis?.blackjackActions?.hit || '',
+        stand: emojis?.blackjackActions?.stand || '',
+        double: emojis?.blackjackActions?.double || ''
       },
       deck,
       player,

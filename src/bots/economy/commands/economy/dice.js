@@ -12,29 +12,13 @@ const User = require('../../../../db/models/User');
 const Transaction = require('../../../../db/models/Transaction');
 const { getOrCreateUser } = require('../../../../services/economy/userService');
 const { getEconomyAccountGuildId } = require('../../../../services/economy/accountScope');
-const { getEconomyEmojis, formatCredits, formatCreditsWithLabel, buildOutcomeFooter, invalidateGuildEmojiCacheMany } = require('../../util/credits');
-const { seedEconomyEmojisForGuild } = require('../../util/seedEconomyEmojis');
+const { getEconomyEmojis, formatCredits, formatCreditsWithLabel, buildOutcomeFooter } = require('../../util/credits');
 const { RoBotEmojis } = require('../../util/robotEmojiLookup');
 const { sendLog } = require('../../../../services/discord/loggingService');
 
 const GAME_TTL_MS = 2 * 60 * 1000;
 const MAX_ALL_IN = 500_000;
-const DICE_EMOJI_SYNC_COOLDOWN_MS = 2 * 60 * 1000;
-const diceEmojiSyncCooldown = new Map(); // guildId -> lastAttemptAt
-const DICE_EMOJI_NAMES = [
-  'RBDice1',
-  'RBDice2',
-  'RBDice3',
-  'RBDice4',
-  'RBDice5',
-  'RBDice6',
-  'RBDiceBDTS',
-  'RBDiceTB59',
-  'RBDiceSE',
-  'RBDiceU7',
-  'RBDiceO7',
-  'RBDiceE7'
-];
+// Emoji IDs are resolved from static constants (no seeding/sync).
 
 // Dice bet types (matching Better Blackjack style odds).
 // Multipliers are TOTAL RETURN (bet is already reserved/debited), so net profit is (payout - bet).
@@ -103,69 +87,6 @@ function parseBetInput(input, walletBalance) {
   const n = Math.floor(Number(cleaned));
   if (!Number.isFinite(n) || n < 1) return { ok: false, reason: 'Invalid bet.' };
   return { ok: true, amount: n, allIn: false, cap: 0 };
-}
-
-async function maybeSyncDiceEmojis(client, guildId) {
-  const gId = String(guildId || '').trim();
-  if (!gId || !client?.guilds) return;
-
-  const now = Date.now();
-  const last = diceEmojiSyncCooldown.get(gId) || 0;
-  if (now - last < DICE_EMOJI_SYNC_COOLDOWN_MS) return;
-  diceEmojiSyncCooldown.set(gId, now);
-
-  const guild = client.guilds.cache.get(gId) || (await client.guilds.fetch(gId).catch(() => null));
-  if (!guild) return;
-
-  const res = await seedEconomyEmojisForGuild(guild, {
-    only: DICE_EMOJI_NAMES,
-    refreshFromAssets: true,
-    preserveOld: false
-  }).catch(() => null);
-
-  if (!res) return;
-  const touched = [...(res.created || []), ...(res.refreshed || [])];
-  if (!touched.length) return;
-
-  invalidateGuildEmojiCacheMany(gId, [
-    ...DICE_EMOJI_NAMES,
-    'DiceBDTS',
-    'DiceTB59',
-    'DiceSE',
-    'DiceU7',
-    'DiceO7',
-    'DiceE7',
-    'BothDiceTheSame',
-    'TotalBetween5And9',
-    'SnakeEyes',
-    'TotalUnder7',
-    'TotalOver7',
-    'TotalExact7',
-    'RBOne',
-    'RBTwo',
-    'RBThree',
-    'RBFour',
-    'RBFive',
-    'RBSix',
-    'One',
-    'Two',
-    'Three',
-    'Four',
-    'Five',
-    'Six',
-    'RodDice1',
-    'RodDice2',
-    'RodDice3',
-    'RodDice4',
-    'RodDice5',
-    'RodDice6',
-    'Dice1',
-    'Dice2',
-    'Dice3',
-    'Dice4',
-    'Dice5',
-    'Dice6'
-  ]);
 }
 
 function pickDie() {
@@ -523,7 +444,6 @@ module.exports = {
     const diceEmoji = RoBotEmojis?.dice?.faces?.[1] || '🎲';
     const placeholder = new EmbedBuilder().setColor(0x2563eb).setDescription(`${diceEmoji} Rolling dice...`);
     await interaction.reply({ embeds: [placeholder] }).catch(() => null);
-    void maybeSyncDiceEmojis(client, guildId).catch(() => null);
 
     const playerName = interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
     const user = await getOrCreateUser({ guildId, discordId: interaction.user.id, username: interaction.user.username });

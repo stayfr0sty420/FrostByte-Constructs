@@ -6,14 +6,11 @@ const { nanoid } = require('nanoid');
 const { slots } = require('../../../../services/economy/gamblingService');
 const { getOrCreateUser } = require('../../../../services/economy/userService');
 const {
-  resolveGuildEmoji,
   getEconomyEmojis,
   formatCredits,
   formatCreditsWithLabel,
-  buildOutcomeFooter,
-  invalidateGuildEmojiCacheMany
+  buildOutcomeFooter
 } = require('../../util/credits');
-const { seedEconomyEmojisForGuild } = require('../../util/seedEconomyEmojis');
 const { RoBotEmojis } = require('../../util/robotEmojiLookup');
 const { sendLog } = require('../../../../services/discord/loggingService');
 
@@ -28,25 +25,7 @@ const SYMBOL_KEYS = ['🪙', '🍒', '🔔', '🟥', '7️⃣', '💎'];
 const MAX_MULT = 100;
 const GRID_ROWS = 3;
 const GRID_COLS = 3;
-const SLOT_EMOJI_SYNC_COOLDOWN_MS = 15 * 1000;
-const slotEmojiSyncCooldown = new Map(); // guildId -> lastAttemptAt
-const slotSpinRepairAttempted = new Set(); // guildId
-const SLOT_SPIN_EMOJI_NAMES = ['RBSlotSpin', 'RBSlotSpin2', 'RBSlotSpin3'];
-const SLOT_EMOJI_NAMES = [
-  'RBSlotsGold',
-  'RBSlotsCherry',
-  'RBSlotsBell',
-  'RBSlotsBar',
-  'RBSlots777',
-  'RBSlotsDiamond',
-  'SlotCoin',
-  'SlotCherry',
-  'SlotBell',
-  'SlotBar',
-  'Slot777',
-  'SlotDiamond',
-  ...SLOT_SPIN_EMOJI_NAMES
-];
+// Emoji IDs are resolved from static constants (no seeding/sync).
 
 function parseBetInput(input, walletBalance) {
   const raw = String(input || '').trim().toLowerCase();
@@ -151,163 +130,15 @@ function normalizeSlotSpinFrames(frames = [], symbolMap = {}) {
   return ['🎰', '🪙', '🎰'];
 }
 
-function sanitizeSlotEmoji(raw, fallback) {
-  const value = String(raw || '').trim();
-  if (!value) return fallback;
-  return isRenderableEmoji(value) ? value : fallback;
-}
-
-function countRenderableCustomEmojis(values = []) {
-  return (Array.isArray(values) ? values : []).filter((v) => isRenderableEmoji(v)).length;
-}
-
-function countAnimatedCustomEmojis(values = []) {
-  return (Array.isArray(values) ? values : []).filter((v) => /^<a:[\w~]{1,64}:\d{5,25}>$/.test(String(v || '').trim())).length;
-}
-
-async function resolveAnyEmoji(client, guildId, names) {
-  const list = Array.isArray(names) ? names : [names];
-  for (const name of list) {
-    const emoji = await resolveGuildEmoji(client, guildId, name);
-    if (emoji) return emoji;
-  }
-  return '';
-}
-
-async function resolveSlotSpinFramesStrict(client, guildId) {
-  return await Promise.all([
-    resolveAnyEmoji(client, guildId, ['RBSlotSpin', 'RBSlotSpin~1', 'SlotSpin']),
-    resolveAnyEmoji(client, guildId, ['RBSlotSpin2', 'RBSlotSpin2~1', 'SlotSpin2']),
-    resolveAnyEmoji(client, guildId, ['RBSlotSpin3', 'RBSlotSpin3~1', 'SlotSpin3'])
-  ]);
-}
-
-async function maybeSyncSlotEmojis(client, guildId, options = {}) {
-  const gId = String(guildId || '').trim();
-  if (!gId || !client?.guilds) return;
-  const forceSpinRepair = Boolean(options?.forceSpinRepair);
-
-  const now = Date.now();
-  const last = slotEmojiSyncCooldown.get(gId) || 0;
-  if (!forceSpinRepair && now - last < SLOT_EMOJI_SYNC_COOLDOWN_MS) return;
-  slotEmojiSyncCooldown.set(gId, now);
-
-  const guild = client.guilds.cache.get(gId) || (await client.guilds.fetch(gId).catch(() => null));
-  if (!guild) return;
-  const hasAllNamedSpinFrames = SLOT_SPIN_EMOJI_NAMES.every((emojiName) =>
-    guild?.emojis?.cache?.some?.((e) => String(e?.name || '').toLowerCase() === String(emojiName).toLowerCase())
-  );
-  const shouldForceSlotSpinRepair =
-    forceSpinRepair || (!slotSpinRepairAttempted.has(gId) && !hasAllNamedSpinFrames);
-  if (shouldForceSlotSpinRepair) slotSpinRepairAttempted.add(gId);
-
-  const res = await seedEconomyEmojisForGuild(guild, {
-    force: true,
-    only: SLOT_EMOJI_NAMES,
-    refreshFromAssets: true,
-    preserveOld: false,
-    forceRefreshNames: shouldForceSlotSpinRepair ? SLOT_SPIN_EMOJI_NAMES : []
-  }).catch(() => null);
-
-  if (!res) return;
-  const touched = [...(res.created || []), ...(res.refreshed || [])];
-  if (!touched.length) return;
-
-  invalidateGuildEmojiCacheMany(gId, [
-    ...SLOT_EMOJI_NAMES,
-    'Gold',
-    'Diamond',
-    'Cherry',
-    'Bell',
-    'Bar',
-    '777',
-    'Coin',
-    'Coins',
-    'CoinStack',
-    'GoldCoin'
-  ]);
-}
-
-async function resolveSlotsSymbolMap(client, guildId, economyEmojis) {
+async function resolveSlotsSymbolMap(economyEmojis = {}) {
   const seededMap = economyEmojis?.slotSymbols || {};
-  const isEmojiLike = (value) => {
-    const v = String(value || '').trim();
-    if (!v) return false;
-    if (isRenderableEmoji(v)) return true;
-    if (/^:[\w~]{1,64}:$/.test(v)) return false;
-    return Array.from(v).some((ch) => Number(ch.codePointAt(0) || 0) > 127);
-  };
-  const hasSeeded =
-    seededMap &&
-    typeof seededMap === 'object' &&
-    ['🪙', '🍒', '🔔', '🟥', '7️⃣', '💎'].every((k) => isEmojiLike(seededMap[k]));
-  if (hasSeeded) {
-    return {
-      '🪙': seededMap['🪙'],
-      '🍒': seededMap['🍒'],
-      '🔔': seededMap['🔔'],
-      '🟥': seededMap['🟥'],
-      '7️⃣': seededMap['7️⃣'],
-      '💎': seededMap['💎']
-    };
-  }
-
-  await maybeSyncSlotEmojis(client, guildId);
-
-  // Always clear cached slot emoji strings so we don't keep stale IDs after refreshes/deletes.
-  invalidateGuildEmojiCacheMany(String(guildId || ''), [
-    ...SLOT_EMOJI_NAMES,
-    'SlotGold',
-    'Gold',
-    'Diamond',
-    'Cherry',
-    'Bell',
-    'Bar',
-    'BAR',
-    '777',
-    'Seven',
-    'Sevens',
-    'Coin',
-    'Coins',
-    'CoinStack',
-    'GoldCoin'
-  ]);
-
-  const resolveRaw = async () =>
-    await Promise.all([
-      resolveAnyEmoji(client, guildId, ['RBSlotsGold', 'SlotCoin', 'SlotGold', 'Gold', 'Coin', 'Coins', 'CoinStack', 'GoldCoin']),
-      resolveAnyEmoji(client, guildId, ['RBSlotsCherry', 'SlotCherry', 'Cherry', 'Cherries']),
-      resolveAnyEmoji(client, guildId, ['RBSlotsBell', 'SlotBell', 'Bell']),
-      resolveAnyEmoji(client, guildId, ['RBSlotsBar', 'SlotBar', 'Bar', 'BAR']),
-      resolveAnyEmoji(client, guildId, ['RBSlots777', 'Slot777', '777', 'Seven', 'Sevens']),
-      resolveAnyEmoji(client, guildId, ['RBSlotsDiamond', 'SlotDiamond', 'Diamond'])
-    ]);
-
-  let [slotCoin, slotCherry, slotBell, slotBar, slot777, slotDiamond] = await resolveRaw();
-
-  const hasBrokenMarkup = [slotCoin, slotCherry, slotBell, slotBar, slot777, slotDiamond].some(
-    (value) => String(value || '').trim() && !isRenderableEmoji(value)
-  );
-  if (hasBrokenMarkup) {
-    const guild = client?.guilds?.cache?.get?.(guildId) || (await client?.guilds?.fetch?.(guildId).catch(() => null));
-    if (guild) {
-      await seedEconomyEmojisForGuild(guild, {
-        only: SLOT_EMOJI_NAMES,
-        refreshFromAssets: true,
-        preserveOld: false
-      }).catch(() => null);
-    }
-    invalidateGuildEmojiCacheMany(String(guildId || ''), [...SLOT_EMOJI_NAMES, 'SlotGold', 'Gold', 'Cherry', 'Bell', 'Bar', 'BAR', '777', 'Diamond', 'Coin', 'Coins', 'CoinStack', 'GoldCoin']);
-    [slotCoin, slotCherry, slotBell, slotBar, slot777, slotDiamond] = await resolveRaw();
-  }
-
   return {
-    '🪙': sanitizeSlotEmoji(slotCoin, '🪙'),
-    '🍒': sanitizeSlotEmoji(slotCherry, '🍒'),
-    '🔔': sanitizeSlotEmoji(slotBell, '🔔'),
-    '🟥': sanitizeSlotEmoji(slotBar, '🟥'),
-    '7️⃣': sanitizeSlotEmoji(slot777, '7️⃣'),
-    '💎': sanitizeSlotEmoji(slotDiamond, '💎')
+    '🪙': String(seededMap['🪙'] || '🪙').trim() || '🪙',
+    '🍒': String(seededMap['🍒'] || '🍒').trim() || '🍒',
+    '🔔': String(seededMap['🔔'] || '🔔').trim() || '🔔',
+    '🟥': String(seededMap['🟥'] || '🟥').trim() || '🟥',
+    '7️⃣': String(seededMap['7️⃣'] || '7️⃣').trim() || '7️⃣',
+    '💎': String(seededMap['💎'] || '💎').trim() || '💎'
   };
 }
 
@@ -424,20 +255,8 @@ module.exports = {
       return await interaction.editReply({ content: parsed.allIn ? 'Nothing to bet (wallet is empty).' : 'Invalid bet.', embeds: [], components: [] });
     }
 
-    const symbolMap = await resolveSlotsSymbolMap(client, guildId, emojis);
-    const refreshedEmojis = await getEconomyEmojis(client, guildId);
-    let rawSlotSpinFrames = await resolveSlotSpinFramesStrict(client, guildId);
-    const customSpinCount = countRenderableCustomEmojis(rawSlotSpinFrames);
-    const animatedSpinCount = countAnimatedCustomEmojis(rawSlotSpinFrames);
-    if (customSpinCount < 3 || animatedSpinCount < 3) {
-      await maybeSyncSlotEmojis(client, guildId, { forceSpinRepair: true });
-      invalidateGuildEmojiCacheMany(String(guildId || ''), [...SLOT_SPIN_EMOJI_NAMES, 'SlotSpin', 'SlotSpin2', 'SlotSpin3']);
-      rawSlotSpinFrames = await resolveSlotSpinFramesStrict(client, guildId);
-    }
-    if (countRenderableCustomEmojis(rawSlotSpinFrames) < 3) {
-      rawSlotSpinFrames = [symbolMap['🟥'], symbolMap['7️⃣'], symbolMap['🔔']].filter(isDisplayableToken);
-    }
-    const slotSpinFrames = normalizeSlotSpinFrames(rawSlotSpinFrames, symbolMap);
+    const symbolMap = await resolveSlotsSymbolMap(emojis);
+    const slotSpinFrames = normalizeSlotSpinFrames(emojis?.slotSpinFrames, symbolMap);
 
     const game = {
       id: nanoid(10),
@@ -449,7 +268,6 @@ module.exports = {
       bet: parsed.amount,
       emojis: {
         ...(emojis || {}),
-        ...(refreshedEmojis || {}),
         slotSpinFrames
       },
       symbolMap,

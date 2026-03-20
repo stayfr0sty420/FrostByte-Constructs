@@ -1,32 +1,20 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 const {
   SlashCommandBuilder,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
-  ButtonStyle,
-  AttachmentBuilder
+  ButtonStyle
 } = require('discord.js');
 const { nanoid } = require('nanoid');
 const { coinflip } = require('../../../../services/economy/gamblingService');
 const { getOrCreateUser } = require('../../../../services/economy/userService');
-const { getEconomyEmojis, formatCredits, formatCreditsWithLabel, buildOutcomeFooter, invalidateGuildEmojiCacheMany } = require('../../util/credits');
-const { seedEconomyEmojisForGuild } = require('../../util/seedEconomyEmojis');
+const { getEconomyEmojis, formatCredits, formatCreditsWithLabel, buildOutcomeFooter } = require('../../util/credits');
 const { RoBotEmojis } = require('../../util/robotEmojiLookup');
 const { sendLog } = require('../../../../services/discord/loggingService');
 
 const GAME_TTL_MS = 2 * 60 * 1000;
-const LOCAL_MEDIA_CACHE_TTL_MS = 60 * 1000;
-const LOCAL_MEDIA_EXTS = ['.gif', '.png', '.webp', '.jpg', '.jpeg'];
-const SOURCE_ROOT = path.resolve(__dirname, '../../../../..');
-const SOURCE_ROOT_PARENT = path.resolve(SOURCE_ROOT, '..');
-const PREFERRED_SPIN_BASENAME = 'coin_3d_spin';
-const COINFLIP_EMOJI_SYNC_COOLDOWN_MS = 15 * 1000;
-const coinflipEmojiSyncCooldown = new Map(); // guildId -> lastAttemptAt
-const COINFLIP_EMOJI_NAMES = ['RBCoinflip'];
 
 function isRenderableEmoji(raw) {
   const value = String(raw || '').trim();
@@ -59,148 +47,8 @@ function resolveCoinFaceEmoji(emojis = {}, side = '') {
   return '';
 }
 
-async function maybeSyncCoinflipEmoji(client, guildId, options = {}) {
-  const gId = String(guildId || '').trim();
-  if (!gId || !client?.guilds) return;
-  const force = Boolean(options?.force);
-
-  const now = Date.now();
-  const last = coinflipEmojiSyncCooldown.get(gId) || 0;
-  if (!force && now - last < COINFLIP_EMOJI_SYNC_COOLDOWN_MS) return;
-  coinflipEmojiSyncCooldown.set(gId, now);
-
-  const guild = client.guilds.cache.get(gId) || (await client.guilds.fetch(gId).catch(() => null));
-  if (!guild) return;
-
-  const hasCanonical = guild?.emojis?.cache?.some?.((e) => String(e?.name || '').toLowerCase() === 'rbcoinflip');
-
-  await seedEconomyEmojisForGuild(guild, {
-    force: true,
-    only: COINFLIP_EMOJI_NAMES,
-    refreshFromAssets: true,
-    preserveOld: false,
-    forceRefreshNames: force || !hasCanonical ? COINFLIP_EMOJI_NAMES : []
-  }).catch(() => null);
-
-  invalidateGuildEmojiCacheMany(gId, ['RBCoinflip', 'RBCoinflip~1', 'CoinSpin', 'CoinSpin~1']);
-}
-
-function resolveSearchDirs() {
-  const roots = [
-    path.resolve(process.cwd()),
-    SOURCE_ROOT,
-    SOURCE_ROOT_PARENT
-  ];
-  const dirs = [];
-  for (const root of roots) {
-    dirs.push(path.resolve(root, 'images'));
-    dirs.push(path.resolve(root, 'images', 'emojis'));
-    dirs.push(path.resolve(root, 'images', 'emojis', 'coinflip'));
-    dirs.push(path.resolve(root, 'images', 'emojis', 'HEADS AND TAILS'));
-  }
-  return Array.from(new Set(dirs.map((d) => path.normalize(d))));
-}
-
-const LOCAL_MEDIA_SEARCH_DIRS = resolveSearchDirs();
-let localCoinMediaCache = { expiresAt: 0, spin: '', heads: '', tails: '' };
-
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function fileExists(filePath) {
-  try {
-    return Boolean(filePath) && fs.existsSync(filePath) && fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function findFirstAsset(candidates = []) {
-  const names = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
-  for (const dir of LOCAL_MEDIA_SEARCH_DIRS) {
-    for (const name of names) {
-      for (const ext of LOCAL_MEDIA_EXTS) {
-        const filePath = path.resolve(dir, `${name}${ext}`);
-        if (fileExists(filePath)) return filePath;
-      }
-    }
-  }
-  return '';
-}
-
-function findAnyAssetByExtension(ext = '.gif') {
-  const wanted = String(ext || '').trim().toLowerCase();
-  if (!wanted) return '';
-  for (const dir of LOCAL_MEDIA_SEARCH_DIRS) {
-    if (!fs.existsSync(dir)) continue;
-    let files = [];
-    try {
-      files = fs.readdirSync(dir);
-    } catch {
-      files = [];
-    }
-    files.sort((a, b) => a.localeCompare(b));
-    for (const file of files) {
-      const fullPath = path.resolve(dir, file);
-      if (!fileExists(fullPath)) continue;
-      if (path.extname(fullPath).toLowerCase() !== wanted) continue;
-      return fullPath;
-    }
-  }
-  return '';
-}
-
-function resolveConfiguredSpinFile() {
-  const configured = String(process.env.ECONOMY_COINSPIN_FILE || process.env.ECONOMY_COINSPIN_PATH || '').trim();
-  if (!configured) return '';
-
-  const candidates = path.isAbsolute(configured)
-    ? [configured]
-    : [
-        path.resolve(process.cwd(), configured),
-        path.resolve(SOURCE_ROOT, configured),
-        path.resolve(SOURCE_ROOT_PARENT, configured)
-      ];
-
-  for (const candidate of candidates) {
-    if (fileExists(candidate)) return candidate;
-  }
-  return '';
-}
-
-function resolveLocalCoinMedia() {
-  const now = Date.now();
-  if (localCoinMediaCache.expiresAt > now) return localCoinMediaCache;
-
-  const heads = findFirstAsset(['RBHeads', 'Heads_Opti', 'Heads']);
-  const tails = findFirstAsset(['RBTails', 'Tails_Opti', 'Tails']);
-  const spinPreferred = findFirstAsset([PREFERRED_SPIN_BASENAME]);
-  const spinConfigured = resolveConfiguredSpinFile();
-  const spinNamed = findFirstAsset([
-    'CoinSpin',
-    'CoinSpinGif',
-    'RBCoinflip',
-    'RBSlotSpin',
-    'RBSlotSpin2',
-    'RBSlotSpin3',
-    'CoinFlip',
-    'CoinFlipSpin',
-    'Spin',
-    'RodstarkSpin',
-    'RodstarkCoinSpin'
-  ]);
-  const spinGifFallback = findAnyAssetByExtension('.gif');
-  const spin = spinPreferred || spinConfigured || spinNamed || spinGifFallback || '';
-
-  localCoinMediaCache = {
-    expiresAt: now + LOCAL_MEDIA_CACHE_TTL_MS,
-    spin: spin || heads || tails || '',
-    heads: heads || spin || tails || '',
-    tails: tails || spin || heads || ''
-  };
-
-  return localCoinMediaCache;
 }
 
 function resolveCoinThumbUrl(emojis = {}, { phase = 'waiting_join', result = '', spinFrame = 0 } = {}) {
@@ -224,47 +72,10 @@ function resolveCoinThumbUrl(emojis = {}, { phase = 'waiting_join', result = '',
   return spinUrl || headsUrl || tailsUrl || '';
 }
 
-function pickLocalCoinMediaFile(media = {}, { phase = 'waiting_join', result = '', spinFrame = 0 } = {}) {
-  const spin = String(media.spin || '').trim();
-  const heads = String(media.heads || '').trim();
-  const tails = String(media.tails || '').trim();
-  if (shouldForceSpinThumbnail(phase) && spin) return spin;
-
-  if (phase === 'result') {
-    if (result === 'heads') return heads || tails || spin || '';
-    if (result === 'tails') return tails || heads || spin || '';
-    return heads || tails || spin || '';
-  }
-
-  if (phase === 'spinning') {
-    if (spin) return spin;
-    if (heads && tails) return spinFrame % 2 === 0 ? heads : tails;
-    return spin || heads || tails || '';
-  }
-
-  return spin || heads || tails || '';
-}
-
-function buildAttachmentName({ phase = 'waiting_join', result = '', spinFrame = 0 } = {}, localPath = '') {
-  const ext = path.extname(localPath || '').toLowerCase() || '.png';
-  if (phase === 'spinning') return `coin_spin_${spinFrame}${ext}`;
-  if (phase === 'result') return `coin_${result || 'result'}${ext}`;
-  return `coin_lobby${ext}`;
-}
-
 function applyCoinThumbnail(embed, game, opts = {}) {
   const phase = opts.phase || 'waiting_join';
   const resultFace = opts?.result?.result || opts.result || '';
   const spinFrame = Number(opts.spinFrame || 0);
-  const media = game?.coinMedia || resolveLocalCoinMedia();
-  if (game && !game.coinMedia) game.coinMedia = media;
-  const localPath = pickLocalCoinMediaFile(media, { phase, result: resultFace, spinFrame });
-  if (localPath) {
-    const name = buildAttachmentName({ phase, result: resultFace, spinFrame }, localPath);
-    embed.setThumbnail(`attachment://${name}`);
-    return { localPath, name };
-  }
-
   const thumbUrl = resolveCoinThumbUrl(game?.emojis || {}, {
     phase,
     result: resultFace,
@@ -279,12 +90,8 @@ function applyCoinThumbnail(embed, game, opts = {}) {
 
 function buildMessagePayload(game, opts = {}, components = []) {
   const embed = buildEmbed(game, opts);
-  const attachment = applyCoinThumbnail(embed, game, opts);
-  const payload = { content: '', embeds: [embed], components };
-  if (attachment?.localPath && attachment?.name) {
-    payload.files = [new AttachmentBuilder(attachment.localPath, { name: attachment.name })];
-  }
-  return payload;
+  applyCoinThumbnail(embed, game, opts);
+  return { content: '', embeds: [embed], components };
 }
 
 async function animateCoinflip({ message, game, pick, rows, totalMs = 140 } = {}) {
@@ -530,11 +337,7 @@ module.exports = {
       username: interaction.user.username
     });
 
-    let emojis = await getEconomyEmojis(client, guildId);
-    if (!isRenderableEmoji(emojis?.coinSpin)) {
-      await maybeSyncCoinflipEmoji(client, guildId, { force: true });
-      emojis = await getEconomyEmojis(client, guildId);
-    }
+    const emojis = await getEconomyEmojis(client, guildId);
 
     const parsed = parseCoinflipRequest({ betInput, sideInput, walletBalance: user.balance });
     if (!parsed.ok) return await interaction.editReply({ content: parsed.reason, embeds: [], components: [] });
@@ -551,7 +354,6 @@ module.exports = {
       playerName,
       bet: parsed.amount,
       emojis,
-      coinMedia: resolveLocalCoinMedia(),
       phase: 'spinning',
       locked: false,
       createdAt: Date.now()
@@ -602,7 +404,6 @@ module.exports = {
     buildChoiceRows,
     buildEmbed,
     buildMessagePayload,
-    resolveLocalCoinMedia,
     coinflip,
     animateCoinflip
   }

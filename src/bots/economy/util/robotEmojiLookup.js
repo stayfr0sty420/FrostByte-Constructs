@@ -140,51 +140,44 @@ function pickEmoji(preferred, fallback) {
 
 function withRoBotEmojiLookup(base = {}) {
   const source = base && typeof base === 'object' ? base : {};
-  const allowExternal = Boolean(source.allowExternal);
-  const diceBase = Array.isArray(source.dice) ? source.dice : [];
-  const diceFaces = allowExternal ? RO_BOT_EMOJIS?.dice?.faces || RO_BOT_EMOJIS?.dice || {} : {};
+  const diceFaces = RO_BOT_EMOJIS?.dice?.faces || RO_BOT_EMOJIS?.dice || {};
+  const dice = DICE_ORDER.map((n, idx) => pickEmoji(diceFaces?.[n], FALLBACK_UNICODE_DICE[idx]));
 
-  const dice = DICE_ORDER.map((n, idx) => pickEmoji(diceFaces?.[n], diceBase[idx] || FALLBACK_UNICODE_DICE[idx]));
-
-  const diceBetTypeBase = source.diceBetType || {};
   const diceBetType = {
-    bothDiceTheSame: pickEmoji(allowExternal ? RO_BOT_EMOJIS?.dice?.betType?.bothDiceTheSame : '', diceBetTypeBase.bothDiceTheSame || ''),
-    totalBetween5And9: pickEmoji(allowExternal ? RO_BOT_EMOJIS?.dice?.betType?.totalBetween5And9 : '', diceBetTypeBase.totalBetween5And9 || ''),
-    snakeEyes: pickEmoji(allowExternal ? RO_BOT_EMOJIS?.dice?.betType?.snakeEyes : '', diceBetTypeBase.snakeEyes || ''),
-    totalUnder7: pickEmoji(allowExternal ? RO_BOT_EMOJIS?.dice?.betType?.totalUnder7 : '', diceBetTypeBase.totalUnder7 || ''),
-    totalOver7: pickEmoji(allowExternal ? RO_BOT_EMOJIS?.dice?.betType?.totalOver7 : '', diceBetTypeBase.totalOver7 || ''),
-    totalExact7: pickEmoji(allowExternal ? RO_BOT_EMOJIS?.dice?.betType?.totalExact7 : '', diceBetTypeBase.totalExact7 || '')
+    bothDiceTheSame: pickEmoji(RO_BOT_EMOJIS?.dice?.betType?.bothDiceTheSame, ''),
+    totalBetween5And9: pickEmoji(RO_BOT_EMOJIS?.dice?.betType?.totalBetween5And9, ''),
+    snakeEyes: pickEmoji(RO_BOT_EMOJIS?.dice?.betType?.snakeEyes, ''),
+    totalUnder7: pickEmoji(RO_BOT_EMOJIS?.dice?.betType?.totalUnder7, ''),
+    totalOver7: pickEmoji(RO_BOT_EMOJIS?.dice?.betType?.totalOver7, ''),
+    totalExact7: pickEmoji(RO_BOT_EMOJIS?.dice?.betType?.totalExact7, '')
   };
 
-  const slotSymbolsBase = source.slotSymbols || {};
   const slotSymbols = {
-    '🪙': pickEmoji(allowExternal ? RO_BOT_EMOJIS?.slots?.symbols?.gold : '', slotSymbolsBase['🪙'] || ''),
-    '🍒': pickEmoji(allowExternal ? RO_BOT_EMOJIS?.slots?.symbols?.cherry : '', slotSymbolsBase['🍒'] || ''),
-    '🔔': pickEmoji(allowExternal ? RO_BOT_EMOJIS?.slots?.symbols?.bell : '', slotSymbolsBase['🔔'] || ''),
-    '🟥': pickEmoji(allowExternal ? RO_BOT_EMOJIS?.slots?.symbols?.bar : '', slotSymbolsBase['🟥'] || ''),
-    '7️⃣': pickEmoji(allowExternal ? RO_BOT_EMOJIS?.slots?.symbols?.seven : '', slotSymbolsBase['7️⃣'] || ''),
-    '💎': pickEmoji(allowExternal ? RO_BOT_EMOJIS?.slots?.symbols?.diamond : '', slotSymbolsBase['💎'] || '')
+    '🪙': pickEmoji(RO_BOT_EMOJIS?.slots?.symbols?.gold, ''),
+    '🍒': pickEmoji(RO_BOT_EMOJIS?.slots?.symbols?.cherry, ''),
+    '🔔': pickEmoji(RO_BOT_EMOJIS?.slots?.symbols?.bell, ''),
+    '🟥': pickEmoji(RO_BOT_EMOJIS?.slots?.symbols?.bar, ''),
+    '7️⃣': pickEmoji(RO_BOT_EMOJIS?.slots?.symbols?.seven, ''),
+    '💎': pickEmoji(RO_BOT_EMOJIS?.slots?.symbols?.diamond, '')
   };
 
-  const blackjackActionsBase = source.blackjackActions || {};
   const blackjackActions = {
-    hit: pickEmoji(allowExternal ? RO_BOT_EMOJIS?.blackjack?.hit : '', blackjackActionsBase.hit || ''),
-    stand: pickEmoji(allowExternal ? RO_BOT_EMOJIS?.blackjack?.stand : '', blackjackActionsBase.stand || ''),
-    double: pickEmoji(allowExternal ? RO_BOT_EMOJIS?.blackjack?.double : '', blackjackActionsBase.double || '')
+    hit: pickEmoji(RO_BOT_EMOJIS?.blackjack?.hit, ''),
+    stand: pickEmoji(RO_BOT_EMOJIS?.blackjack?.stand, ''),
+    double: pickEmoji(RO_BOT_EMOJIS?.blackjack?.double, '')
   };
 
-  const slotSpinBase = Array.isArray(source.slotSpinFrames) ? source.slotSpinFrames : [];
-  const slotSpinFrames = slotSpinBase
+  const slotSpinFrames = (Array.isArray(RO_BOT_EMOJIS?.slots?.spin) ? RO_BOT_EMOJIS.slots.spin : [])
     .map((spin) => pickEmoji(spin, ''))
     .filter(Boolean);
 
   return {
     ...source,
-    currency: pickEmoji(allowExternal ? RO_BOT_EMOJIS.credit : '', source.currency || '') || source.currency || '🪙',
-    heads: pickEmoji(allowExternal ? RO_BOT_EMOJIS.heads : '', source.heads || '') || source.heads || '🟡',
-    tails: pickEmoji(allowExternal ? RO_BOT_EMOJIS.tails : '', source.tails || '') || source.tails || '⚪',
-    coinSpin: pickEmoji(allowExternal ? RO_BOT_EMOJIS.coinflip : '', source.coinSpin || '') || source.coinSpin || '🪙',
-    brand: pickEmoji(allowExternal ? RO_BOT_EMOJIS.brand : '', source.brand || '') || source.brand || '',
+    currency: pickEmoji(RO_BOT_EMOJIS.credit, source.currency || '🪙') || source.currency || '🪙',
+    heads: pickEmoji(RO_BOT_EMOJIS.heads, source.heads || '🟡') || source.heads || '🟡',
+    tails: pickEmoji(RO_BOT_EMOJIS.tails, source.tails || '⚪') || source.tails || '⚪',
+    coinSpin: pickEmoji(RO_BOT_EMOJIS.coinflip, source.coinSpin || '🪙') || source.coinSpin || '🪙',
+    brand: pickEmoji(RO_BOT_EMOJIS.brand, source.brand || '') || source.brand || '',
     dice,
     diceBetType,
     slotSymbols,
