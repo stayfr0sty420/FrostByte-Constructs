@@ -554,7 +554,7 @@ module.exports = {
 
     const embed = buildEmbed(game, { phase: 'select', die1: pickDie(), die2: pickDie() });
     const rows = buildSelectRow({ gameId: game.id, emojis: game.emojis, disabled: false });
-    const msg = await interaction.editReply({ embeds: [embed], components: rows }).catch(() => null);
+    const msg = await interaction.editReply({ content: '', embeds: [embed], components: rows }).catch(() => null);
     game.messageId = msg?.id || '';
     client.state.setWithExpiry(client.state.dice, game.id, game, GAME_TTL_MS + 30_000);
 

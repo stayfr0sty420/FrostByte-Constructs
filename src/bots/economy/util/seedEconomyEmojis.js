@@ -4,10 +4,13 @@ const path = require('path');
 const fs = require('fs/promises');
 const zlib = require('node:zlib');
 const { env } = require('../../../config/env');
+const { PermissionFlagsBits } = require('discord.js');
 const { logger } = require('../../../config/logger');
 
 const DEFAULT_ASSETS_DIR = 'images/emojis';
 const DEFAULT_MAX_BYTES = 256 * 1024;
+const MISSING_PERMISSION_LOG_COOLDOWN_MS = 10 * 60 * 1000;
+const missingPermissionCooldown = new Map();
 const SOURCE_ROOT = path.resolve(__dirname, '../../../../');
 const SOURCE_ROOT_PARENT = path.resolve(SOURCE_ROOT, '..');
 
@@ -1323,6 +1326,24 @@ async function seedEconomyEmojisForGuild(guild, options = {}) {
   const force = Boolean(options.force);
   if (!force && !env.ECONOMY_SEED_EMOJIS) return { ok: true, skipped: true };
   if (!guild?.id) return { ok: false, reason: 'Missing guild.' };
+
+  let me = guild.members?.me || null;
+  if (!me && typeof guild.members?.fetchMe === 'function') {
+    me = await guild.members.fetchMe().catch(() => null);
+  }
+  const canManageEmojis = Boolean(me?.permissions?.has?.(PermissionFlagsBits.ManageEmojisAndStickers));
+  if (!canManageEmojis) {
+    const now = Date.now();
+    const last = missingPermissionCooldown.get(guild.id) || 0;
+    if (now - last > MISSING_PERMISSION_LOG_COOLDOWN_MS) {
+      missingPermissionCooldown.set(guild.id, now);
+      logger.warn(
+        { guildId: guild.id },
+        'Skipped economy emoji sync: missing Manage Guild Expressions permission'
+      );
+    }
+    return { ok: false, skipped: true, reason: 'missing_permissions' };
+  }
 
   const only =
     Array.isArray(options.only) && options.only.length

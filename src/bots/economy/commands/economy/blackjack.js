@@ -410,7 +410,7 @@ module.exports = {
 
     const embed = buildEmbed(game);
     const rows = buildRows(game);
-    const msg = await interaction.editReply({ embeds: [embed], components: rows }).catch(() => null);
+    const msg = await interaction.editReply({ content: '', embeds: [embed], components: rows }).catch(() => null);
 
     if (game.stage !== 'finished') {
       await sendLog({

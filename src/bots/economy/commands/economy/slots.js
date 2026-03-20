@@ -461,7 +461,7 @@ module.exports = {
 
     const embed = buildEmbed(game, { phase: 'ready' });
     const rows = buildRows(game, { disabled: false });
-    const msg = await interaction.editReply({ embeds: [embed], components: rows }).catch(() => null);
+    const msg = await interaction.editReply({ content: '', embeds: [embed], components: rows }).catch(() => null);
     game.messageId = msg?.id || '';
     client.state.setWithExpiry(client.state.slots, game.id, game, GAME_TTL_MS + 15_000);
 

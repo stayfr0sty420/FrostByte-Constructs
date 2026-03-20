@@ -280,7 +280,7 @@ function applyCoinThumbnail(embed, game, opts = {}) {
 function buildMessagePayload(game, opts = {}, components = []) {
   const embed = buildEmbed(game, opts);
   const attachment = applyCoinThumbnail(embed, game, opts);
-  const payload = { embeds: [embed], components };
+  const payload = { content: '', embeds: [embed], components };
   if (attachment?.localPath && attachment?.name) {
     payload.files = [new AttachmentBuilder(attachment.localPath, { name: attachment.name })];
   }
