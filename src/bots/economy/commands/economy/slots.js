@@ -14,6 +14,7 @@ const {
   invalidateGuildEmojiCacheMany
 } = require('../../util/credits');
 const { seedEconomyEmojisForGuild } = require('../../util/seedEconomyEmojis');
+const { RoBotEmojis } = require('../../util/robotEmojiLookup');
 const { sendLog } = require('../../../../services/discord/loggingService');
 
 function sleep(ms) {
@@ -411,14 +412,16 @@ module.exports = {
       return '';
     })();
 
-    await interaction.deferReply();
+    const spinEmoji = RoBotEmojis?.slots?.symbols?.seven || '🎰';
+    const placeholder = new EmbedBuilder().setColor(0x2563eb).setDescription(`${spinEmoji} Spinning...`);
+    await interaction.reply({ embeds: [placeholder] }).catch(() => null);
 
     const user = await getOrCreateUser({ guildId, discordId: interaction.user.id, username: interaction.user.username });
     const emojis = await getEconomyEmojis(client, guildId);
     const parsed = parseBetInput(betInput, user.balance);
-    if (!parsed.ok) return await interaction.editReply({ content: parsed.reason });
+    if (!parsed.ok) return await interaction.editReply({ content: parsed.reason, embeds: [], components: [] });
     if (parsed.amount < 1) {
-      return await interaction.editReply({ content: parsed.allIn ? 'Nothing to bet (wallet is empty).' : 'Invalid bet.' });
+      return await interaction.editReply({ content: parsed.allIn ? 'Nothing to bet (wallet is empty).' : 'Invalid bet.', embeds: [], components: [] });
     }
 
     const symbolMap = await resolveSlotsSymbolMap(client, guildId, emojis);

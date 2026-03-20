@@ -8,7 +8,7 @@ async function execute(client, messages) {
   const first = messages?.first ? messages.first() : null;
   const guildId = first?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const count = messages?.size || 0;
@@ -30,3 +30,5 @@ async function execute(client, messages) {
 }
 
 module.exports = { name: 'messageDeleteBulk', execute };
+
+

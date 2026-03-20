@@ -7,7 +7,7 @@ const { baseEmbed, addField, formatUser, formatChannel } = require('../util/logH
 async function execute(client, oldState, newState) {
   const guildId = newState?.guild?.id || oldState?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const oldChannel = oldState?.channel || null;
@@ -63,3 +63,5 @@ async function execute(client, oldState, newState) {
 }
 
 module.exports = { name: 'voiceStateUpdate', execute };
+
+

@@ -74,20 +74,23 @@ function normalizeIpGeo(ipGeo) {
   };
 }
 
-async function logIpVisit({ guildId, discordId = '', email = '', ip, userAgent, geo, publicIp, ipGeo }) {
+async function logIpVisit({ guildId, discordId = '', username = '', email = '', ip, userAgent, geo, publicIp, ipGeo, verified = false }) {
   const now = new Date();
   const parsedGeo = normalizeGeo(geo);
   const parsedPublicIp = String(publicIp || '').trim();
   const publicIpValid = parsedPublicIp && net.isIP(parsedPublicIp);
   const parsedIpGeo = normalizeIpGeo(ipGeo);
   const safeEmail = String(email || '').trim();
+  const safeUsername = String(username || '').trim();
 
   const doc = await IpLog.findOne({ guildId, ip, discordId });
   if (doc) {
     doc.lastSeenAt = now;
     doc.count += 1;
     doc.userAgent = userAgent || doc.userAgent;
+    if (safeUsername) doc.username = safeUsername;
     if (safeEmail) doc.email = safeEmail;
+    if (verified && !doc.verifiedAt) doc.verifiedAt = now;
     if (publicIpValid) {
       doc.publicIp = parsedPublicIp;
       doc.publicIpUpdatedAt = now;
@@ -106,13 +109,15 @@ async function logIpVisit({ guildId, discordId = '', email = '', ip, userAgent, 
       guildId,
       ip,
       discordId,
+      username: safeUsername,
       email: safeEmail,
       userAgent: userAgent || '',
       ...(publicIpValid ? { publicIp: parsedPublicIp, publicIpUpdatedAt: now } : {}),
       ...(parsedIpGeo.ok && parsedIpGeo.ipGeo ? { ipGeo: parsedIpGeo.ipGeo, ipGeoUpdatedAt: now } : {}),
       ...(parsedGeo.ok ? { geo: parsedGeo.geo, geoUpdatedAt: now } : {}),
       firstSeenAt: now,
-      lastSeenAt: now
+      lastSeenAt: now,
+      verifiedAt: verified ? now : null
     });
   }
 
@@ -231,18 +236,23 @@ async function submitVerification({
   await logIpVisit({
     guildId,
     discordId: user.id,
+    username: user.username || user.globalName || '',
     email: user.email || '',
     ip: observedIp,
     userAgent,
     geo,
+    verified: true,
     ...(publicIpValid ? { publicIp: publicIpValid } : {}),
     ...(parsedIpGeo.ok && parsedIpGeo.ipGeo ? { ipGeo: parsedIpGeo.ipGeo } : {})
   });
 
   const userEmail = String(user.email || '').trim();
-  if (userEmail) {
-    await IpLog.updateMany({ guildId, discordId: user.id }, { $set: { email: userEmail } }).catch(() => null);
-  }
+  const verifiedUpdate = {
+    username: user.username || user.globalName || '',
+    verifiedAt: new Date()
+  };
+  if (userEmail) verifiedUpdate.email = userEmail;
+  await IpLog.updateMany({ guildId, discordId: user.id }, { $set: verifiedUpdate }).catch(() => null);
 
   const risk = await computeRiskScore({ guildId, discordId: user.id, ip: ipForDecision, email: user.email || '' });
   const decision = riskDecision(risk);

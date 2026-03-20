@@ -12,25 +12,17 @@
         <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
       <% } %>
 
-      <div class="alert alert-info">
-        Share this verification link to members (or tell them to run <code>/verify</code> in Discord):
-        <div class="mt-2">
-          <% const base = publicBaseUrl || 'http://localhost:3000'; %>
-          <code><%= `${base}/verify/${cfg.guildId}` %></code>
-        </div>
-      </div>
-
       <div class="card shadow-sm mb-3">
         <div class="card-body">
           <h2 class="h6 mb-2">Setup Checklist</h2>
           <ol class="mb-0">
             <li>Make sure this server is <strong>Approved</strong> in <a href="/admin/servers">Servers</a>.</li>
             <li>Create roles: <code>Unverified</code> (temp) and <code>Verified</code>.</li>
-            <li>Move the Verification role <strong>above</strong> those roles (role hierarchy).</li>
+            <li>Move the Verification bot role <strong>above</strong> those roles (role hierarchy).</li>
             <li>Give Verification <strong>Manage Roles</strong> permission.</li>
             <li>Enable intents (Developer Portal): <strong>Server Members</strong> + <strong>Message Content</strong>.</li>
             <li>Set Temp Role + Verified Role below, then enable verification.</li>
-            <li>Share the verification link to members. Approve pending requests if needed.</li>
+            <li>Optional: enable the Verification Panel to post a Verify button in a channel.</li>
           </ol>
           <div class="text-muted small mt-2">
             Note: browser geolocation requires a secure context (HTTPS) except on <code>localhost</code>.
@@ -40,8 +32,13 @@
 
       <div class="card shadow-sm">
         <div class="card-body">
-          <form method="post" action="/admin/verification/settings" class="row g-2">
+          <form method="post" action="/admin/verification/settings" class="row g-2" id="verificationForm" data-autosave="1">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+
+            <div class="col-12 d-flex flex-wrap align-items-center justify-content-between gap-2">
+              <h2 class="h6 mb-0">Core Settings</h2>
+              <div class="text-muted small" data-autosave-status>Auto-save enabled</div>
+            </div>
 
             <div class="col-12 d-flex gap-2 align-items-center">
               <div class="form-check form-switch">
@@ -83,29 +80,51 @@
 
             <div class="col-12 col-md-4">
               <label class="form-label">Temp Role (Join Gate)</label>
-              <select class="form-select" name="tempRoleId">
+              <input
+                class="form-control form-control-sm mb-2 select-filter"
+                type="search"
+                placeholder="Search roles..."
+                data-filter-input="tempRoleId"
+              />
+              <select class="form-select role-select" name="tempRoleId" id="tempRoleId" data-role-select>
                 <option value="">(none)</option>
                 <% roles.forEach(r => { %>
-                  <option value="<%= r.id %>" <%= cfg.verification.tempRoleId === r.id ? 'selected' : '' %>>
+                  <% const colorHex = r.color ? `#${r.color.toString(16).padStart(6, '0')}` : ''; %>
+                  <option value="<%= r.id %>" data-color="<%= colorHex %>" <%= cfg.verification.tempRoleId === r.id ? 'selected' : '' %>>
                     <%= r.name %>
                   </option>
                 <% }) %>
               </select>
+              <div class="role-preview mt-2" data-role-preview="tempRoleId"></div>
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label">Verified Role</label>
-              <select class="form-select" name="verifiedRoleId">
+              <input
+                class="form-control form-control-sm mb-2 select-filter"
+                type="search"
+                placeholder="Search roles..."
+                data-filter-input="verifiedRoleId"
+              />
+              <select class="form-select role-select" name="verifiedRoleId" id="verifiedRoleId" data-role-select>
                 <option value="">(none)</option>
                 <% roles.forEach(r => { %>
-                  <option value="<%= r.id %>" <%= cfg.verification.verifiedRoleId === r.id ? 'selected' : '' %>>
+                  <% const colorHex = r.color ? `#${r.color.toString(16).padStart(6, '0')}` : ''; %>
+                  <option value="<%= r.id %>" data-color="<%= colorHex %>" <%= cfg.verification.verifiedRoleId === r.id ? 'selected' : '' %>>
                     <%= r.name %>
                   </option>
                 <% }) %>
               </select>
+              <div class="role-preview mt-2" data-role-preview="verifiedRoleId"></div>
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label">Log Channel (Verification)</label>
-              <select class="form-select" name="logChannelId">
+              <input
+                class="form-control form-control-sm mb-2 select-filter"
+                type="search"
+                placeholder="Search channels..."
+                data-filter-input="logChannelId"
+              />
+              <select class="form-select" name="logChannelId" id="logChannelId">
                 <option value="">(none)</option>
                 <% channels.forEach(c => { %>
                   <option value="<%= c.id %>" <%= cfg.verification.logChannelId === c.id ? 'selected' : '' %>>
@@ -113,6 +132,47 @@
                   </option>
                 <% }) %>
               </select>
+            </div>
+
+            <div class="col-12"><hr /></div>
+
+            <div class="col-12">
+              <h2 class="h6 mb-2">Verification Panel</h2>
+              <div class="row g-2 align-items-start">
+                <div class="col-12 col-md-4">
+                  <div class="form-check form-switch">
+                    <input
+                      class="form-check-input"
+                      type="checkbox"
+                      role="switch"
+                      name="panelEnabled"
+                      value="1"
+                      <%= cfg.verification.panelEnabled ? 'checked' : '' %>
+                    />
+                    <label class="form-check-label">Post verify panel</label>
+                  </div>
+                  <div class="text-muted small mt-2">
+                    Posts a Verify button so members can verify without running <code>/verify</code>.
+                  </div>
+                </div>
+                <div class="col-12 col-md-8">
+                  <label class="form-label">Panel Channel</label>
+                  <input
+                    class="form-control form-control-sm mb-2 select-filter"
+                    type="search"
+                    placeholder="Search channels..."
+                    data-filter-input="panelChannelId"
+                  />
+                  <select class="form-select" name="panelChannelId" id="panelChannelId">
+                    <option value="">(select a channel)</option>
+                    <% channels.forEach(c => { %>
+                      <option value="<%= c.id %>" <%= cfg.verification.panelChannelId === c.id ? 'selected' : '' %>>
+                        <%= c.name %>
+                      </option>
+                    <% }) %>
+                  </select>
+                </div>
+              </div>
             </div>
 
             <div class="col-12">
@@ -123,16 +183,16 @@
             </div>
 
             <div class="col-12">
-              <label class="form-label">Question 1 (required)</label>
-              <input class="form-control" name="question1" value="<%= cfg.verification.question1 %>" required />
-            </div>
-            <div class="col-12">
-              <label class="form-label">Question 2 (required)</label>
-              <input class="form-control" name="question2" value="<%= cfg.verification.question2 %>" required />
-            </div>
-            <div class="col-12">
-              <label class="form-label">Question 3 (optional)</label>
-              <input class="form-control" name="question3" value="<%= cfg.verification.question3 %>" />
+              <h2 class="h6 mb-2">Verification Questions</h2>
+              <div class="question-list" data-question-list>
+                <% questions.forEach((q, idx) => { %>
+                  <div class="question-row">
+                    <input class="form-control" name="questions" value="<%= q %>" placeholder="Enter a question" required />
+                    <button class="btn btn-outline-danger btn-sm icon-btn" type="button" data-question-remove aria-label="Remove question">🗑️</button>
+                  </div>
+                <% }) %>
+              </div>
+              <button class="btn btn-outline-primary btn-sm mt-2" type="button" data-question-add>Add Question</button>
             </div>
 
             <div class="col-12"><hr /></div>
@@ -394,5 +454,6 @@
       </div>
     </main>
     <%- include('../../partials/footer') %>
+    <script src="/assets/js/verification-settings.js"></script>
   </body>
 </html>

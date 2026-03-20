@@ -32,7 +32,7 @@ async function listRoles(discordClient, guildId) {
   const roles = await guild.roles.fetch();
   return roles
     .filter((r) => r && !r.managed)
-    .map((r) => ({ id: r.id, name: r.name, position: r.position }));
+    .map((r) => ({ id: r.id, name: r.name, position: r.position, color: r.color || 0 }));
 }
 
 async function ensureManageable(guild, roleId) {
@@ -137,7 +137,8 @@ async function removeRole(discordClient, guildId, userId, roleId) {
 
 async function applyJoinGate(discordClient, guildId, userId) {
   const cfg = await getOrCreateGuildConfig(guildId);
-  if (cfg.approval?.status !== 'approved') return { ok: true, skipped: true };
+  const approvalStatus = cfg.botApprovals?.verification?.status || cfg.approval?.status || 'pending';
+  if (approvalStatus !== 'approved') return { ok: true, skipped: true };
   if (!cfg.verification?.enabled) return { ok: true, skipped: true };
   if (!cfg.verification?.tempRoleId && !cfg.verification?.tempRoleName) return { ok: true, skipped: true };
 
@@ -181,7 +182,8 @@ async function applyJoinGate(discordClient, guildId, userId) {
 
 async function applyVerifiedRoles(discordClient, guildId, userId) {
   const cfg = await getOrCreateGuildConfig(guildId);
-  if (cfg.approval?.status !== 'approved') return { ok: false, reason: 'Server is not approved.' };
+  const approvalStatus = cfg.botApprovals?.verification?.status || cfg.approval?.status || 'pending';
+  if (approvalStatus !== 'approved') return { ok: false, reason: 'Server is not approved.' };
   if (!cfg.verification?.verifiedRoleId && !cfg.verification?.verifiedRoleName) {
     return { ok: false, reason: 'Verified role is not configured.' };
   }

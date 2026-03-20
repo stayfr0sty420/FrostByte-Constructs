@@ -26,99 +26,55 @@
             <table class="table table-sm table-hover align-middle mb-0 servers-table">
               <thead>
                 <tr>
+                  <th></th>
                   <th>Server</th>
                   <th>Guild ID</th>
                   <th>Bots</th>
-                  <th>Status</th>
+                  <th>Application Date</th>
                   <th class="text-end">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <% if (!servers.length) { %>
                   <tr>
-                    <td colspan="5" class="text-muted py-4">
+                    <td colspan="6" class="text-muted py-4">
                       No servers found in the database yet. Add the bots to a server and refresh.
                     </td>
                   </tr>
                 <% } %>
 
                 <% servers.forEach(s => { %>
-                  <% const allBots = s.presence.economy && s.presence.backup && s.presence.verification; %>
                   <tr>
+                    <td class="server-icon-cell" data-label="Icon">
+                      <span class="server-icon" data-fallback="SV">
+                        <% if (s.iconUrl) { %>
+                          <img src="<%= s.iconUrl %>" alt="<%= s.name %> icon" loading="lazy" data-fallback-img />
+                        <% } %>
+                        <span class="server-icon-fallback"><%= (s.name || 'S').slice(0, 2).toUpperCase() %></span>
+                      </span>
+                    </td>
                     <td class="server-cell" data-label="Server">
                       <div class="server-name"><%= s.name %></div>
                     </td>
                     <td class="server-id" data-label="Guild ID"><code><%= s.guildId %></code></td>
                     <td class="bots-cell" data-label="Bots">
-                      <div class="bot-pills d-inline-flex align-items-center gap-1 flex-wrap">
-                        <span class="badge <%= s.presence.economy ? 'text-bg-success' : 'text-bg-secondary' %>">E</span>
-                        <span class="badge <%= s.presence.backup ? 'text-bg-success' : 'text-bg-secondary' %>">B</span>
-                        <span class="badge <%= s.presence.verification ? 'text-bg-success' : 'text-bg-secondary' %>">V</span>
+                      <div class="bot-icon-row d-inline-flex align-items-center gap-2 flex-wrap">
+                        <% (s.bots || []).forEach(b => { %>
+                          <span class="bot-icon-sm <%= b.status %>" title="<%= b.name %>: <%= b.status %>">
+                            <img src="<%= b.icon %>" alt="<%= b.name %> logo" loading="lazy" />
+                            <span class="bot-status-dot <%= b.status %>"></span>
+                          </span>
+                        <% }) %>
                       </div>
-                      <% if (!allBots) { %>
-                        <span class="text-muted small ms-2">(missing)</span>
-                      <% } %>
                     </td>
-                    <td class="status-cell" data-label="Status">
-                      <% const badge = s.status === 'approved' ? 'success' : (s.status === 'rejected' ? 'danger' : 'warning'); %>
-                      <div class="status-stack d-flex flex-column">
-                        <div><span class="badge text-bg-<%= badge %>"><%= s.status %></span></div>
-                        <% if (s.reviewedAt) { %>
-                          <div class="status-meta text-muted small">
-                            <%= new Date(s.reviewedAt).toISOString().slice(0, 19).replace('T', ' ') %>
-                            <%= s.reviewedBy ? ` • ${s.reviewedBy}` : '' %>
-                          </div>
-                        <% } %>
-                      </div>
+                    <td class="status-cell" data-label="Application Date">
+                      <span class="text-muted small"><%= formatDate(s.createdAt) || '—' %></span>
                     </td>
                     <td class="text-end actions-cell" data-label="Actions">
                       <div class="action-group d-inline-flex gap-2 flex-wrap justify-content-end">
-                        <form method="post" action="/admin/servers/select" class="d-inline">
-                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                          <input type="hidden" name="guildId" value="<%= s.guildId %>" />
-                          <button class="btn btn-outline-primary btn-sm" type="submit" <%= (s.status !== 'approved' || !allBots) ? 'disabled' : '' %>>
-                            Manage
-                          </button>
-                        </form>
-
-                        <% if (s.status !== 'approved') { %>
-                          <form method="post" action="/admin/servers/approve/<%= s.guildId %>" class="d-inline">
-                            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                            <button class="btn btn-success btn-sm" type="submit">
-                              Approve
-                            </button>
-                          </form>
-                        <% } %>
-
-                        <% if (s.status !== 'rejected') { %>
-                          <form method="post" action="/admin/servers/reject/<%= s.guildId %>" class="d-inline">
-                            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                            <button
-                              class="btn btn-outline-danger btn-sm"
-                              type="submit"
-                              data-confirm="Reject this server? Bots will stop working there."
-                              data-confirm-title="Reject server?"
-                              data-confirm-ok="Reject"
-                              data-confirm-cancel="Cancel"
-                            >
-                              Reject
-                            </button>
-                          </form>
-                        <% } %>
-
-                        <form method="post" action="/admin/servers/delete/<%= s.guildId %>" class="d-inline">
-                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                          <button
-                            class="btn btn-outline-danger btn-sm btn-delete"
-                            type="submit"
-                            data-confirm="Delete this server and all related data? This cannot be undone."
-                            data-confirm-title="Delete server?"
-                            data-confirm-ok="Delete"
-                            data-confirm-cancel="Cancel"
-                          >
-                            Delete
-                          </button>
-                        </form>
+                        <a class="btn btn-outline-primary btn-sm" href="/admin/servers/<%= s.guildId %>/approvals">
+                          Manage Approvals
+                        </a>
                       </div>
                     </td>
                   </tr>

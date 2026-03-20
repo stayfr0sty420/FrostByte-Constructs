@@ -21,7 +21,7 @@ function buildVerifyLinkEmbed(cfg) {
 
 function buildVerifyLinkRow(url) {
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel('Open Verification')
+    new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel('Verify')
   );
 }
 
@@ -37,8 +37,10 @@ function buildVerifyPanelEmbed(cfg) {
 
 function buildVerifyPanelRow(guildId) {
   const id = String(guildId || '').trim();
+  const base = getBaseUrl();
+  const url = `${base}/verify/${encodeURIComponent(id)}/start`;
   return new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`verify:open:${id}`).setStyle(ButtonStyle.Primary).setLabel('Verify')
+    new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel('Verify')
   );
 }
 

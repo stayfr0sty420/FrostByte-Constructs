@@ -1,11 +1,7 @@
 const { PermissionsBitField } = require('discord.js');
 const { logger } = require('../../../config/logger');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
-const { getOrCreateGuildConfig } = require('../../../services/economy/guildConfigService');
-const { createVerifyToken } = require('../../../services/verification/verifyTokenService');
 const { sendLog } = require('../../../services/discord/loggingService');
-const { safeReply } = require('../../shared/util/reply');
-const { getBaseUrl, buildVerifyLinkEmbed, buildVerifyLinkRow } = require('../util/verifyMessages');
 const { baseEmbed, addField, formatUser, formatChannel } = require('../util/logHelpers');
 
 function flattenOptions(options, prefix = []) {
@@ -23,8 +19,9 @@ function flattenOptions(options, prefix = []) {
 
 async function execute(client, interaction) {
   try {
-    if (interaction.guildId) {
-      const approved = await isGuildApproved(interaction.guildId);
+    const guildId = interaction.guildId;
+    if (guildId) {
+      const approved = await isGuildApproved(guildId, 'verification');
       if (!approved) {
         if (interaction.isAutocomplete()) {
           await interaction.respond([]).catch(() => null);
@@ -78,46 +75,6 @@ async function execute(client, interaction) {
       return;
     }
 
-    if (interaction.isButton()) {
-      const customId = String(interaction.customId || '');
-      if (customId.startsWith('verify:open')) {
-        const parts = customId.split(':');
-        const targetGuildId = parts[2] || interaction.guildId;
-        if (!interaction.guildId || !targetGuildId) {
-          await safeReply(interaction, { content: 'Guild only.', ephemeral: true });
-          return;
-        }
-        if (interaction.guildId !== targetGuildId) {
-          await safeReply(interaction, { content: 'Verification panel mismatch. Please try again.', ephemeral: true });
-          return;
-        }
-
-        const cfg = await getOrCreateGuildConfig(targetGuildId);
-        if (!cfg.verification?.enabled) {
-          await safeReply(interaction, {
-            content: 'Verification is disabled on this server. Ask an admin to enable it in the dashboard.',
-            ephemeral: true
-          });
-          return;
-        }
-        if (!cfg.verification?.verifiedRoleId) {
-          await safeReply(interaction, {
-            content: 'This server is missing a Verified role configuration. Ask an admin to set it in the dashboard.',
-            ephemeral: true
-          });
-          return;
-        }
-
-        const baseUrl = getBaseUrl();
-        const token = createVerifyToken({ guildId: targetGuildId, discordId: interaction.user.id });
-        const url = `${baseUrl}/verify/${targetGuildId}?t=${encodeURIComponent(token)}`;
-        const embed = buildVerifyLinkEmbed(cfg);
-        const row = buildVerifyLinkRow(url);
-        await safeReply(interaction, { embeds: [embed], components: [row], ephemeral: true });
-        return;
-      }
-    }
-
     if (interaction.isAutocomplete()) {
       const command = client.commands.get(interaction.commandName);
       if (command?.autocomplete) await command.autocomplete(client, interaction);
@@ -136,3 +93,5 @@ async function execute(client, interaction) {
 }
 
 module.exports = { name: 'interactionCreate', execute };
+
+

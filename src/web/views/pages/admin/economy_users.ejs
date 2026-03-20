@@ -107,7 +107,7 @@
               <input class="form-control" name="discordId" placeholder="123456789012345678" required />
               <div class="form-text">Tip: enable Developer Mode in Discord to copy user IDs.</div>
             </div>
-            <div class="col-12 col-md-3 d-grid">
+            <div class="col-12 col-md-3 d-grid align-self-end">
               <label class="form-label d-none d-md-block">&nbsp;</label>
               <button class="btn btn-outline-warning" type="submit">Add to Whitelist</button>
             </div>
@@ -140,14 +140,16 @@
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                         <input type="hidden" name="discordId" value="<%= w.discordId %>" />
                         <button
-                          class="btn btn-outline-danger btn-sm"
+                          class="btn btn-outline-danger btn-sm icon-btn"
                           type="submit"
+                          title="Remove"
+                          aria-label="Remove"
                           data-confirm="Remove this user from the credit-grant whitelist?"
                           data-confirm-title="Remove whitelist?"
                           data-confirm-ok="Remove"
                           data-confirm-cancel="Cancel"
                         >
-                          Remove
+                          🗑️
                         </button>
                       </form>
                     </td>
@@ -213,39 +215,62 @@
                         <form method="post" action="/admin/economy/users/whitelist/<%= isWhitelisted ? 'remove' : 'add' %>" class="d-inline-flex">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
+                          <input type="hidden" name="username" value="<%= u.username || '' %>" />
                           <button
-                            class="btn btn-outline-warning btn-sm"
+                            class="btn btn-outline-warning btn-sm icon-btn"
                             type="submit"
                             data-confirm="<%= isWhitelisted ? 'Remove this user from the credit-grant whitelist?' : 'Add this user to the credit-grant whitelist?' %>"
                             data-confirm-title="<%= isWhitelisted ? 'Remove whitelist?' : 'Add to whitelist?' %>"
                             data-confirm-ok="<%= isWhitelisted ? 'Remove' : 'Add' %>"
                             data-confirm-cancel="Cancel"
+                            title="<%= isWhitelisted ? 'Unwhitelist' : 'Whitelist' %>"
+                            aria-label="<%= isWhitelisted ? 'Unwhitelist' : 'Whitelist' %>"
                           >
-                            <%= isWhitelisted ? 'Unwhitelist' : 'Whitelist' %>
+                            <%= isWhitelisted ? '🚫' : '✅' %>
                           </button>
                         </form>
 
                         <form method="post" action="/admin/economy/users/grant" class="d-inline-flex gap-2">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
+                          <input type="hidden" name="username" value="<%= u.username || '' %>" />
                           <input class="form-control form-control-sm" name="amount" type="number" min="1" step="1" placeholder="+ credits" style="width: 110px" required />
-                          <button class="btn btn-success btn-sm" type="submit">Grant</button>
+                          <button class="btn btn-success btn-sm icon-btn" type="submit" title="Grant credits" aria-label="Grant credits">➕</button>
                         </form>
 
                         <form method="post" action="/admin/economy/users/deduct" class="d-inline-flex gap-2">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
+                          <input type="hidden" name="username" value="<%= u.username || '' %>" />
                           <input class="form-control form-control-sm" name="amount" type="number" min="1" step="1" placeholder="- credits" style="width: 110px" required />
                           <button
-                            class="btn btn-outline-danger btn-sm"
+                            class="btn btn-outline-danger btn-sm icon-btn"
                             type="submit"
                             data-confirm="Deduct Rodstarkian Credits from this user?"
                             data-confirm-title="Deduct credits?"
                             data-confirm-ok="Deduct"
                             data-confirm-cancel="Cancel"
+                            title="Deduct credits"
+                            aria-label="Deduct credits"
                           >
-                            Deduct
+                            ➖
                           </button>
+                        </form>
+
+                        <form method="post" action="/admin/economy/users/gift" class="d-inline-flex gap-2">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <input type="hidden" name="discordId" value="<%= u.discordId %>" />
+                          <input type="hidden" name="username" value="<%= u.username || '' %>" />
+                          <input class="form-control form-control-sm" name="amount" type="number" min="1" step="1" placeholder="gift" style="width: 90px" required />
+                          <button class="btn btn-outline-primary btn-sm icon-btn" type="submit" title="Gift credits" aria-label="Gift credits">🎁</button>
+                        </form>
+
+                        <form method="post" action="/admin/economy/users/exp" class="d-inline-flex gap-2">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <input type="hidden" name="discordId" value="<%= u.discordId %>" />
+                          <input type="hidden" name="username" value="<%= u.username || '' %>" />
+                          <input class="form-control form-control-sm" name="amount" type="number" min="1" step="1" placeholder="+ exp" style="width: 90px" required />
+                          <button class="btn btn-outline-info btn-sm icon-btn" type="submit" title="Grant EXP" aria-label="Grant EXP">⚡</button>
                         </form>
                       </div>
                     </td>

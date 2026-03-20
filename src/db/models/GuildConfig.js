@@ -11,6 +11,24 @@ const GuildConfigSchema = new mongoose.Schema(
       reviewedAt: { type: Date, default: null }
     },
 
+    botApprovals: {
+      economy: {
+        status: { type: String, default: 'pending', enum: ['pending', 'approved', 'rejected'], index: true },
+        sanctionedBy: { type: String, default: '' },
+        sanctionedAt: { type: Date, default: null }
+      },
+      backup: {
+        status: { type: String, default: 'pending', enum: ['pending', 'approved', 'rejected'], index: true },
+        sanctionedBy: { type: String, default: '' },
+        sanctionedAt: { type: Date, default: null }
+      },
+      verification: {
+        status: { type: String, default: 'pending', enum: ['pending', 'approved', 'rejected'], index: true },
+        sanctionedBy: { type: String, default: '' },
+        sanctionedAt: { type: Date, default: null }
+      }
+    },
+
     bots: {
       economy: { type: Boolean, default: false },
       backup: { type: Boolean, default: false },
@@ -34,6 +52,10 @@ const GuildConfigSchema = new mongoose.Schema(
       verifiedRoleId: { type: String, default: '' },
       verifiedRoleName: { type: String, default: '' },
       logChannelId: { type: String, default: '' },
+      panelEnabled: { type: Boolean, default: false },
+      panelChannelId: { type: String, default: '' },
+      panelMessageId: { type: String, default: '' },
+      questions: { type: [String], default: [] },
       question1: { type: String, default: 'What is your favorite color?' },
       question2: { type: String, default: 'What is your favorite food?' },
       question3: { type: String, default: '' }

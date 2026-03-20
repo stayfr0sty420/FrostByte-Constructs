@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page approvals-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+        <div class="d-flex align-items-center gap-3">
+          <span class="server-icon server-icon-lg" data-fallback="SV">
+            <% if (guildIcon) { %>
+              <img src="<%= guildIcon %>" alt="<%= guildName %> icon" loading="lazy" data-fallback-img />
+            <% } %>
+            <span class="server-icon-fallback"><%= (guildName || 'S').slice(0, 2).toUpperCase() %></span>
+          </span>
+          <div>
+            <h1 class="h4 mb-1">Manage Approvals</h1>
+            <div class="text-muted small">
+              <span class="fw-semibold"><%= guildName %></span> · <code><%= guildId %></code>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          <form method="post" action="/admin/servers/select" class="d-inline">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <input type="hidden" name="guildId" value="<%= guildId %>" />
+            <button class="btn btn-outline-primary btn-sm" type="submit">Open Dashboard</button>
+          </form>
+          <a class="btn btn-outline-secondary btn-sm" href="/admin/servers">Back</a>
+        </div>
+      </div>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="card shadow-sm">
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0 approvals-table">
+              <thead>
+                <tr>
+                  <th>Bot</th>
+                  <th>Status</th>
+                  <th>Sanction Date</th>
+                  <th>Sanctioned By</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% bots.forEach(b => { %>
+                  <tr>
+                    <td class="bot-cell">
+                      <div class="d-flex align-items-center gap-2">
+                        <span class="bot-icon-sm <%= b.status %>">
+                          <img src="<%= b.icon %>" alt="<%= b.name %> logo" loading="lazy" />
+                          <span class="bot-status-dot <%= b.status %>"></span>
+                        </span>
+                        <div class="fw-semibold"><%= b.name %></div>
+                      </div>
+                    </td>
+                    <td>
+                      <% const badge = b.status === 'approved' ? 'success' : (b.status === 'rejected' ? 'danger' : 'warning'); %>
+                      <span class="badge text-bg-<%= badge %>"><%= b.status %></span>
+                    </td>
+                    <td class="text-muted small"><%= formatDate(b.sanctionedAt) || '—' %></td>
+                    <td class="text-muted small"><%= b.sanctionedBy || '—' %></td>
+                    <td class="text-end">
+                      <div class="d-inline-flex gap-2">
+                        <form method="post" action="/admin/servers/<%= guildId %>/approvals/<%= b.key %>/approve" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <button class="btn btn-outline-success btn-sm icon-btn" type="submit" title="Approve" aria-label="Approve">
+                            ✓
+                          </button>
+                        </form>
+                        <form method="post" action="/admin/servers/<%= guildId %>/approvals/<%= b.key %>/reject" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <button
+                            class="btn btn-outline-danger btn-sm icon-btn"
+                            type="submit"
+                            title="Reject"
+                            aria-label="Reject"
+                            data-confirm="Reject this bot? It will stop working in this server."
+                            data-confirm-title="Reject bot?"
+                            data-confirm-ok="Reject"
+                            data-confirm-cancel="Cancel"
+                          >
+                            ✕
+                          </button>
+                        </form>
+                        <form method="post" action="/admin/servers/<%= guildId %>/approvals/<%= b.key %>/delete" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <button
+                            class="btn btn-outline-danger btn-sm icon-btn"
+                            type="submit"
+                            title="Delete"
+                            aria-label="Delete"
+                            data-confirm="Delete this bot from the server? This will also reject it."
+                            data-confirm-title="Delete bot?"
+                            data-confirm-ok="Delete"
+                            data-confirm-cancel="Cancel"
+                          >
+                            🗑️
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

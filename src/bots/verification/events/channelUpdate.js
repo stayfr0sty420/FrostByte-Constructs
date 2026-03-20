@@ -13,7 +13,7 @@ function channelTypeLabel(channel) {
 async function execute(client, oldChannel, newChannel) {
   const guildId = newChannel?.guild?.id || oldChannel?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const changes = [];
@@ -58,3 +58,5 @@ async function execute(client, oldChannel, newChannel) {
 }
 
 module.exports = { name: 'channelUpdate', execute };
+
+

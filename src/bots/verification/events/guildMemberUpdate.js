@@ -7,7 +7,7 @@ const { isGuildApproved } = require('../../../services/admin/guildRegistryServic
 async function execute(client, oldMember, newMember) {
   const guildId = newMember?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const userLabel = newMember.user?.tag || newMember.id;
@@ -90,3 +90,5 @@ async function execute(client, oldMember, newMember) {
 }
 
 module.exports = { name: 'guildMemberUpdate', execute };
+
+

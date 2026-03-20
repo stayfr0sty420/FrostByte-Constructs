@@ -29,6 +29,16 @@
             <% logs.forEach(l => { %>
               <%
                 const embeds = Array.isArray(l.data?.embeds) ? l.data.embeds : [];
+                const storedBot = String(l.bot || l.data?.bot || '').trim();
+                const typeKey = String(l.type || '').toLowerCase();
+                const fallbackBot = typeKey.includes('economy')
+                  ? 'RoBot'
+                  : typeKey.includes('backup')
+                    ? 'Rodstarkian Vault'
+                    : typeKey.includes('verification') || typeKey.includes('member') || typeKey.includes('message') || typeKey.includes('role') || typeKey.includes('channel') || typeKey.includes('voice')
+                      ? "God's Eye"
+                      : '';
+                const botLabel = storedBot || fallbackBot;
                 const embedText = embeds
                   .map((e) => {
                     const fields = Array.isArray(e.fields) ? e.fields : [];
@@ -38,79 +48,53 @@
                   .join(' ');
                 const typeLabel = String(l.type || '').split('_').join(' ');
                 const jsonSearch = JSON.stringify(l.data || {}).slice(0, 2000);
-                const rawSearch = `${l.type || ''} ${l.data?.content || ''} ${embedText} ${jsonSearch}`;
+                const rawSearch = `${botLabel} ${l.type || ''} ${l.data?.content || ''} ${embedText} ${jsonSearch}`;
                 const searchText = String(rawSearch || '').toLowerCase();
+
+                const summaryLines = [];
+                embeds.forEach((e) => {
+                  if (e?.title) summaryLines.push(String(e.title));
+                  if (e?.description) summaryLines.push(String(e.description));
+                  const fields = Array.isArray(e.fields) ? e.fields : [];
+                  fields.forEach((f) => {
+                    const fieldName = String(f?.name || '').trim();
+                    if (fieldName.toLowerCase() === 'message id') return;
+                    const val = String(f?.value || '').trim();
+                    if (!val) return;
+                    summaryLines.push(`${fieldName}: ${val}`);
+                  });
+                });
+                const clippedLines = summaryLines.filter(Boolean).slice(0, 6);
               %>
-              <article class="log-card" data-log-row data-search="<%= searchText %>">
+              <article class="log-card log-card-compact" data-log-row data-search="<%= searchText %>">
                 <header class="log-card-header">
-                  <div class="log-type"><%= typeLabel || l.type %></div>
-                  <div class="log-time"><%= l.createdAt.toLocaleString('en-US') %></div>
+                  <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <% if (botLabel) { %>
+                      <span class="badge text-bg-secondary log-bot"><%= botLabel %></span>
+                    <% } %>
+                    <div class="log-type"><%= typeLabel || l.type %></div>
+                  </div>
+                  <div class="log-time"><%= formatDate(l.createdAt) || '' %></div>
                 </header>
                 <div class="log-card-body">
                   <% if (l.data?.content) { %>
                     <div class="log-content"><%= l.data.content %></div>
                   <% } %>
-                  <% if (embeds.length) { %>
-                    <div class="log-embed-stack">
-                      <% embeds.forEach((e) => { %>
-                        <% const fields = Array.isArray(e.fields) ? e.fields : []; %>
-                        <% const color = typeof e.color === 'number' ? `#${e.color.toString(16).padStart(6, '0')}` : ''; %>
-                        <% const embedTs = e.timestamp ? new Date(e.timestamp) : null; %>
-                        <% const embedTsText = embedTs && !Number.isNaN(embedTs.getTime()) ? embedTs.toLocaleString('en-US') : ''; %>
-                        <div class="log-embed" style="<%= color ? `--embed-color: ${color};` : '' %>">
-                          <% if (e.author?.name) { %>
-                            <div class="log-embed-author"><%= e.author.name %></div>
-                          <% } %>
-                          <% if (e.title) { %>
-                            <div class="log-embed-title"><%= e.title %></div>
-                          <% } %>
-                          <% if (e.description) { %>
-                            <div class="log-embed-desc"><%= e.description %></div>
-                          <% } %>
-                          <% if (fields.length) { %>
-                            <dl class="log-embed-fields">
-                              <% fields.forEach((f) => { %>
-                                <% const fieldName = String(f.name || ''); %>
-                                <% const isMessageId = fieldName.toLowerCase() === 'message id'; %>
-                                <% if (!isMessageId) { %>
-                                  <div class="log-embed-field">
-                                    <dt><%= fieldName %></dt>
-                                    <dd>
-                                      <% const valueLines = String(f.value || '').split('\\n').map((v) => String(v || '').trim()).filter(Boolean); %>
-                                      <% if (!valueLines.length) { %>
-                                        <span class="text-muted">(none)</span>
-                                      <% } %>
-                                      <% valueLines.forEach((line) => { %>
-                                        <% const trimmed = String(line || '').trim(); %>
-                                        <% const lowered = trimmed.toLowerCase(); %>
-                                        <% const isLink = lowered.startsWith('http://') || lowered.startsWith('https://'); %>
-                                        <% if (isLink) { %>
-                                          <div><a class="link-danger" href="<%= trimmed %>" target="_blank" rel="noreferrer"><%= trimmed %></a></div>
-                                        <% } else { %>
-                                          <div><%= line %></div>
-                                        <% } %>
-                                      <% }) %>
-                                    </dd>
-                                  </div>
-                                <% } %>
-                              <% }) %>
-                            </dl>
-                          <% } %>
-                          <% if (e.footer?.text || embedTsText) { %>
-                            <div class="log-embed-footer">
-                              <% if (e.footer?.text) { %>
-                                <span><%= e.footer.text %></span>
-                              <% } %>
-                              <% if (embedTsText) { %>
-                                <span><%= embedTsText %></span>
-                              <% } %>
-                            </div>
-                          <% } %>
-                        </div>
+                  <% if (clippedLines.length) { %>
+                    <div class="log-summary">
+                      <% clippedLines.forEach((line) => { %>
+                        <% const trimmed = String(line || '').trim(); %>
+                        <% const lowered = trimmed.toLowerCase(); %>
+                        <% const isLink = lowered.startsWith('http://') || lowered.startsWith('https://'); %>
+                        <% if (isLink) { %>
+                          <div><a class="link-danger" href="<%= trimmed %>" target="_blank" rel="noreferrer"><%= trimmed %></a></div>
+                        <% } else { %>
+                          <div><%= line %></div>
+                        <% } %>
                       <% }) %>
                     </div>
                   <% } %>
-                  <% if (!l.data?.content && !embeds.length) { %>
+                  <% if (!l.data?.content && !clippedLines.length) { %>
                     <div class="text-muted small">No details.</div>
                   <% } %>
                 </div>

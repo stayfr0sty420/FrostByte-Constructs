@@ -12,7 +12,7 @@ function roleColor(role) {
 async function execute(client, oldRole, newRole) {
   const guildId = newRole?.guild?.id || oldRole?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const changes = [];
@@ -43,3 +43,5 @@ async function execute(client, oldRole, newRole) {
 }
 
 module.exports = { name: 'roleUpdate', execute };
+
+

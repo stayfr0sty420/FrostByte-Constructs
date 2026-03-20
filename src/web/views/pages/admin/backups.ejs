@@ -10,6 +10,8 @@
         <div class="alert alert-<%= flash.type %>"><%= flash.message %></div>
       <% } %>
 
+      <% const channelNameById = new Map((channels || []).map((c) => [c.id, c.name])); %>
+
       <section class="backup-hero">
         <div class="backup-hero-grid">
           <div class="backup-hero-copy">
@@ -36,8 +38,9 @@
                       <input class="form-control" name="name" placeholder="Backup name (optional)" />
                     </div>
                     <div class="col-12 col-md-7">
-                      <select class="form-select" name="type">
-                        <option value="full">full</option>
+                      <label class="form-label">Backup Types</label>
+                      <select class="form-select" name="type" multiple size="6">
+                        <option value="full" selected>full</option>
                         <option value="channels">channels</option>
                         <option value="roles">roles</option>
                         <option value="messages">messages</option>
@@ -48,6 +51,7 @@
                         <option value="nicknames">nicknames</option>
                         <option value="bots">bots</option>
                       </select>
+                      <div class="form-text">Tip: hold Ctrl/Command to select multiple types.</div>
                     </div>
                     <div class="col-12 col-md-5 d-flex align-items-center">
                       <div class="form-check">
@@ -120,7 +124,111 @@
                 </form>
               </div>
             </div>
+
+            <div class="card backup-card">
+              <div class="card-body">
+                <h2 class="h6 text-uppercase text-muted">Automated Backups</h2>
+                <form method="post" action="/admin/backups/schedules" class="backup-form">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <div class="row g-2">
+                    <div class="col-12 col-md-6">
+                      <label class="form-label">Cron</label>
+                      <input class="form-control" name="cron" placeholder="0 0 * * *" required />
+                      <div class="form-text">Hourly: 0 * * * * · Daily: 0 0 * * * · Weekly: 0 0 * * 0</div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <label class="form-label">Types</label>
+                      <select class="form-select" name="types" multiple size="4" required>
+                        <option value="full">full</option>
+                        <option value="channels">channels</option>
+                        <option value="roles">roles</option>
+                        <option value="messages">messages</option>
+                        <option value="bans">bans</option>
+                        <option value="webhooks">webhooks</option>
+                        <option value="emojis">emojis</option>
+                        <option value="threads">threads</option>
+                        <option value="nicknames">nicknames</option>
+                        <option value="bots">bots</option>
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <label class="form-label">Notify Channel</label>
+                      <select class="form-select" name="channelId">
+                        <option value="">(none)</option>
+                        <% (channels || []).forEach(c => { %>
+                          <option value="<%= c.id %>"><%= c.name %></option>
+                        <% }) %>
+                      </select>
+                    </div>
+                    <div class="col-12 col-md-6 d-flex align-items-center">
+                      <div class="form-check form-switch mt-3">
+                        <input class="form-check-input" type="checkbox" name="enabled" value="1" checked />
+                        <label class="form-check-label">Enabled</label>
+                      </div>
+                    </div>
+                    <div class="col-12">
+                      <button class="btn btn-outline-primary w-100" type="submit">Add Schedule</button>
+                    </div>
+                  </div>
+                </form>
+
+                <div class="table-responsive mt-3">
+                  <table class="table table-sm align-middle mb-0">
+                    <thead>
+                      <tr>
+                        <th>Cron</th>
+                        <th>Type</th>
+                        <th>Next Run</th>
+                        <th>Notify</th>
+                        <th>Enabled</th>
+                        <th class="text-end">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% if (!schedules || !schedules.length) { %>
+                        <tr><td colspan="6" class="text-muted small">No schedules yet.</td></tr>
+                      <% } %>
+                      <% (schedules || []).forEach(s => { %>
+                        <tr>
+                          <td><code><%= s.interval || s.cron %></code></td>
+                          <td><%= s.backupType %></td>
+                          <td class="text-muted small"><%= formatDate(s.nextRun) || '—' %></td>
+                          <td class="text-muted small"><%= channelNameById.get(s.channelId) || s.channelId || '—' %></td>
+                          <td><%= s.enabled ? 'yes' : 'no' %></td>
+                          <td class="text-end">
+                            <form method="post" action="/admin/backups/schedules/<%= s.scheduleId %>/delete" class="d-inline">
+                              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                              <button class="btn btn-outline-danger btn-sm icon-btn" type="submit" title="Delete schedule" aria-label="Delete schedule">🗑️</button>
+                            </form>
+                          </td>
+                        </tr>
+                      <% }) %>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
           </div>
+        </div>
+      </section>
+
+      <section class="card shadow-sm mb-4">
+        <div class="card-body">
+          <h2 class="h6 text-uppercase text-muted">Retention Policy</h2>
+          <form method="post" action="/admin/backups/retention" class="row g-2">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <div class="col-12 col-md-4">
+              <label class="form-label">Keep last (count)</label>
+              <input class="form-control" name="retentionCount" type="number" min="1" step="1" value="<%= cfg?.backup?.retentionCount ?? 10 %>" />
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label">Delete older than (days)</label>
+              <input class="form-control" name="retentionDays" type="number" min="1" step="1" value="<%= cfg?.backup?.retentionDays ?? 30 %>" />
+            </div>
+            <div class="col-12 col-md-4 d-grid align-self-end">
+              <button class="btn btn-outline-secondary" type="submit">Save Retention</button>
+            </div>
+          </form>
         </div>
       </section>
 
@@ -227,34 +335,38 @@
                     <td data-label="Status"><%= b.status %></td>
                     <td data-label="Size" class="text-muted small"><%= b.size ? (b.size / (1024 * 1024)).toFixed(2) + ' MB' : '0 MB' %></td>
                     <td data-label="Archived"><%= b.archived ? 'yes' : 'no' %></td>
-                    <td data-label="Created" class="text-muted small"><%= b.createdAt.toISOString() %></td>
+                    <td data-label="Created" class="text-muted small"><%= formatDate(b.createdAt) || '—' %></td>
                     <td data-label="Actions" class="text-end">
                       <div class="backup-actions">
-                        <a class="btn btn-outline-secondary btn-sm" href="/admin/backups/download/<%= b.backupId %>">Download</a>
+                        <a class="btn btn-outline-secondary btn-sm icon-btn" href="/admin/backups/download/<%= b.backupId %>" title="Download" aria-label="Download">⬇️</a>
                         <form method="post" action="/admin/backups/restore/<%= b.backupId %>" class="d-inline">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <button
-                            class="btn btn-outline-primary btn-sm"
+                            class="btn btn-outline-primary btn-sm icon-btn"
                             type="submit"
                             data-confirm="Restore roles/channels from this backup?"
                             data-confirm-title="Quick restore?"
                             data-confirm-ok="Restore"
                             data-confirm-cancel="Cancel"
+                            title="Quick Restore"
+                            aria-label="Quick Restore"
                           >
-                            Quick Restore
+                            ⚡
                           </button>
                         </form>
                         <form method="post" action="/admin/backups/delete/<%= b.backupId %>" class="d-inline">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <button
-                            class="btn btn-outline-danger btn-sm"
+                            class="btn btn-outline-danger btn-sm icon-btn"
                             type="submit"
                             data-confirm="Delete this backup?"
                             data-confirm-title="Delete backup?"
                             data-confirm-ok="Delete"
                             data-confirm-cancel="Cancel"
+                            title="Delete"
+                            aria-label="Delete"
                           >
-                            Delete
+                            🗑️
                           </button>
                         </form>
                       </div>

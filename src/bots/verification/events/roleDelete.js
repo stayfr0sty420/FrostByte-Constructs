@@ -12,7 +12,7 @@ function roleColor(role) {
 async function execute(client, role) {
   const guildId = role?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const embed = baseEmbed('Role Deleted');
@@ -31,3 +31,5 @@ async function execute(client, role) {
 }
 
 module.exports = { name: 'roleDelete', execute };
+
+

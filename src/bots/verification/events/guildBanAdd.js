@@ -7,7 +7,7 @@ const { isGuildApproved } = require('../../../services/admin/guildRegistryServic
 async function execute(client, ban) {
   const guildId = ban?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const user = ban.user || null;
@@ -27,3 +27,5 @@ async function execute(client, ban) {
 }
 
 module.exports = { name: 'guildBanAdd', execute };
+
+

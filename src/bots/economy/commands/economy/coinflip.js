@@ -15,6 +15,7 @@ const { coinflip } = require('../../../../services/economy/gamblingService');
 const { getOrCreateUser } = require('../../../../services/economy/userService');
 const { getEconomyEmojis, formatCredits, formatCreditsWithLabel, buildOutcomeFooter, invalidateGuildEmojiCacheMany } = require('../../util/credits');
 const { seedEconomyEmojisForGuild } = require('../../util/seedEconomyEmojis');
+const { RoBotEmojis } = require('../../util/robotEmojiLookup');
 const { sendLog } = require('../../../../services/discord/loggingService');
 
 const GAME_TTL_MS = 2 * 60 * 1000;
@@ -286,17 +287,17 @@ function buildMessagePayload(game, opts = {}, components = []) {
   return payload;
 }
 
-async function animateCoinflip({ message, game, pick, rows, totalMs = 200 } = {}) {
+async function animateCoinflip({ message, game, pick, rows, totalMs = 140 } = {}) {
   const msg = message;
   if (!msg?.edit) return;
   const spinUrl = String(game?.emojis?.coinSpinUrl || '').trim();
   if (spinUrl.toLowerCase().endsWith('.gif')) {
-    await sleep(Math.max(90, Math.floor(totalMs)));
+    await sleep(Math.max(60, Math.floor(totalMs)));
     return;
   }
 
   const frameCount = 2;
-  const delay = Math.max(50, Math.floor(totalMs / frameCount));
+  const delay = Math.max(40, Math.floor(totalMs / frameCount));
 
   for (let i = 0; i < frameCount; i += 1) {
     // eslint-disable-next-line no-await-in-loop
@@ -520,9 +521,9 @@ module.exports = {
       }
       return '';
     })();
-    await interaction.deferReply();
-    await interaction.editReply({ content: '🪙 Preparing coinflip...' }).catch(() => null);
-
+    const spinEmoji = String(RoBotEmojis?.coinflip || '🪙');
+    const placeholder = new EmbedBuilder().setColor(0x2563eb).setDescription(`${spinEmoji} Spinning...`);
+    await interaction.reply({ embeds: [placeholder] }).catch(() => null);
     const user = await getOrCreateUser({
       guildId,
       discordId: interaction.user.id,
@@ -536,9 +537,9 @@ module.exports = {
     }
 
     const parsed = parseCoinflipRequest({ betInput, sideInput, walletBalance: user.balance });
-    if (!parsed.ok) return await interaction.editReply({ content: parsed.reason });
+    if (!parsed.ok) return await interaction.editReply({ content: parsed.reason, embeds: [], components: [] });
     if (parsed.amount < 1) {
-      return await interaction.editReply({ content: parsed.allIn ? 'Nothing to bet (wallet is empty).' : 'Invalid bet.' });
+      return await interaction.editReply({ content: parsed.allIn ? 'Nothing to bet (wallet is empty).' : 'Invalid bet.', embeds: [], components: [] });
     }
 
     const game = {
@@ -567,15 +568,15 @@ module.exports = {
     }).catch(() => null);
     let msg = await interaction.editReply(prePayload).catch(() => null);
     if (!msg) msg = await interaction.editReply({ embeds: [pre], components: [] }).catch(() => null);
-    if (!msg) return await interaction.editReply({ content: '❌ Failed to start coinflip. Try again.' }).catch(() => null);
+    if (!msg) return await interaction.editReply({ content: '❌ Failed to start coinflip. Try again.', embeds: [], components: [] }).catch(() => null);
 
     game.messageId = msg.id || '';
     const firstAttachmentUrl = msg?.attachments?.first?.()?.url || '';
     if (firstAttachmentUrl && !game?.emojis?.coinSpinUrl) game.emojis = { ...(game.emojis || {}), coinSpinUrl: firstAttachmentUrl };
 
-    await animateCoinflip({ message: msg, game, pick: parsed.side, rows: [], totalMs: 220 }).catch(() => null);
+    await animateCoinflip({ message: msg, game, pick: parsed.side, rows: [], totalMs: 140 }).catch(() => null);
     const result = await coinflip({ guildId: game.guildId, discordId: game.userId, bet: game.bet, choice: parsed.side || undefined });
-    if (!result.ok) return await interaction.editReply({ content: result.reason || 'Coinflip failed.' }).catch(() => null);
+    if (!result.ok) return await interaction.editReply({ content: result.reason || 'Coinflip failed.', embeds: [], components: [] }).catch(() => null);
 
     const final = buildEmbed(game, { phase: 'result', pick: parsed.side, result });
     void sendLog({

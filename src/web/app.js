@@ -96,19 +96,30 @@ async function createWebApp({ economyClient, backupClient, verificationClient })
     return csrfProtection(req, res, next);
   });
 
+  const formatDate = (value) => {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const datePart = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    const timePart = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    return `${datePart} ${timePart}`;
+  };
+
   app.use((req, res, next) => {
     res.locals.discordUser = req.user || null;
     res.locals.csrfToken = typeof req.csrfToken === 'function' ? req.csrfToken() : '';
     res.locals.activeGuildId = req.session?.activeGuildId || '';
     const guildId = res.locals.activeGuildId;
     const discord = app.locals.discord;
-    res.locals.activeGuildName = guildId
-      ? discord?.verification?.guilds?.cache?.get?.(guildId)?.name ||
-        discord?.backup?.guilds?.cache?.get?.(guildId)?.name ||
-        discord?.economy?.guilds?.cache?.get?.(guildId)?.name ||
-        ''
-      : '';
+    const guild =
+      (guildId && discord?.verification?.guilds?.cache?.get?.(guildId)) ||
+      (guildId && discord?.backup?.guilds?.cache?.get?.(guildId)) ||
+      (guildId && discord?.economy?.guilds?.cache?.get?.(guildId)) ||
+      null;
+    res.locals.activeGuildName = guild?.name || '';
+    res.locals.activeGuildIcon = guild?.iconURL?.({ size: 64, extension: 'png' }) || '';
     res.locals.publicBaseUrl = env.PUBLIC_BASE_URL || '';
+    res.locals.formatDate = formatDate;
     next();
   });
 

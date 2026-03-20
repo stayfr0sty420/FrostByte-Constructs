@@ -39,7 +39,7 @@ async function scheduleOne({ discordClient, schedule }) {
 
   const task = cron.schedule(cronExpr, async () => {
     try {
-      const approved = await isGuildApproved(schedule.guildId);
+      const approved = await isGuildApproved(schedule.guildId, 'backup');
       if (!approved) {
         logger.info({ guildId: schedule.guildId, scheduleId: schedule.scheduleId }, 'Skipping scheduled backup (not approved)');
         return;
@@ -71,7 +71,7 @@ async function initBackupScheduler({ discordClient }) {
   logger.info({ count: schedules.length }, 'Backup scheduler initialized');
 }
 
-async function upsertSchedule({ discordClient, guildId, cronExpr, backupType, createdBy, channelId = '' }) {
+async function upsertSchedule({ discordClient, guildId, cronExpr, backupType, createdBy, channelId = '', enabled = true }) {
   if (!cron.validate(cronExpr)) return { ok: false, reason: 'Invalid cron expression.' };
   const schedule = await BackupSchedule.create({
     scheduleId: require('nanoid').nanoid(12),
@@ -79,7 +79,7 @@ async function upsertSchedule({ discordClient, guildId, cronExpr, backupType, cr
     cron: cronExpr,
     interval: cronExpr,
     backupType: normalizeBackupType(backupType),
-    enabled: true,
+    enabled: Boolean(enabled),
     createdBy: createdBy || '',
     channelId: channelId || ''
   });

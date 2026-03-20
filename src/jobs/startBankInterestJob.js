@@ -61,7 +61,9 @@ async function applyInterestOnce() {
     return;
   }
 
-  const guilds = await GuildConfig.find({ 'approval.status': 'approved' });
+  const guilds = await GuildConfig.find({
+    $or: [{ 'botApprovals.economy.status': 'approved' }, { 'approval.status': 'approved' }]
+  });
   for (const cfg of guilds) {
     const last = cfg.economy?.interestLastAppliedAt ? new Date(cfg.economy.interestLastAppliedAt) : null;
     if (last && now.getTime() - last.getTime() < 11 * 60 * 60 * 1000) continue;

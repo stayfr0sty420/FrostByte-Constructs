@@ -8,7 +8,7 @@ const { isGuildApproved } = require('../../../services/admin/guildRegistryServic
 async function execute(client, member) {
   if (!member?.guild?.id) return;
   const guildId = member.guild.id;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
   await applyJoinGate(client, guildId, member.id).catch(() => null);
 
@@ -28,3 +28,5 @@ async function execute(client, member) {
 }
 
 module.exports = { name: 'guildMemberAdd', execute };
+
+

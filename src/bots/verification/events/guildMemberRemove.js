@@ -7,7 +7,7 @@ const { isGuildApproved } = require('../../../services/admin/guildRegistryServic
 async function execute(client, member) {
   if (!member?.guild?.id) return;
   const guildId = member.guild.id;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
   const embed = baseEmbed('Member Left');
   addField(embed, 'User', formatUser(member.user));
@@ -23,3 +23,5 @@ async function execute(client, member) {
 }
 
 module.exports = { name: 'guildMemberRemove', execute };
+
+

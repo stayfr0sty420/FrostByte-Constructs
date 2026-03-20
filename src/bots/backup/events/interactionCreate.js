@@ -4,7 +4,7 @@ const { isGuildApproved } = require('../../../services/admin/guildRegistryServic
 async function execute(client, interaction) {
   try {
     if (interaction.guildId) {
-      const approved = await isGuildApproved(interaction.guildId);
+      const approved = await isGuildApproved(interaction.guildId, 'backup');
       if (!approved) {
         if (interaction.isAutocomplete()) {
           await interaction.respond([]).catch(() => null);

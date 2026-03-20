@@ -2,7 +2,6 @@
 
 const { SlashCommandBuilder } = require('discord.js');
 const { getOrCreateGuildConfig } = require('../../../services/economy/guildConfigService');
-const { createVerifyToken } = require('../../../services/verification/verifyTokenService');
 const { safeReply } = require('../../shared/util/reply');
 const {
   getBaseUrl,
@@ -15,7 +14,7 @@ const {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('verify')
-    .setDescription('Post the verify panel (admin) or get your personal verify link.'),
+    .setDescription('Post the verify panel (admin) or get the verify link.'),
   async execute(_client, interaction) {
     const guildId = interaction.guildId;
     if (!guildId) return await safeReply(interaction, { content: 'Guild only.', ephemeral: true });
@@ -48,8 +47,7 @@ module.exports = {
     }
 
     const baseUrl = getBaseUrl();
-    const token = createVerifyToken({ guildId, discordId: interaction.user.id });
-    const url = `${baseUrl}/verify/${guildId}?t=${encodeURIComponent(token)}`;
+    const url = `${baseUrl}/verify/${guildId}/start`;
     const embed = buildVerifyLinkEmbed(cfg);
     const row = buildVerifyLinkRow(url);
     return await safeReply(interaction, { embeds: [embed], components: [row], ephemeral: true });

@@ -332,14 +332,14 @@ module.exports = {
     if (!guildId) return await interaction.reply({ content: 'Guild only.', ephemeral: true });
 
     const bet = interaction.options.getInteger('bet', true);
-    await interaction.deferReply();
-
     const playerLabel = interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
+    const preCurrency = String(RoBotEmojis?.credit || '🪙');
+    const preSpin = String(RoBotEmojis?.coinflip || '🪙');
     const pre = new EmbedBuilder()
-      .setTitle(`${playerLabel} wagers ${formatCredits(bet, '🪙')} to play Blackjack 🃏`)
+      .setTitle(`${playerLabel} wagers ${formatCredits(bet, preCurrency)} to play Blackjack 🃏`)
       .setColor(0x3498db)
-      .setDescription(`🪙 Shuffling...`);
-    await interaction.editReply({ embeds: [pre], components: [] }).catch(() => null);
+      .setDescription(`${preSpin} Shuffling...`);
+    await interaction.reply({ embeds: [pre], components: [] }).catch(() => null);
 
     await maybeSyncBlackjackActionEmojis(client, guildId);
 
@@ -361,12 +361,12 @@ module.exports = {
       (async () => (await resolveGuildEmoji(client, guildId, 'RBStand')) || (await resolveGuildEmoji(client, guildId, 'Stand')))(),
       (async () => (await resolveGuildEmoji(client, guildId, 'RBDouble')) || (await resolveGuildEmoji(client, guildId, 'Double')))()
     ]);
-    await sleep(600);
+    await sleep(150);
 
     await getOrCreateUser({ guildId, discordId: interaction.user.id, username: interaction.user.username });
 
     const debited = await debitOrFail({ guildId, discordId: interaction.user.id, amount: bet });
-    if (!debited.ok) return await interaction.editReply({ content: debited.reason });
+    if (!debited.ok) return await interaction.editReply({ content: debited.reason, embeds: [], components: [] });
 
     const deck = buildDeck();
     const player = [deck.pop(), deck.pop()];

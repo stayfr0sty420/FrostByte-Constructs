@@ -7,7 +7,7 @@ const { baseEmbed, addField } = require('../util/logHelpers');
 async function execute(client, oldEmoji, newEmoji) {
   const guildId = newEmoji?.guild?.id || oldEmoji?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   if (oldEmoji.name === newEmoji.name) return;
@@ -29,3 +29,5 @@ async function execute(client, oldEmoji, newEmoji) {
 }
 
 module.exports = { name: 'emojiUpdate', execute };
+
+

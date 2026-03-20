@@ -94,6 +94,45 @@ async function getOrCreateGuildConfig(guildId) {
     changed = true;
   }
 
+  const fallbackStatus = cfg.approval?.status || 'pending';
+  const fallbackBy = cfg.approval?.reviewedBy || '';
+  const fallbackAt = cfg.approval?.reviewedAt || null;
+
+  if (!cfg.botApprovals) {
+    cfg.botApprovals = {
+      economy: { status: fallbackStatus, sanctionedBy: fallbackBy, sanctionedAt: fallbackAt },
+      backup: { status: fallbackStatus, sanctionedBy: fallbackBy, sanctionedAt: fallbackAt },
+      verification: { status: fallbackStatus, sanctionedBy: fallbackBy, sanctionedAt: fallbackAt }
+    };
+    changed = true;
+  }
+
+  const ensureBotApproval = (key) => {
+    if (!cfg.botApprovals) cfg.botApprovals = {};
+    if (!cfg.botApprovals[key]) {
+      cfg.botApprovals[key] = { status: fallbackStatus, sanctionedBy: fallbackBy, sanctionedAt: fallbackAt };
+      changed = true;
+      return;
+    }
+    const entry = cfg.botApprovals[key];
+    if (!entry.status) {
+      entry.status = fallbackStatus;
+      changed = true;
+    }
+    if (typeof entry.sanctionedBy !== 'string') {
+      entry.sanctionedBy = fallbackBy;
+      changed = true;
+    }
+    if (typeof entry.sanctionedAt === 'undefined') {
+      entry.sanctionedAt = fallbackAt;
+      changed = true;
+    }
+  };
+
+  ensureBotApproval('economy');
+  ensureBotApproval('backup');
+  ensureBotApproval('verification');
+
   if (!cfg.economy) {
     cfg.economy = {};
     changed = true;

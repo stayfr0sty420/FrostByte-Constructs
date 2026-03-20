@@ -7,7 +7,7 @@ const { isGuildApproved } = require('../../../services/admin/guildRegistryServic
 async function execute(client, message) {
   const guildId = message?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const channel = message.channel || null;
@@ -40,3 +40,5 @@ async function execute(client, message) {
 }
 
 module.exports = { name: 'messageDelete', execute };
+
+

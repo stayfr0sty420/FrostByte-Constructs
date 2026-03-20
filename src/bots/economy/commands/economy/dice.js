@@ -14,6 +14,7 @@ const { getOrCreateUser } = require('../../../../services/economy/userService');
 const { getEconomyAccountGuildId } = require('../../../../services/economy/accountScope');
 const { getEconomyEmojis, formatCredits, formatCreditsWithLabel, buildOutcomeFooter, invalidateGuildEmojiCacheMany } = require('../../util/credits');
 const { seedEconomyEmojisForGuild } = require('../../util/seedEconomyEmojis');
+const { RoBotEmojis } = require('../../util/robotEmojiLookup');
 const { sendLog } = require('../../../../services/discord/loggingService');
 
 const GAME_TTL_MS = 2 * 60 * 1000;
@@ -355,9 +356,9 @@ function buildEmbed(game, { phase = 'select', die1 = 1, die2 = 1, pick = null, w
   return embed;
 }
 
-async function animateSelectPreview({ client, gameId, message, delayMs = 650 } = {}) {
+async function animateSelectPreview({ client, gameId, message, delayMs = 300 } = {}) {
   if (!client?.state?.dice || !message?.edit || !gameId) return;
-  const delay = Math.max(300, Math.floor(Number(delayMs) || 650));
+  const delay = Math.max(160, Math.floor(Number(delayMs) || 300));
   const startedAt = Date.now();
 
   while (true) {
@@ -519,7 +520,9 @@ module.exports = {
       }
       return '';
     })();
-    await interaction.deferReply();
+    const diceEmoji = RoBotEmojis?.dice?.faces?.[1] || '🎲';
+    const placeholder = new EmbedBuilder().setColor(0x2563eb).setDescription(`${diceEmoji} Rolling dice...`);
+    await interaction.reply({ embeds: [placeholder] }).catch(() => null);
     void maybeSyncDiceEmojis(client, guildId).catch(() => null);
 
     const playerName = interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
@@ -527,11 +530,11 @@ module.exports = {
     const emojis = await getEconomyEmojis(client, guildId);
 
     const parsed = parseBetInput(betInput, user.balance);
-    if (!parsed.ok) return await interaction.editReply({ content: parsed.reason });
-    if (parsed.amount < 1) return await interaction.editReply({ content: parsed.allIn ? 'Nothing to bet (wallet is empty).' : 'Invalid bet.' });
+    if (!parsed.ok) return await interaction.editReply({ content: parsed.reason, embeds: [], components: [] });
+    if (parsed.amount < 1) return await interaction.editReply({ content: parsed.allIn ? 'Nothing to bet (wallet is empty).' : 'Invalid bet.', embeds: [], components: [] });
 
     const debited = await debitOrFail({ guildId, discordId: interaction.user.id, amount: parsed.amount });
-    if (!debited.ok) return await interaction.editReply({ content: debited.reason });
+    if (!debited.ok) return await interaction.editReply({ content: debited.reason, embeds: [], components: [] });
 
     const game = {
       id: nanoid(10),
@@ -564,7 +567,7 @@ module.exports = {
     }).catch(() => null);
 
     if (msg?.edit) {
-      void animateSelectPreview({ client, gameId: game.id, message: msg, delayMs: 650 }).catch(() => null);
+      void animateSelectPreview({ client, gameId: game.id, message: msg, delayMs: 300 }).catch(() => null);
     }
 
     setTimeout(() => {

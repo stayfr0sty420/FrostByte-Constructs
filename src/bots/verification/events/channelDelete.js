@@ -13,7 +13,7 @@ function channelTypeLabel(channel) {
 async function execute(client, channel) {
   const guildId = channel?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const embed = baseEmbed('Channel Deleted');
@@ -32,3 +32,5 @@ async function execute(client, channel) {
 }
 
 module.exports = { name: 'channelDelete', execute };
+
+

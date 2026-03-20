@@ -9,7 +9,8 @@
         <span class="brand-title">Rodstarkian Suite</span>
       </span>
     </a>
-    <% if (adminUser && activeGuildId) { %>
+    <% const hasActiveGuild = adminUser && activeGuildId; %>
+    <% if (hasActiveGuild) { %>
       <span class="navbar-text small text-white-50 d-none d-lg-inline">
         Server: <%= activeGuildName || activeGuildId %>
       </span>
@@ -28,22 +29,55 @@
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav me-auto mb-2 mb-lg-0">
         <% if (adminUser) { %>
-        <li class="nav-item"><a class="nav-link" href="/admin/servers">Servers</a></li>
-        <li class="nav-item"><a class="nav-link" href="/admin/dashboard">Dashboard</a></li>
-        <li class="nav-item"><a class="nav-link" href="/admin/help">Help</a></li>
-        <li class="nav-item"><a class="nav-link" href="/admin/economy/items">Items</a></li>
-        <li class="nav-item"><a class="nav-link" href="/admin/economy/shop">Shop</a></li>
-        <li class="nav-item"><a class="nav-link" href="/admin/economy/users">Users</a></li>
-        <li class="nav-item"><a class="nav-link" href="/admin/backups">Backups</a></li>
-        <li class="nav-item"><a class="nav-link" href="/admin/voice">Voice 24/7</a></li>
-        <li class="nav-item"><a class="nav-link" href="/admin/verification/settings">Verification</a></li>
-        <li class="nav-item"><a class="nav-link" href="/admin/logs">Logs</a></li>
-        <% if (adminUser.role === 'owner') { %>
-        <li class="nav-item"><a class="nav-link" href="/admin/accounts">Accounts</a></li>
-        <% } %>
+          <li class="nav-item"><a class="nav-link" href="/admin/servers">Servers</a></li>
+          <% if (hasActiveGuild) { %>
+            <li class="nav-item"><a class="nav-link" href="/admin/dashboard">Dashboard</a></li>
+
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                God's Eye
+              </a>
+              <ul class="dropdown-menu dropdown-menu-dark">
+                <li><a class="dropdown-item" href="/admin/verification/settings">Verification</a></li>
+                <li><a class="dropdown-item" href="/admin/verification/iplogs">IP Logs</a></li>
+                <li><a class="dropdown-item" href="/admin/verification/pending">Pending Reviews</a></li>
+              </ul>
+            </li>
+
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                RoBot
+              </a>
+              <ul class="dropdown-menu dropdown-menu-dark">
+                <li><a class="dropdown-item" href="/admin/economy/users">Users</a></li>
+                <li><a class="dropdown-item" href="/admin/economy/items">Items</a></li>
+                <li><a class="dropdown-item" href="/admin/economy/shop">Shop</a></li>
+              </ul>
+            </li>
+
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                Rodstarkian Vault
+              </a>
+              <ul class="dropdown-menu dropdown-menu-dark">
+                <li><a class="dropdown-item" href="/admin/backups">Backups</a></li>
+              </ul>
+            </li>
+          <% } %>
+
+          <% if (adminUser.role === 'owner') { %>
+            <li class="nav-item"><a class="nav-link" href="/admin/accounts">Accounts</a></li>
+          <% } %>
+
+          <li class="nav-item"><a class="nav-link" href="/admin/logs">Logs</a></li>
         <% } %>
       </ul>
       <ul class="navbar-nav ms-auto">
+        <% if (adminUser) { %>
+          <li class="nav-item">
+            <a class="nav-link" href="/admin/help">Help</a>
+          </li>
+        <% } %>
         <% if (adminUser) { %>
         <li class="nav-item">
           <span class="user-pill me-3">

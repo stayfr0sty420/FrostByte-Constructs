@@ -7,7 +7,7 @@ const { baseEmbed, addField, formatChannel, formatUser, formatDate } = require('
 async function execute(client, invite) {
   const guildId = invite?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const embed = baseEmbed('Invite Created');
@@ -30,3 +30,5 @@ async function execute(client, invite) {
 }
 
 module.exports = { name: 'inviteCreate', execute };
+
+

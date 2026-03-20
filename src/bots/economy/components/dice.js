@@ -51,14 +51,14 @@ async function handleDiceComponent(client, interaction) {
   const disabledRows = buildSelectRow({ gameId: game.id, emojis, disabled: true });
 
   // Fast roll animation after bet type selection (faster than select-preview rolling).
-  for (let i = 0; i < 8; i += 1) {
+  for (let i = 0; i < 5; i += 1) {
     const d1 = pickDie();
     const d2 = pickDie();
     const embed = buildEmbed(game, { phase: 'rolling', die1: d1, die2: d2, pick });
     // eslint-disable-next-line no-await-in-loop
     await interaction.message.edit({ embeds: [embed], components: disabledRows }).catch(() => null);
     // eslint-disable-next-line no-await-in-loop
-    await sleep(80);
+    await sleep(40);
   }
 
   const resolved = await resolveDiceGame({ client, game, pick });

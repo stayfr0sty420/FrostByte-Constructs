@@ -7,7 +7,7 @@ const { baseEmbed, addField } = require('../util/logHelpers');
 async function execute(client, emoji) {
   const guildId = emoji?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const embed = baseEmbed('Emoji Deleted');
@@ -26,3 +26,5 @@ async function execute(client, emoji) {
 }
 
 module.exports = { name: 'emojiDelete', execute };
+
+

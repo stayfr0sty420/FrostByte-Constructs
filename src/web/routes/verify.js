@@ -6,7 +6,7 @@ const VerificationSession = require('../../db/models/VerificationSession');
 const { sendLog } = require('../../services/discord/loggingService');
 const { EmbedBuilder } = require('discord.js');
 const { sha256 } = require('../../services/utils/crypto');
-const { verifyVerifyToken, getVerifyTokenFromReq } = require('../../services/verification/verifyTokenService');
+const { createVerifyToken, verifyVerifyToken, getVerifyTokenFromReq } = require('../../services/verification/verifyTokenService');
 const net = require('net');
 const { lookupIpGeo, ipGeoToText } = require('../../services/verification/ipGeoService');
 
@@ -15,7 +15,7 @@ const router = express.Router();
 function tokenFailureView(res, reason = 'Invalid or expired verification link.') {
   return res.status(400).render('pages/verify_disabled', {
     title: 'Invalid Verification Link',
-    message: `${reason} Please run /verify again in Discord.`
+    message: `${reason} Please click the Verify button again.`
   });
 }
 
@@ -36,24 +36,57 @@ function parseGeoFromBody(body) {
   return { ok: true, geo: { lat, lon, accuracy } };
 }
 
+function botApprovalStatus(cfg, botKey) {
+  const key = String(botKey || '').trim();
+  if (!key) return cfg?.approval?.status || 'pending';
+  return cfg?.botApprovals?.[key]?.status || cfg?.approval?.status || 'pending';
+}
+
+function verifyGate(req, res, cfg, guildId) {
+  if (botApprovalStatus(cfg, 'verification') !== 'approved') {
+    res.render('pages/verify_disabled', { title: 'Server Not Approved', message: 'This server is not approved yet.' });
+    return false;
+  }
+  if (!cfg.verification?.enabled) {
+    res.render('pages/verify_disabled', { title: 'Verification Disabled' });
+    return false;
+  }
+  if (!cfg.verification?.verifiedRoleId) {
+    res.render('pages/verify_disabled', {
+      title: 'Verification Not Configured',
+      message: 'This server is missing a Verified role configuration. Ask an admin to set it in the dashboard.'
+    });
+    return false;
+  }
+  return true;
+}
+
+router.get('/:guildId/start', async (req, res) => {
+  const guildId = req.params.guildId;
+  const cfg = await getOrCreateGuildConfig(guildId);
+  if (!verifyGate(req, res, cfg, guildId)) return;
+
+  if (!req.user?.id) {
+    const returnTo = encodeURIComponent(req.originalUrl);
+    return res.redirect(`/auth/discord?returnTo=${returnTo}`);
+  }
+
+  const token = createVerifyToken({ guildId, discordId: req.user.id });
+  return res.redirect(`/verify/${guildId}?t=${encodeURIComponent(token)}`);
+});
+
 router.get('/:guildId', async (req, res) => {
   const guildId = req.params.guildId;
   const token = getVerifyTokenFromReq(req);
+  if (!token) {
+    return res.redirect(`/verify/${guildId}/start`);
+  }
   const v = verifyVerifyToken(token);
   if (!v.ok) return tokenFailureView(res);
   if (v.payload.gid !== guildId) return tokenFailureView(res);
 
   const cfg = await getOrCreateGuildConfig(guildId);
-  if (cfg.approval?.status !== 'approved') {
-    return res.render('pages/verify_disabled', { title: 'Server Not Approved', message: 'This server is not approved yet.' });
-  }
-  if (!cfg.verification?.enabled) return res.render('pages/verify_disabled', { title: 'Verification Disabled' });
-  if (!cfg.verification?.verifiedRoleId) {
-    return res.render('pages/verify_disabled', {
-      title: 'Verification Not Configured',
-      message: 'This server is missing a Verified role configuration. Ask an admin to set it in the dashboard.'
-    });
-  }
+  if (!verifyGate(req, res, cfg, guildId)) return;
 
   const ip = getReqIp(req);
   const userAgent = req.headers['user-agent'] || '';
@@ -100,8 +133,12 @@ router.get('/:guildId', async (req, res) => {
   }).catch(() => null);
 
   const requireLocation = cfg.verification?.requireLocation !== false;
+  const baseQuestions = Array.isArray(cfg.verification?.questions) && cfg.verification.questions.length
+    ? cfg.verification.questions
+    : [cfg.verification?.question1, cfg.verification?.question2, cfg.verification?.question3].filter(Boolean);
+  const questions = baseQuestions.length ? baseQuestions.slice(0, 3) : [];
   const error = String(req.query.error || '');
-  return res.render('pages/verify', { title: 'Verify', guildId, cfg, requireLocation, error, token });
+  return res.render('pages/verify', { title: 'Verify', guildId, cfg, requireLocation, error, token, questions });
 });
 
 router.post('/:guildId/client', async (req, res) => {
@@ -112,7 +149,7 @@ router.post('/:guildId/client', async (req, res) => {
   if (v.payload.gid !== guildId) return tokenFailureJson(res);
 
   const cfg = await getOrCreateGuildConfig(guildId);
-  if (cfg.approval?.status !== 'approved') return res.status(403).json({ ok: false, reason: 'not_approved' });
+  if (botApprovalStatus(cfg, 'verification') !== 'approved') return res.status(403).json({ ok: false, reason: 'not_approved' });
   if (!cfg.verification?.enabled) return res.status(403).json({ ok: false, reason: 'disabled' });
   if (!cfg.verification?.verifiedRoleId) return res.status(403).json({ ok: false, reason: 'not_configured' });
 
@@ -203,7 +240,7 @@ router.post('/:guildId/geo', async (req, res) => {
   if (v.payload.gid !== guildId) return tokenFailureJson(res);
 
   const cfg = await getOrCreateGuildConfig(guildId);
-  if (cfg.approval?.status !== 'approved') return res.status(403).json({ ok: false, reason: 'not_approved' });
+  if (botApprovalStatus(cfg, 'verification') !== 'approved') return res.status(403).json({ ok: false, reason: 'not_approved' });
   if (!cfg.verification?.enabled) return res.status(403).json({ ok: false, reason: 'disabled' });
   if (!cfg.verification?.verifiedRoleId) return res.status(403).json({ ok: false, reason: 'not_configured' });
 
@@ -287,7 +324,7 @@ router.post('/:guildId/geo/denied', async (req, res) => {
   if (v.payload.gid !== guildId) return tokenFailureJson(res);
 
   const cfg = await getOrCreateGuildConfig(guildId);
-  if (cfg.approval?.status !== 'approved') return res.status(403).json({ ok: false, reason: 'not_approved' });
+  if (botApprovalStatus(cfg, 'verification') !== 'approved') return res.status(403).json({ ok: false, reason: 'not_approved' });
   if (!cfg.verification?.enabled) return res.status(403).json({ ok: false, reason: 'disabled' });
 
   const publicIp = String(req.body?.publicIp || '').trim();
@@ -362,7 +399,7 @@ router.post('/:guildId', async (req, res) => {
   if (v.payload.gid !== guildId) return wantsJson ? tokenFailureJson(res) : tokenFailureView(res);
 
   const cfg = await getOrCreateGuildConfig(guildId);
-  if (cfg.approval?.status !== 'approved') {
+  if (botApprovalStatus(cfg, 'verification') !== 'approved') {
     return res.render('pages/verify_disabled', { title: 'Server Not Approved', message: 'This server is not approved yet.' });
   }
   if (!cfg.verification?.enabled) return res.render('pages/verify_disabled', { title: 'Verification Disabled' });
@@ -471,7 +508,7 @@ router.get('/:guildId/complete', requireAuth, async (req, res) => {
   if (v.payload.gid !== guildId) return tokenFailureView(res);
 
   const cfg = await getOrCreateGuildConfig(guildId);
-  if (cfg.approval?.status !== 'approved') {
+  if (botApprovalStatus(cfg, 'verification') !== 'approved') {
     return res.render('pages/verify_disabled', { title: 'Server Not Approved', message: 'This server is not approved yet.' });
   }
   if (!cfg.verification?.enabled) return res.render('pages/verify_disabled', { title: 'Verification Disabled' });
@@ -587,3 +624,4 @@ router.get('/:guildId/complete', requireAuth, async (req, res) => {
 });
 
 module.exports = { router };
+

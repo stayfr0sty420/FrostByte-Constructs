@@ -12,7 +12,7 @@ async function execute(client, interaction) {
       (typeof interaction.isContextMenuCommand === 'function' && interaction.isContextMenuCommand());
 
     if (interaction.guildId && needsApprovalCheck) {
-      const approved = await isGuildApproved(interaction.guildId);
+      const approved = await isGuildApproved(interaction.guildId, 'economy');
       if (!approved) {
         if (interaction.isAutocomplete()) {
           await interaction.respond([]).catch(() => null);

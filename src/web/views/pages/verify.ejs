@@ -12,32 +12,18 @@
             <div class="card-body p-4">
               <h1 class="h4 mb-2">Verification</h1>
               <p class="text-muted">
-                This process captures your Discord ID, email (via Discord OAuth), public IP, and location for security.
-                After you click <strong>Verify</strong>, Discord will ask you to authorize email access.
+                This server requires you to verify yourself to get access to other channels. Click <strong>Verify</strong> to continue.
               </p>
 
               <% const needsGeo = (typeof requireLocation !== 'undefined' && requireLocation) ? true : false; %>
 
               <% if (error === 'location_required') { %>
                 <div class="alert alert-danger">
-                  Location is required to verify. Click <strong>Allow Location</strong>, then submit again.
-                </div>
-              <% } %>
-
-              <% if (error === 'ip_required') { %>
-                <div class="alert alert-danger">
-                  Public IP is required to verify. Please wait a few seconds and try again.
+                  Please allow the required permissions and try again.
                 </div>
               <% } %>
 
               <div class="alert alert-danger d-none" id="formError"></div>
-
-              <% if (needsGeo) { %>
-                <div class="alert alert-warning">
-                  Location is required for verification. Your browser will ask for permission. For best accuracy, enable precise
-                  location on your device.
-                </div>
-              <% } %>
 
               <form
                 method="post"
@@ -53,22 +39,16 @@
                 <input type="hidden" name="geoLon" id="geoLon" />
                 <input type="hidden" name="geoAcc" id="geoAcc" />
 
-                <div class="mb-3">
-                  <label class="form-label"><%= cfg.verification.question1 %></label>
-                  <input class="form-control" name="answer1" />
-                </div>
-                <div class="mb-3">
-                  <label class="form-label"><%= cfg.verification.question2 %></label>
-                  <input class="form-control" name="answer2" />
-                </div>
-                <div class="mb-3">
-                  <label class="form-label"><%= cfg.verification.question3 || 'Optional question' %></label>
-                  <input class="form-control" name="answer3" />
-                </div>
+                <% const qs = Array.isArray(questions) && questions.length ? questions : [cfg.verification.question1, cfg.verification.question2, cfg.verification.question3].filter(Boolean); %>
+                <% qs.forEach((q, idx) => { %>
+                  <div class="mb-3">
+                    <label class="form-label"><%= q %></label>
+                    <input class="form-control" name="answer<%= idx + 1 %>" />
+                  </div>
+                <% }) %>
 
                 <div class="d-flex flex-wrap gap-2 align-items-center verify-actions">
-                  <button class="btn btn-primary" type="submit" id="submitBtn" <%= needsGeo ? 'disabled' : '' %>>Verify</button>
-                  <button class="btn btn-outline-primary" type="button" id="geoBtn"><%= needsGeo ? 'Allow Location (Required)' : 'Allow Location (Optional)' %></button>
+                  <button class="btn btn-primary" type="submit" id="submitBtn">Verify</button>
                   <span class="text-muted small" id="geoStatus"></span>
                 </div>
                 <div class="text-danger small mt-2" id="ipStatus"></div>

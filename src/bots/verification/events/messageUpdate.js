@@ -7,7 +7,7 @@ const { isGuildApproved } = require('../../../services/admin/guildRegistryServic
 async function execute(client, oldMessage, newMessage) {
   const guildId = newMessage?.guild?.id || oldMessage?.guild?.id;
   if (!guildId) return;
-  const approved = await isGuildApproved(guildId);
+  const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
   const channel = newMessage.channel || oldMessage.channel || null;
@@ -34,3 +34,5 @@ async function execute(client, oldMessage, newMessage) {
 }
 
 module.exports = { name: 'messageUpdate', execute };
+
+

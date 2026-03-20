@@ -117,7 +117,7 @@ async function handlePrefixCommand(client, message) {
   const m = content.match(prefixRe);
   if (!m) return false;
 
-  const approved = await isGuildApproved(message.guildId);
+  const approved = await isGuildApproved(message.guildId, 'economy');
   if (!approved) {
     await message.channel
       .send({

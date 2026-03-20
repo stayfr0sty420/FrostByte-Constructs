@@ -32,32 +32,23 @@
           <thead>
             <tr>
               <th>Observed IP</th>
-              <th>Public IP</th>
-              <th>User / Email</th>
-              <th>Geo</th>
-              <th>IP Geo</th>
-              <th>Count</th>
-              <th>Last Seen</th>
-              <th>Flag</th>
+              <th>Username</th>
+              <th>Email</th>
+              <th>GPS Geo</th>
               <th class="text-end">Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr data-log-empty style="<%= logs.length ? 'display:none;' : '' %>">
-              <td colspan="9" class="text-muted small">No logs yet.</td>
+              <td colspan="5" class="text-muted small">No logs yet.</td>
             </tr>
             <% logs.forEach(l => { %>
               <%
                 const searchText = [
                   l.ip,
-                  l.publicIp,
+                  l.username,
                   l.discordId,
                   l.email,
-                  l.flaggedReason,
-                  l.ipGeo?.city,
-                  l.ipGeo?.region,
-                  l.ipGeo?.country,
-                  l.ipGeo?.timezone,
                   l.geo?.lat,
                   l.geo?.lon
                 ]
@@ -66,69 +57,35 @@
                   .join(' ')
                   .toLowerCase();
               %>
-              <tr class="ip-log-row <%= l.flagged ? 'is-flagged' : '' %>" data-log-row data-search="<%= searchText %>">
-                <td><code><%= l.ip %></code></td>
-                <td class="text-muted small">
-                  <% if (l.publicIp) { %>
-                    <code><%= l.publicIp %></code>
-                    <% if (l.publicIpUpdatedAt) { %>
-                      <div class="text-white-50">Updated: <%= new Date(l.publicIpUpdatedAt).toISOString() %></div>
-                    <% } %>
-                  <% } %>
+              <tr class="ip-log-row" data-log-row data-search="<%= searchText %>">
+                <td>
+                  <div><code><%= l.ip %></code></div>
+                  <div class="text-muted small"><%= formatDate(l.lastSeenAt) || '' %></div>
                 </td>
-                <td class="text-muted small">
-                  <div><%= l.discordId ? l.discordId : '(visit only)' %></div>
-                  <% if (l.email) { %>
-                    <div class="text-white-50"><%= l.email %></div>
-                  <% } %>
+                <td>
+                  <div class="fw-semibold"><%= l.username || 'Unknown' %></div>
+                  <div class="text-muted small"><%= l.discordId ? l.discordId : '—' %></div>
                 </td>
+                <td class="text-muted small"><%= l.email || '—' %></td>
                 <td class="text-muted small">
                   <% if (l.geo && l.geo.lat !== null && l.geo.lon !== null) { %>
-                    <code><%= l.geo.lat %>, <%= l.geo.lon %></code>
-                    <% if (l.geo.accuracy !== null) { %>
-                      <span class="text-muted">±<%= Math.round(l.geo.accuracy) %>m</span>
-                    <% } %>
-                    <div>
-                      <a class="link-danger" href="https://www.google.com/maps?q=<%= encodeURIComponent(String(l.geo.lat) + ',' + String(l.geo.lon)) %>" target="_blank" rel="noreferrer">Map</a>
-                    </div>
-                    <% if (l.geoUpdatedAt) { %>
-                      <div class="text-white-50">Updated: <%= new Date(l.geoUpdatedAt).toISOString() %></div>
-                    <% } %>
+                    <a class="link-danger" href="https://www.google.com/maps?q=<%= encodeURIComponent(String(l.geo.lat) + ',' + String(l.geo.lon)) %>" target="_blank" rel="noreferrer">Map Location</a>
+                  <% } else { %>
+                    —
                   <% } %>
                 </td>
-                <td class="text-muted small">
-                  <% if (l.ipGeo && (l.ipGeo.city || l.ipGeo.region || l.ipGeo.country || (l.ipGeo.lat !== null && l.ipGeo.lon !== null))) { %>
-                    <div>
-                      <%= [l.ipGeo.city, l.ipGeo.region, l.ipGeo.country].filter(Boolean).join(', ') %>
-                      <% if (l.ipGeo.timezone) { %>
-                        <span class="text-white-50">(<%= l.ipGeo.timezone %>)</span>
-                      <% } %>
-                    </div>
-                    <% if (l.ipGeo.lat !== null && l.ipGeo.lon !== null) { %>
-                      <div>
-                        <a class="link-danger" href="https://www.google.com/maps?q=<%= encodeURIComponent(String(l.ipGeo.lat) + ',' + String(l.ipGeo.lon)) %>" target="_blank" rel="noreferrer">Map</a>
-                      </div>
-                    <% } %>
-                    <% if (l.ipGeoUpdatedAt) { %>
-                      <div class="text-white-50">Updated: <%= new Date(l.ipGeoUpdatedAt).toISOString() %></div>
-                    <% } %>
-                  <% } %>
-                </td>
-                <td><%= l.count %></td>
-                <td class="text-muted small"><%= new Date(l.lastSeenAt).toISOString() %></td>
-                <td><%= l.flagged ? (l.flaggedReason || 'flagged') : '' %></td>
                 <td class="text-end">
                   <form method="post" action="/admin/verification/iplogs/delete/<%= l._id %>" class="d-inline">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                     <button
-                      class="btn btn-outline-danger btn-sm"
+                      class="btn btn-outline-danger btn-sm icon-btn"
                       type="submit"
                       data-confirm="Delete this IP log entry? This will remove it from the database."
                       data-confirm-title="Delete IP log?"
                       data-confirm-ok="Delete"
                       data-confirm-cancel="Cancel"
                     >
-                      Delete
+                      🗑️
                     </button>
                   </form>
                 </td>
