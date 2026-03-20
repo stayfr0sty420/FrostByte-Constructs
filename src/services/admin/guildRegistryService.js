@@ -29,7 +29,7 @@ function cacheSet(guildId, botKey, status) {
   approvalCache.set(key, { status, expiresAt: Date.now() + CACHE_TTL_MS });
 }
 
-async function upsertGuildPresence({ guildId, guildName = '', botKey, present }) {
+async function upsertGuildPresence({ guildId, guildName = '', guildIcon = '', botKey, present }) {
   if (!guildId) return { ok: false, reason: 'Missing guildId.' };
   if (!['economy', 'backup', 'verification'].includes(botKey)) {
     return { ok: false, reason: 'Invalid botKey.' };
@@ -41,6 +41,7 @@ async function upsertGuildPresence({ guildId, guildName = '', botKey, present })
     [`bots.${botKey}`]: Boolean(present)
   };
   if (guildName) set.guildName = String(guildName);
+  if (guildIcon) set.guildIcon = String(guildIcon);
 
   await GuildConfig.updateOne({ guildId }, { $set: set });
   return { ok: true };

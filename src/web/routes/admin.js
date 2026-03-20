@@ -199,10 +199,10 @@ function guildFromClients(discord, guildId) {
   );
 }
 
-function guildIconUrl(discord, guildId) {
-  const guild = guildFromClients(discord, guildId);
-  return guild?.iconURL?.({ size: 64, extension: 'png' }) || '';
-}
+  function guildIconUrl(discord, guildId, fallback = '') {
+    const guild = guildFromClients(discord, guildId);
+    return guild?.iconURL?.({ size: 64, extension: 'png' }) || String(fallback || '').trim() || '';
+  }
 
 function botApprovalStatusFromConfig(cfg, botKey) {
   const key = String(botKey || '').trim();
@@ -267,8 +267,8 @@ router.get('/help', requireAdmin, async (req, res) => {
 
 // Servers + approvals
 router.get('/servers', requireAdmin, async (req, res) => {
-  const configs = await GuildConfig.find({})
-    .select('guildId guildName approval botApprovals bots createdAt updatedAt')
+    const configs = await GuildConfig.find({})
+      .select('guildId guildName guildIcon approval botApprovals bots createdAt updatedAt')
     .sort({ updatedAt: -1 })
     .limit(500)
     .lean();
@@ -304,7 +304,7 @@ router.get('/servers', requireAdmin, async (req, res) => {
         botApprovals,
         bots,
         presence,
-        iconUrl: guildIconUrl(discord, guildId),
+          iconUrl: guildIconUrl(discord, guildId, cfg.guildIcon),
         createdAt: cfg.createdAt || cfg.updatedAt,
         updatedAt: cfg.updatedAt
       };
@@ -326,8 +326,8 @@ router.get('/servers/:guildId/approvals', requireAdmin, async (req, res) => {
   const guildId = String(req.params.guildId || '').trim();
   if (!guildId) return res.redirect('/admin/servers');
 
-  const cfg = await GuildConfig.findOne({ guildId })
-    .select('guildId guildName approval botApprovals bots createdAt updatedAt')
+    const cfg = await GuildConfig.findOne({ guildId })
+      .select('guildId guildName guildIcon approval botApprovals bots createdAt updatedAt')
     .lean();
   if (!cfg) {
     setFlash(req, { type: 'warning', message: 'Server not found in database yet.' });
@@ -359,7 +359,7 @@ router.get('/servers/:guildId/approvals', requireAdmin, async (req, res) => {
     title: 'Manage Approvals',
     guildId,
     guildName: name,
-    guildIcon: guildIconUrl(discord, guildId),
+      guildIcon: guildIconUrl(discord, guildId, cfg.guildIcon),
     bots,
     flash
   });

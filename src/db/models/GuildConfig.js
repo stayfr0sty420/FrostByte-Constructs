@@ -4,6 +4,7 @@ const GuildConfigSchema = new mongoose.Schema(
   {
     guildId: { type: String, required: true, unique: true, index: true },
     guildName: { type: String, default: '' },
+    guildIcon: { type: String, default: '' },
 
     approval: {
       status: { type: String, default: 'pending', enum: ['pending', 'approved', 'rejected'], index: true },
