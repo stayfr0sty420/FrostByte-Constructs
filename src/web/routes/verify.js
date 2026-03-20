@@ -31,6 +31,8 @@ function parseGeoFromBody(body) {
 
   if (lat === null || lon === null || accuracy === null) return { ok: false, geo: { lat: null, lon: null, accuracy: null } };
   if (Number.isNaN(lat) || Number.isNaN(lon) || Number.isNaN(accuracy)) return { ok: false, geo: { lat: null, lon: null, accuracy: null } };
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return { ok: false, geo: { lat: null, lon: null, accuracy: null } };
+  if (accuracy < 0 || accuracy > 100000) return { ok: false, geo: { lat: null, lon: null, accuracy: null } };
   return { ok: true, geo: { lat, lon, accuracy } };
 }
 

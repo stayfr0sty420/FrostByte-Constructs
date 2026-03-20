@@ -12,6 +12,10 @@
   const csrfToken = String(form.getAttribute('data-csrf') || '').trim();
   const token = String(form.getAttribute('data-token') || '').trim();
 
+  const GEO_DESIRED_ACCURACY = 50; // meters
+  const GEO_MAX_WAIT_MS = 15000;
+  const GEO_MAX_AGE_MS = 0;
+
   let geoPostedOk = false;
   let publicIpPostedOk = false;
   let publicIpValue = '';
@@ -26,11 +30,27 @@
     return el ? String(el.value || '').trim() : '';
   }
 
+  function parseGeoInput() {
+    const latStr = getValue('geoLat');
+    const lonStr = getValue('geoLon');
+    const accStr = getValue('geoAcc');
+    if (!latStr || !lonStr || !accStr) return null;
+    const lat = Number(latStr);
+    const lon = Number(lonStr);
+    const acc = Number(accStr);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(acc)) return null;
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+    if (acc < 0 || acc > 100000) return null;
+    return { lat, lon, accuracy: acc };
+  }
+
   function hasGeo() {
-    const lat = getValue('geoLat');
-    const lon = getValue('geoLon');
-    const acc = getValue('geoAcc');
-    return Boolean(lat) && Boolean(lon) && Boolean(acc);
+    return Boolean(parseGeoInput());
+  }
+
+  function formatAccuracy(acc) {
+    if (!Number.isFinite(acc)) return '';
+    return `±${Math.round(acc)}m`;
   }
 
   function setGeoStatus(text) {
@@ -65,8 +85,14 @@
       setGeoStatus('');
       return;
     }
-    if (hasGeo()) setGeoStatus('Location captured.');
-    else setGeoStatus('Location required.');
+    const geo = parseGeoInput();
+    if (geo) {
+      const accLabel = formatAccuracy(geo.accuracy);
+      const quality = geo.accuracy <= GEO_DESIRED_ACCURACY ? 'Location captured (high accuracy).' : 'Location captured.';
+      setGeoStatus(`${quality}${accLabel ? ` ${accLabel}` : ''}`.trim());
+      return;
+    }
+    setGeoStatus('Location required.');
   }
 
   updateGeoStatus();
@@ -145,12 +171,66 @@
     }
 
     btn.disabled = true;
-    setGeoStatus('Requesting location…');
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setValue('geoLat', String(pos.coords.latitude));
-        setValue('geoLon', String(pos.coords.longitude));
-        setValue('geoAcc', String(pos.coords.accuracy));
+    setGeoStatus('Requesting high-accuracy location…');
+
+    const captureBestLocation = () =>
+      new Promise((resolve, reject) => {
+        let best = null;
+        let done = false;
+        let watchId = null;
+
+        const finalize = (pos, err) => {
+          if (done) return;
+          done = true;
+          if (watchId !== null && navigator.geolocation.clearWatch) {
+            navigator.geolocation.clearWatch(watchId);
+          }
+          if (pos) resolve(pos);
+          else reject(err || new Error('geo_failed'));
+        };
+
+        const onPos = (pos) => {
+          if (!pos || !pos.coords) return;
+          if (!best || pos.coords.accuracy < best.coords.accuracy) {
+            best = pos;
+          }
+          if (Number.isFinite(pos.coords.accuracy)) {
+            setGeoStatus(`Locating… ${formatAccuracy(pos.coords.accuracy)}`);
+          }
+          if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_DESIRED_ACCURACY) {
+            finalize(pos);
+          }
+        };
+
+        const onErr = (err) => {
+          if (best) return finalize(best);
+          return finalize(null, err);
+        };
+
+        try {
+          watchId = navigator.geolocation.watchPosition(onPos, onErr, {
+            enableHighAccuracy: true,
+            maximumAge: GEO_MAX_AGE_MS
+          });
+        } catch (err) {
+          return finalize(null, err);
+        }
+
+        setTimeout(() => {
+          if (done) return;
+          if (best) return finalize(best);
+          return finalize(null, new Error('geo_timeout'));
+        }, GEO_MAX_WAIT_MS);
+      });
+
+    captureBestLocation()
+      .then((pos) => {
+        const lat = Number(pos.coords.latitude);
+        const lon = Number(pos.coords.longitude);
+        const acc = Number(pos.coords.accuracy);
+        setValue('geoLat', String(lat));
+        setValue('geoLon', String(lon));
+        setValue('geoAcc', String(acc));
         btn.disabled = false;
         geoPostedOk = false;
         updateGeoStatus();
@@ -165,9 +245,9 @@
             },
             body: JSON.stringify({
               t: token,
-              lat: pos.coords.latitude,
-              lon: pos.coords.longitude,
-              accuracy: pos.coords.accuracy,
+              lat,
+              lon,
+              accuracy: acc,
               publicIp: publicIpValue || undefined
             })
           })
@@ -186,8 +266,8 @@
               updateVerifyEnabled();
             });
         }
-      },
-      (err) => {
+      })
+      .catch((err) => {
         btn.disabled = false;
         setGeoStatus('Location permission denied.');
         geoPostedOk = false;
@@ -205,9 +285,7 @@
             body: JSON.stringify({ t: token, reason, publicIp: publicIpValue || undefined })
           }).catch(() => null);
         }
-      },
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
+      });
   });
 
   // Inputs are optional; no missing-answers validation on client.

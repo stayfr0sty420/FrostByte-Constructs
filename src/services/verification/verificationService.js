@@ -48,6 +48,8 @@ function normalizeGeo(geo) {
   const lonNum = Number(lon);
   const accNum = Number(accuracy);
   if (Number.isNaN(latNum) || Number.isNaN(lonNum) || Number.isNaN(accNum)) return { ok: false, geo: { lat: null, lon: null, accuracy: null } };
+  if (latNum < -90 || latNum > 90 || lonNum < -180 || lonNum > 180) return { ok: false, geo: { lat: null, lon: null, accuracy: null } };
+  if (accNum < 0 || accNum > 100000) return { ok: false, geo: { lat: null, lon: null, accuracy: null } };
 
   return { ok: true, geo: { lat: latNum, lon: lonNum, accuracy: accNum } };
 }
