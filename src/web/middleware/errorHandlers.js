@@ -17,9 +17,12 @@ function errorHandler(err, req, res, _next) {
   res.locals.publicBaseUrl = res.locals.publicBaseUrl || '';
   res.locals.csrfToken = res.locals.csrfToken || '';
   if (err && err.code === 'EBADCSRFTOKEN') {
+    const backUrl = req.get('referer') || '/';
     return res.render('pages/error', {
       title: 'Session expired',
-      message: 'Your session token expired. Please refresh the page and try again.'
+      message: 'Your session token expired. Please refresh and try again.',
+      backUrl,
+      autoBack: true
     });
   }
   return res.render('pages/error', { title: 'Error', message: err.message || 'Server error.' });

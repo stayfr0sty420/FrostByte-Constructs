@@ -10,8 +10,18 @@
         <h1 class="h5 mb-2"><%= title %></h1>
         <div><%= message %></div>
       </div>
-      <a href="/" class="btn btn-secondary">Home</a>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="<%= backUrl || '/' %>" class="btn btn-secondary">Go Back</a>
+        <a href="/" class="btn btn-outline-light">Home</a>
+      </div>
     </main>
     <%- include('../partials/footer') %>
+    <% if (autoBack && backUrl) { %>
+      <script>
+        setTimeout(() => {
+          window.location.href = '<%= backUrl %>';
+        }, 1500);
+      </script>
+    <% } %>
   </body>
 </html>
