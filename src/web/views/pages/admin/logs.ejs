@@ -77,6 +77,7 @@
                   <div class="log-meta">
                     <div class="log-time"><%= formatDate(l.createdAt) || '' %></div>
                     <form method="post" action="/admin/logs/delete/<%= l._id %>" class="d-inline">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                       <button
                         class="btn btn-outline-danger btn-sm icon-btn"
                         type="submit"
