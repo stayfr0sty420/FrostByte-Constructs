@@ -57,16 +57,6 @@ async function main() {
   const backupClient = await createBackupBot();
   const verificationClient = await createVerificationBot();
 
-  await Promise.all([
-    economyClient.login(env.ECONOMY_DISCORD_TOKEN),
-    backupClient.login(env.BACKUP_DISCORD_TOKEN),
-    verificationClient.login(env.VERIFICATION_DISCORD_TOKEN)
-  ]);
-
-  logger.info({ economy: economyClient.user?.tag }, 'RoBot logged in');
-  logger.info({ backup: backupClient.user?.tag }, 'Rodstarkian Vault logged in');
-  logger.info({ verification: verificationClient.user?.tag }, "God's Eye logged in");
-
   const app = await createWebApp({ economyClient, backupClient, verificationClient });
   const server = http.createServer(app);
   const preferredPort = Math.max(1, Math.floor(Number(env.PORT) || 3000));
@@ -112,6 +102,16 @@ async function main() {
       .catch((cleanupErr) => logger.warn({ err: cleanupErr }, 'Cleanup error'))
       .finally(() => process.exit(1));
   });
+
+  await Promise.all([
+    economyClient.login(env.ECONOMY_DISCORD_TOKEN),
+    backupClient.login(env.BACKUP_DISCORD_TOKEN),
+    verificationClient.login(env.VERIFICATION_DISCORD_TOKEN)
+  ]);
+
+  logger.info({ economy: economyClient.user?.tag }, 'RoBot logged in');
+  logger.info({ backup: backupClient.user?.tag }, 'Rodstarkian Vault logged in');
+  logger.info({ verification: verificationClient.user?.tag }, "God's Eye logged in");
 
   startJobs({ economyClient, backupClient, verificationClient });
 
