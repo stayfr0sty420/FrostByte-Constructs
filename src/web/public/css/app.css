@@ -792,30 +792,42 @@ code {
   word-break: break-word;
 }
 
-.server-icon {
-  position: relative;
-  width: 36px;
-  height: 36px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
+  .server-icon {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
 
-.server-icon img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
+  .server-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+  }
 
-.server-icon-fallback {
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.8);
-}
+  .server-icon-fallback {
+    display: inline-flex;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .server-icon.image-loaded img {
+    opacity: 1;
+  }
+
+  .server-icon.image-loaded .server-icon-fallback {
+    display: none;
+  }
 
 .server-icon-lg {
   width: 52px;
