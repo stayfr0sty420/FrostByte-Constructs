@@ -441,10 +441,11 @@ module.exports = {
       }
       return '';
     })();
+    await interaction.deferReply().catch(() => null);
     const emojis = await getEconomyEmojis(client, guildId);
     const diceEmoji = (Array.isArray(emojis?.dice) ? emojis.dice[0] : '') || RoBotEmojis?.dice?.faces?.[1] || '🎲';
     const placeholder = new EmbedBuilder().setColor(0x2563eb).setDescription(`${diceEmoji} Rolling dice...`);
-    await interaction.reply({ embeds: [placeholder] }).catch(() => null);
+    await interaction.editReply({ embeds: [placeholder] }).catch(() => null);
 
     const playerName = interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
     const user = await getOrCreateUser({ guildId, discordId: interaction.user.id, username: interaction.user.username });

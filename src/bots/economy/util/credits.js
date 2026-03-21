@@ -19,6 +19,10 @@ const FALLBACK_BLACKJACK_ACTIONS = {
   double: '🃏'
 };
 
+const EMOJI_FETCH_TTL_MS = 10 * 60 * 1000;
+const EMOJI_FETCH_FAIL_TTL_MS = 60 * 1000;
+const emojiFetchCache = new Map();
+
 function isCustomEmoji(value) {
   return /^<a?:[\w~]{1,64}:\d{5,25}>$/.test(String(value || '').trim());
 }
@@ -31,6 +35,80 @@ function getEmojiId(value) {
   const raw = String(value || '').trim();
   const m = raw.match(/^<a?:[\w~]{1,64}:(\d{5,25})>$/);
   return m ? m[1] : '';
+}
+
+function parseEmojiSourceGuildIds() {
+  return String(process.env.EMOJI_SOURCE_GUILD_IDS || '')
+    .split(',')
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
+}
+
+function shouldFetchEmoji(id) {
+  const cached = emojiFetchCache.get(id);
+  if (!cached) return true;
+  const ttl = cached.ok ? EMOJI_FETCH_TTL_MS : EMOJI_FETCH_FAIL_TTL_MS;
+  return Date.now() - cached.ts > ttl;
+}
+
+async function fetchEmojiById(client, id) {
+  if (!client || !id) return null;
+  if (client.emojis?.cache?.has?.(id)) return client.emojis.cache.get(id);
+  if (!shouldFetchEmoji(id)) return null;
+
+  try {
+    const direct = await client.emojis.fetch(id).catch(() => null);
+    if (direct) {
+      emojiFetchCache.set(id, { ok: true, ts: Date.now() });
+      return direct;
+    }
+  } catch {}
+
+  const sources = parseEmojiSourceGuildIds();
+  for (const guildId of sources) {
+    const guild =
+      client.guilds?.cache?.get?.(guildId) || (await client.guilds.fetch(guildId).catch(() => null));
+    if (!guild) continue;
+    const emoji = await guild.emojis.fetch(id).catch(() => null);
+    if (emoji) {
+      emojiFetchCache.set(id, { ok: true, ts: Date.now() });
+      return emoji;
+    }
+  }
+
+  emojiFetchCache.set(id, { ok: false, ts: Date.now() });
+  return null;
+}
+
+async function ensureEmojisCached(client, emojis) {
+  if (!client) return;
+  const set = new Set();
+  const collect = (value) => {
+    if (!value) return;
+    if (typeof value === 'string') {
+      if (isCustomEmoji(value)) set.add(value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((v) => collect(v));
+      return;
+    }
+    if (typeof value === 'object') {
+      Object.values(value).forEach((v) => collect(v));
+    }
+  };
+
+  collect(emojis);
+
+  const ids = Array.from(set).map(getEmojiId).filter(Boolean);
+  for (const id of ids) {
+    if (client.emojis?.cache?.has?.(id)) {
+      emojiFetchCache.set(id, { ok: true, ts: Date.now() });
+      continue;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await fetchEmojiById(client, id);
+  }
 }
 
 function canUseExternalEmojis(client, guildId) {
@@ -165,6 +243,7 @@ async function resolveGuildEmojiAny() {
 
 async function getEconomyEmojis(client, guildId) {
   const merged = withRoBotEmojiLookup({});
+  await ensureEmojisCached(client, merged);
   const resolved = applyEmojiAvailability(merged, client, guildId);
   const headsUrl = emojiToUrl(resolved.heads);
   const tailsUrl = emojiToUrl(resolved.tails);

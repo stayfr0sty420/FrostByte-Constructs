@@ -303,6 +303,7 @@ module.exports = {
 
     const bet = interaction.options.getInteger('bet', true);
     const playerLabel = interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
+    await interaction.deferReply().catch(() => null);
     const emojis = await getEconomyEmojis(client, guildId);
     const preCurrency = String(emojis?.currency || RoBotEmojis?.credit || '🪙');
     const preSpin = String(emojis?.coinSpin || RoBotEmojis?.coinflip || '🪙');
@@ -310,7 +311,7 @@ module.exports = {
       .setTitle(`${playerLabel} wagers ${formatCredits(bet, preCurrency)} to play Blackjack 🃏`)
       .setColor(0x3498db)
       .setDescription(`${preSpin} Shuffling...`);
-    await interaction.reply({ embeds: [pre], components: [] }).catch(() => null);
+    await interaction.editReply({ embeds: [pre], components: [] }).catch(() => null);
 
     await sleep(20);
 

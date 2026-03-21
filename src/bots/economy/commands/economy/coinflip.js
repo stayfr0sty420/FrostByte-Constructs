@@ -328,10 +328,11 @@ module.exports = {
       }
       return '';
     })();
+    await interaction.deferReply().catch(() => null);
     const emojis = await getEconomyEmojis(client, guildId);
     const spinEmoji = String(emojis?.coinSpin || RoBotEmojis?.coinflip || '🪙');
     const placeholder = new EmbedBuilder().setColor(0x2563eb).setDescription(`${spinEmoji} Spinning...`);
-    await interaction.reply({ embeds: [placeholder] }).catch(() => null);
+    await interaction.editReply({ embeds: [placeholder] }).catch(() => null);
     const user = await getOrCreateUser({
       guildId,
       discordId: interaction.user.id,
