@@ -303,16 +303,16 @@ module.exports = {
 
     const bet = interaction.options.getInteger('bet', true);
     const playerLabel = interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
-    const preCurrency = String(RoBotEmojis?.credit || '🪙');
-    const preSpin = String(RoBotEmojis?.coinflip || '🪙');
+    const emojis = await getEconomyEmojis(client, guildId);
+    const preCurrency = String(emojis?.currency || RoBotEmojis?.credit || '🪙');
+    const preSpin = String(emojis?.coinSpin || RoBotEmojis?.coinflip || '🪙');
     const pre = new EmbedBuilder()
       .setTitle(`${playerLabel} wagers ${formatCredits(bet, preCurrency)} to play Blackjack 🃏`)
       .setColor(0x3498db)
       .setDescription(`${preSpin} Shuffling...`);
     await interaction.reply({ embeds: [pre], components: [] }).catch(() => null);
 
-    const emojis = await getEconomyEmojis(client, guildId);
-    await sleep(150);
+    await sleep(20);
 
     await getOrCreateUser({ guildId, discordId: interaction.user.id, username: interaction.user.username });
 

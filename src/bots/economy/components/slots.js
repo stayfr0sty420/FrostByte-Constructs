@@ -78,12 +78,12 @@ async function handleSlotsComponent(client, interaction) {
   await interaction.deferUpdate().catch(() => null);
 
   const disabledRows = buildRows(game, { disabled: true });
-  for (let i = 0; i < 6; i += 1) {
+  for (let i = 0; i < 4; i += 1) {
     const embed = buildEmbed(game, { phase: 'spinning', spinFrame: i });
     // eslint-disable-next-line no-await-in-loop
     await interaction.message.edit({ embeds: [embed], components: disabledRows }).catch(() => null);
     // eslint-disable-next-line no-await-in-loop
-    await sleep(80);
+    await sleep(50);
   }
 
   const res = await slots({ guildId: game.guildId, discordId: game.userId, bet: game.bet });

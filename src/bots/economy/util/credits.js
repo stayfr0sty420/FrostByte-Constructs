@@ -1,6 +1,103 @@
 'use strict';
 
+const { PermissionsBitField } = require('discord.js');
 const { withRoBotEmojiLookup } = require('./robotEmojiLookup');
+
+const FALLBACK_DICE = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+const FALLBACK_SLOT_SYMBOLS = {
+  '🪙': '🪙',
+  '🍒': '🍒',
+  '🔔': '🔔',
+  '🟥': '🟥',
+  '7️⃣': '7️⃣',
+  '💎': '💎'
+};
+const FALLBACK_SLOT_SPIN = ['🎰', '🪙', '🎰'];
+const FALLBACK_BLACKJACK_ACTIONS = {
+  hit: '🎯',
+  stand: '🛡️',
+  double: '🃏'
+};
+
+function isCustomEmoji(value) {
+  return /^<a?:[\w~]{1,64}:\d{5,25}>$/.test(String(value || '').trim());
+}
+
+function isNamedEmojiToken(value) {
+  return /^:[\w~]{1,64}:$/.test(String(value || '').trim());
+}
+
+function getEmojiId(value) {
+  const raw = String(value || '').trim();
+  const m = raw.match(/^<a?:[\w~]{1,64}:(\d{5,25})>$/);
+  return m ? m[1] : '';
+}
+
+function canUseExternalEmojis(client, guildId) {
+  if (!client || !guildId) return true;
+  const guild = client.guilds?.cache?.get?.(guildId);
+  const me = guild?.members?.me;
+  if (!me || !me.permissions) return true;
+  return me.permissions.has(PermissionsBitField.Flags.UseExternalEmojis);
+}
+
+function isEmojiAvailable(client, guildId, value) {
+  const id = getEmojiId(value);
+  if (!id) return true;
+  const emoji = client?.emojis?.cache?.get?.(id);
+  if (!emoji) return false;
+  const emojiGuildId = emoji.guild?.id || emoji.guildId || '';
+  if (emojiGuildId && emojiGuildId === guildId) return true;
+  return canUseExternalEmojis(client, guildId);
+}
+
+function pickAllowed(value, fallback, client, guildId) {
+  const raw = String(value || '').trim();
+  if (!raw) return fallback;
+  if (isNamedEmojiToken(raw)) return fallback;
+  if (isCustomEmoji(raw) && !isEmojiAvailable(client, guildId, raw)) return fallback;
+  return raw;
+}
+
+function applyEmojiAvailability(emojis = {}, client, guildId) {
+  const safe = emojis && typeof emojis === 'object' ? emojis : {};
+
+  const diceRaw = Array.isArray(safe.dice) ? safe.dice : [];
+  const dice = FALLBACK_DICE.map((fallback, idx) => pickAllowed(diceRaw[idx], fallback, client, guildId));
+
+  const slotSymbolsRaw = safe.slotSymbols || {};
+  const slotSymbols = Object.fromEntries(
+    Object.entries(FALLBACK_SLOT_SYMBOLS).map(([key, fallback]) => [
+      key,
+      pickAllowed(slotSymbolsRaw[key], fallback, client, guildId)
+    ])
+  );
+
+  const slotSpinFramesRaw = Array.isArray(safe.slotSpinFrames) ? safe.slotSpinFrames : [];
+  const slotSpinFrames = slotSpinFramesRaw
+    .map((value) => pickAllowed(value, '', client, guildId))
+    .filter(Boolean);
+
+  const blackjackActionsRaw = safe.blackjackActions || {};
+
+  return {
+    ...safe,
+    currency: pickAllowed(safe.currency, '🪙', client, guildId),
+    heads: pickAllowed(safe.heads, '🟡', client, guildId),
+    tails: pickAllowed(safe.tails, '⚪', client, guildId),
+    coinSpin: pickAllowed(safe.coinSpin, '🪙', client, guildId),
+    brand: pickAllowed(safe.brand, 'RoBot', client, guildId),
+    dice,
+    diceBetType: safe.diceBetType || {},
+    slotSymbols,
+    slotSpinFrames: slotSpinFrames.length ? slotSpinFrames : FALLBACK_SLOT_SPIN,
+    blackjackActions: {
+      hit: pickAllowed(blackjackActionsRaw.hit, FALLBACK_BLACKJACK_ACTIONS.hit, client, guildId),
+      stand: pickAllowed(blackjackActionsRaw.stand, FALLBACK_BLACKJACK_ACTIONS.stand, client, guildId),
+      double: pickAllowed(blackjackActionsRaw.double, FALLBACK_BLACKJACK_ACTIONS.double, client, guildId)
+    }
+  };
+}
 
 function formatNumber(amount) {
   const n = Math.floor(Number(amount) || 0);
@@ -66,17 +163,18 @@ async function resolveGuildEmojiAny() {
   return '';
 }
 
-async function getEconomyEmojis() {
+async function getEconomyEmojis(client, guildId) {
   const merged = withRoBotEmojiLookup({});
-  const headsUrl = emojiToUrl(merged.heads);
-  const tailsUrl = emojiToUrl(merged.tails);
-  const brandUrl = emojiToUrl(merged.brand);
+  const resolved = applyEmojiAvailability(merged, client, guildId);
+  const headsUrl = emojiToUrl(resolved.heads);
+  const tailsUrl = emojiToUrl(resolved.tails);
+  const brandUrl = emojiToUrl(resolved.brand);
   const coinSpinUrl =
-    emojiToUrl(merged.coinSpin) || headsUrl || tailsUrl || brandUrl || '';
+    emojiToUrl(resolved.coinSpin) || headsUrl || tailsUrl || brandUrl || '';
   const brandBest = brandUrl || coinSpinUrl || headsUrl || tailsUrl || '';
 
   return {
-    ...merged,
+    ...resolved,
     coinSpinUrl,
     headsUrl,
     tailsUrl,

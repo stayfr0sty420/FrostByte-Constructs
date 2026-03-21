@@ -328,7 +328,8 @@ module.exports = {
       }
       return '';
     })();
-    const spinEmoji = String(RoBotEmojis?.coinflip || '🪙');
+    const emojis = await getEconomyEmojis(client, guildId);
+    const spinEmoji = String(emojis?.coinSpin || RoBotEmojis?.coinflip || '🪙');
     const placeholder = new EmbedBuilder().setColor(0x2563eb).setDescription(`${spinEmoji} Spinning...`);
     await interaction.reply({ embeds: [placeholder] }).catch(() => null);
     const user = await getOrCreateUser({
@@ -336,8 +337,6 @@ module.exports = {
       discordId: interaction.user.id,
       username: interaction.user.username
     });
-
-    const emojis = await getEconomyEmojis(client, guildId);
 
     const parsed = parseCoinflipRequest({ betInput, sideInput, walletBalance: user.balance });
     if (!parsed.ok) return await interaction.editReply({ content: parsed.reason, embeds: [], components: [] });
