@@ -44,7 +44,13 @@ async function createWebApp({ economyClient, backupClient, verificationClient })
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
-          'connect-src': ["'self'", 'https://api.ipify.org', 'https://api64.ipify.org']
+          'connect-src': ["'self'", 'https://api.ipify.org', 'https://api64.ipify.org'],
+          'img-src': [
+            "'self'",
+            'data:',
+            'https://cdn.discordapp.com',
+            'https://media.discordapp.net'
+          ]
         }
       }
     })
