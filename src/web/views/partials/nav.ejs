@@ -9,10 +9,14 @@
         <span class="brand-title">Rodstarkian Suite</span>
       </span>
     </a>
-    <% const hasActiveGuild = adminUser && activeGuildId; %>
+    <%
+      const safeActiveGuildId = typeof activeGuildId !== 'undefined' ? activeGuildId : '';
+      const safeActiveGuildName = typeof activeGuildName !== 'undefined' ? activeGuildName : '';
+      const hasActiveGuild = adminUser && safeActiveGuildId;
+    %>
     <% if (hasActiveGuild) { %>
       <span class="navbar-text small text-white-50 d-none d-lg-inline">
-        Server: <%= activeGuildName || activeGuildId %>
+        Server: <%= safeActiveGuildName || safeActiveGuildId %>
       </span>
     <% } %>
     <button
