@@ -1416,4 +1416,14 @@ router.get('/logs', requireAdmin, requireGuild, async (req, res) => {
   return res.render('pages/admin/logs', { title: 'Logs', logs });
 });
 
+router.post('/logs/delete/:id', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  try {
+    await MessageLog.deleteOne({ _id: req.params.id, guildId });
+  } catch (err) {
+    req.app.locals.logger?.warn?.({ err }, 'Failed to delete message log');
+  }
+  return res.redirect('/admin/logs');
+});
+
 module.exports = { router };

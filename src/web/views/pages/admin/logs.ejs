@@ -74,7 +74,19 @@
                     <% } %>
                     <div class="log-type"><%= typeLabel || l.type %></div>
                   </div>
-                  <div class="log-time"><%= formatDate(l.createdAt) || '' %></div>
+                  <div class="log-meta">
+                    <div class="log-time"><%= formatDate(l.createdAt) || '' %></div>
+                    <form method="post" action="/admin/logs/delete/<%= l._id %>" class="d-inline">
+                      <button
+                        class="btn btn-outline-danger btn-sm icon-btn"
+                        type="submit"
+                        title="Delete log"
+                        aria-label="Delete log"
+                        data-confirm="Delete this log entry?">
+                        🗑️
+                      </button>
+                    </form>
+                  </div>
                 </header>
                 <div class="log-card-body">
                   <% if (l.data?.content) { %>

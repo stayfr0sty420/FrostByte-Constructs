@@ -44,6 +44,8 @@ h3,
   background: rgba(11, 11, 15, 0.92) !important;
   backdrop-filter: blur(10px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: relative;
+  z-index: 1050;
 }
 
 .navbar-minimal {
@@ -51,6 +53,8 @@ h3,
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
   background: rgba(8, 8, 12, 0.88) !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+  z-index: 1050;
 }
 
 .navbar-minimal .navbar-brand {
@@ -99,6 +103,8 @@ h3,
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 18px 32px rgba(0, 0, 0, 0.35);
   padding: 0.35rem;
+  z-index: 1060;
+  pointer-events: auto;
 }
 
 .navbar-minimal .dropdown-item {
@@ -1133,6 +1139,16 @@ code {
 .log-time {
   font-size: 0.75rem;
   color: rgba(226, 232, 240, 0.6);
+}
+
+.log-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.log-meta form {
+  margin: 0;
 }
 
 .log-card-body {

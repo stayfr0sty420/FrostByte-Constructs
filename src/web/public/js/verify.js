@@ -11,9 +11,11 @@
   const csrfToken = String(form.getAttribute('data-csrf') || '').trim();
   const token = String(form.getAttribute('data-token') || '').trim();
 
-  const GEO_DESIRED_ACCURACY = 25;
-  const GEO_MAX_WAIT_MS = 20000;
+  const GEO_DESIRED_ACCURACY = 40;
+  const GEO_MIN_ACCEPTED_ACCURACY = 200;
+  const GEO_MAX_WAIT_MS = 30000;
   const GEO_MAX_AGE_MS = 0;
+  const GEO_PRIMARY_TIMEOUT_MS = 12000;
 
   let publicIpPostedOk = false;
   let publicIpValue = '';
@@ -120,6 +122,7 @@
       let best = null;
       let done = false;
       let watchId = null;
+      let sampleCount = 0;
 
       const finalize = (pos, err) => {
         if (done) return;
@@ -133,13 +136,14 @@
 
       const onPos = (pos) => {
         if (!pos || !pos.coords) return;
+        sampleCount += 1;
         if (!best || pos.coords.accuracy < best.coords.accuracy) {
           best = pos;
         }
         if (Number.isFinite(pos.coords.accuracy)) {
           setGeoStatus(`Locating… ${formatAccuracy(pos.coords.accuracy)}`);
         }
-        if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_DESIRED_ACCURACY) {
+        if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_DESIRED_ACCURACY && sampleCount >= 2) {
           finalize(pos);
         }
       };
@@ -150,6 +154,11 @@
       };
 
       try {
+        navigator.geolocation.getCurrentPosition(onPos, onErr, {
+          enableHighAccuracy: true,
+          maximumAge: GEO_MAX_AGE_MS,
+          timeout: GEO_PRIMARY_TIMEOUT_MS
+        });
         watchId = navigator.geolocation.watchPosition(onPos, onErr, {
           enableHighAccuracy: true,
           maximumAge: GEO_MAX_AGE_MS
@@ -179,6 +188,11 @@
       const lat = Number(pos.coords.latitude);
       const lon = Number(pos.coords.longitude);
       const acc = Number(pos.coords.accuracy);
+      if (!Number.isFinite(acc) || acc > GEO_MIN_ACCEPTED_ACCURACY) {
+        setFormError('Location accuracy is too low. Turn on GPS/location services and try again.');
+        setGeoStatus('');
+        return false;
+      }
       setValue('geoLat', String(lat));
       setValue('geoLon', String(lon));
       setValue('geoAcc', String(acc));
