@@ -12,6 +12,16 @@ function parseBool(value, defaultValue) {
   return defaultValue;
 }
 
+function parseTrustProxy(value) {
+  if (value === undefined || value === null || value === '') return false;
+  const normalized = String(value).trim().toLowerCase();
+  if (['false', '0', 'no', 'n', 'off'].includes(normalized)) return false;
+  if (['true', 'yes', 'y', 'on'].includes(normalized)) return 1;
+  const num = Number(normalized);
+  if (Number.isFinite(num) && num >= 0) return Math.floor(num);
+  return false;
+}
+
 const envSchema = z.object({
   // Web dashboard OAuth2 app (can be any of your bot applications; usually Verification bot app)
   CLIENT_ID: z.string().min(1),
@@ -86,7 +96,7 @@ const trimmed = Object.fromEntries(
 
 const env = {
   ...trimmed,
-  TRUST_PROXY: parseBool(trimmed.TRUST_PROXY, false),
+  TRUST_PROXY: parseTrustProxy(trimmed.TRUST_PROXY),
   LOG_JOINS: parseBool(trimmed.LOG_JOINS, true),
   LOG_LEAVES: parseBool(trimmed.LOG_LEAVES, true),
   LOG_DELETES: parseBool(trimmed.LOG_DELETES, true),
