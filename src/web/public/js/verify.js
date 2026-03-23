@@ -11,11 +11,11 @@
   const csrfToken = String(form.getAttribute('data-csrf') || '').trim();
   const token = String(form.getAttribute('data-token') || '').trim();
 
-  const GEO_DESIRED_ACCURACY = 40;
-  const GEO_MIN_ACCEPTED_ACCURACY = 200;
-  const GEO_MAX_WAIT_MS = 30000;
-  const GEO_MAX_AGE_MS = 0;
-  const GEO_PRIMARY_TIMEOUT_MS = 12000;
+  const GEO_DESIRED_ACCURACY = 80;
+  const GEO_MIN_ACCEPTED_ACCURACY = 250;
+  const GEO_MAX_WAIT_MS = 12000;
+  const GEO_MAX_AGE_MS = 60000;
+  const GEO_PRIMARY_TIMEOUT_MS = 8000;
 
   let publicIpPostedOk = false;
   let publicIpValue = '';
@@ -144,6 +144,9 @@
           setGeoStatus(`Locating… ${formatAccuracy(pos.coords.accuracy)}`);
         }
         if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_DESIRED_ACCURACY && sampleCount >= 2) {
+          return finalize(pos);
+        }
+        if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_MIN_ACCEPTED_ACCURACY) {
           finalize(pos);
         }
       };
@@ -231,6 +234,25 @@
     }
   };
 
+  let warmGeoStarted = false;
+  const warmGeo = async () => {
+    if (!requireGeo || warmGeoStarted || hasGeo() || !navigator.geolocation) return;
+    warmGeoStarted = true;
+    try {
+      const pos = await captureBestLocation();
+      const lat = Number(pos.coords.latitude);
+      const lon = Number(pos.coords.longitude);
+      const acc = Number(pos.coords.accuracy);
+      if (!Number.isFinite(acc) || acc > GEO_MIN_ACCEPTED_ACCURACY) return;
+      setValue('geoLat', String(lat));
+      setValue('geoLon', String(lon));
+      setValue('geoAcc', String(acc));
+      setGeoStatus(`Access confirmed ${formatAccuracy(acc)}`.trim());
+    } catch {
+      // ignore warm-up errors
+    }
+  };
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     setFormError('');
@@ -283,5 +305,6 @@
 
   if (requireGeo) {
     setGeoStatus('');
+    warmGeo().catch(() => null);
   }
 })();

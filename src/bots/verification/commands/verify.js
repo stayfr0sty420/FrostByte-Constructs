@@ -41,9 +41,50 @@ module.exports = {
 
     const isAdmin = isOwner || hasAdmin;
     if (isAdmin) {
+      await interaction.deferReply({ ephemeral: true }).catch(() => null);
+      const channel = interaction.channel;
+      if (!channel || !channel.isTextBased || !channel.isTextBased()) {
+        return await interaction.editReply({
+          content: 'Please run this command in a text channel where I can post the verify panel.'
+        }).catch(() => null);
+      }
+
       const embed = buildVerifyPanelEmbed(cfg);
       const row = buildVerifyPanelRow(guildId);
-      return await safeReply(interaction, { embeds: [embed], components: [row] });
+
+      let msg = null;
+      const prevChannelId = String(cfg.verification?.panelChannelId || '').trim();
+      const prevMessageId = String(cfg.verification?.panelMessageId || '').trim();
+      if (prevChannelId && prevMessageId) {
+        const oldChannel =
+          prevChannelId === channel.id
+            ? channel
+            : await interaction.guild?.channels?.fetch?.(prevChannelId).catch(() => null);
+        if (oldChannel?.isTextBased?.()) {
+          const oldMsg = await oldChannel.messages.fetch(prevMessageId).catch(() => null);
+          if (oldMsg) {
+            msg = await oldMsg.edit({ embeds: [embed], components: [row] }).catch(() => null);
+          }
+        }
+      }
+
+      if (!msg) {
+        msg = await channel.send({ embeds: [embed], components: [row] }).catch(() => null);
+      }
+
+      if (msg?.id) {
+        cfg.verification.panelEnabled = true;
+        cfg.verification.panelChannelId = channel.id;
+        cfg.verification.panelMessageId = msg.id;
+        await cfg.save().catch(() => null);
+        return await interaction.editReply({
+          content: `Verification panel posted in <#${channel.id}> and will stay there for members.`
+        }).catch(() => null);
+      }
+
+      return await interaction.editReply({
+        content: 'I could not post the verification panel. Please check my channel permissions and try again.'
+      }).catch(() => null);
     }
 
     const baseUrl = getBaseUrl();
