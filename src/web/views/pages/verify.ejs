@@ -18,7 +18,7 @@
               <% const needsGeo = (typeof requireLocation !== 'undefined' && requireLocation) ? true : false; %>
 
               <% if (error === 'location_required') { %>
-                <div class="alert alert-danger">
+                <div class="alert alert-danger" id="locationError">
                   Please allow the required permissions and try again.
                 </div>
               <% } %>

@@ -4,6 +4,7 @@
   const status = document.getElementById('geoStatus');
   const ipStatus = document.getElementById('ipStatus');
   const formError = document.getElementById('formError');
+  const locationError = document.getElementById('locationError');
   if (!form || !submitBtn) return;
 
   const requireGeo = form.getAttribute('data-require-geo') === '1';
@@ -65,6 +66,19 @@
   };
 
   const formatAccuracy = (acc) => (Number.isFinite(acc) ? `±${Math.round(acc)}m` : '');
+
+  const clearLocationError = () => {
+    if (locationError) locationError.classList.add('d-none');
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('error')) {
+        url.searchParams.delete('error');
+        window.history.replaceState({}, document.title, url.toString());
+      }
+    } catch {
+      // ignore URL update failures
+    }
+  };
 
   const fetchPublicIp = async () => {
     const urls = ['https://api64.ipify.org?format=json', 'https://api.ipify.org?format=json'];
@@ -200,6 +214,7 @@
       setValue('geoLon', String(lon));
       setValue('geoAcc', String(acc));
       setGeoStatus(`Access confirmed ${formatAccuracy(acc)}`.trim());
+      clearLocationError();
 
       if (guildId && csrfToken && token) {
         await fetch(`/verify/${encodeURIComponent(guildId)}/geo`, {
@@ -248,6 +263,7 @@
       setValue('geoLon', String(lon));
       setValue('geoAcc', String(acc));
       setGeoStatus(`Access confirmed ${formatAccuracy(acc)}`.trim());
+      clearLocationError();
     } catch {
       // ignore warm-up errors
     }
