@@ -50,37 +50,58 @@
             </div>
 
             <div class="col-12 col-lg-5">
-                <div class="border rounded p-3">
+                <div class="border rounded p-3 bulk-aid-stack">
                   <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                  <div class="fw-semibold">Gift Rodstarkian Credits to All Users</div>
-                  <span class="badge text-bg-warning">Bulk</span>
-                </div>
-                <form method="post" action="/admin/economy/users/gift-all" class="row g-2">
-                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                  <div class="col-12 col-md-8">
-                    <label class="form-label">Amount</label>
-                    <input class="form-control" name="amount" type="number" min="1" step="1" placeholder="1000" required />
+                    <div class="fw-semibold">Bulk Ayuda</div>
+                    <span class="badge text-bg-warning">Bulk</span>
                   </div>
-                  <div class="col-12 col-md-4 d-grid">
-                    <label class="form-label d-none d-md-block">&nbsp;</label>
-                    <button
-                      class="btn btn-danger"
-                      type="submit"
-                      data-confirm="<%= economyScope === 'global' ? 'Gift this amount to ALL economy users (global across all servers)?' : 'Gift this amount to ALL economy users in this server?' %>"
-                      data-confirm-title="Gift all users?"
-                      data-confirm-ok="Gift"
-                      data-confirm-cancel="Cancel"
-                    >
-                      Gift All
-                    </button>
+                  <form method="post" action="/admin/economy/users/gift-all" class="row g-2 bulk-aid-form">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <div class="col-12 col-md-7">
+                      <label class="form-label">Credits</label>
+                      <input class="form-control" name="amount" type="number" min="1" step="1" placeholder="1000" required />
+                    </div>
+                    <div class="col-12 col-md-5 d-grid">
+                      <label class="form-label d-none d-md-block">&nbsp;</label>
+                      <button
+                        class="btn btn-danger"
+                        type="submit"
+                        data-confirm="<%= economyScope === 'global' ? 'Gift this amount to ALL economy users (global across all servers)?' : 'Gift this amount to ALL economy users in this server?' %>"
+                        data-confirm-title="Gift all users?"
+                        data-confirm-ok="Gift"
+                        data-confirm-cancel="Cancel"
+                      >
+                        Gift All
+                      </button>
+                    </div>
+                  </form>
+                  <form method="post" action="/admin/economy/users/exp-all" class="row g-2 bulk-aid-form mt-1">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <div class="col-12 col-md-7">
+                      <label class="form-label">EXP</label>
+                      <input class="form-control" name="amount" type="number" min="1" step="1" placeholder="100" required />
+                    </div>
+                    <div class="col-12 col-md-5 d-grid">
+                      <label class="form-label d-none d-md-block">&nbsp;</label>
+                      <button
+                        class="btn btn-outline-info"
+                        type="submit"
+                        data-confirm="<%= economyScope === 'global' ? 'Grant this EXP amount to ALL economy users (global across all servers)?' : 'Grant this EXP amount to ALL economy users in this server?' %>"
+                        data-confirm-title="Grant EXP to all?"
+                        data-confirm-ok="Grant"
+                        data-confirm-cancel="Cancel"
+                      >
+                        EXP All
+                      </button>
+                    </div>
+                  </form>
+                  <div class="form-text mt-2">
+                    <% if (economyScope === 'global') { %>
+                      This modifies shared economy data for all users already in the database (global across all servers).
+                    <% } else { %>
+                      This modifies economy data for all users already in the database (this server only).
+                    <% } %>
                   </div>
-                </form>
-                <div class="form-text mt-2">
-                  <% if (economyScope === 'global') { %>
-                    This modifies shared wallet balance for all users already in the database (global across all servers).
-                  <% } else { %>
-                    This modifies wallet balance for all users already in the database (this server only).
-                  <% } %>
                 </div>
               </div>
             </div>
@@ -100,23 +121,23 @@
             <span class="badge text-bg-secondary"><%= (whitelistEntries || []).length %> whitelisted</span>
           </div>
 
-          <form method="post" action="/admin/economy/users/whitelist/add" class="row g-2 align-items-end">
+          <form method="post" action="/admin/economy/users/whitelist/add" class="row g-2 align-items-end whitelist-add-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-            <div class="col-12 col-md-6 col-lg-5">
+            <div class="col-12 col-md-8 col-lg-7">
               <label class="form-label">Discord ID</label>
               <input class="form-control" name="discordId" placeholder="123456789012345678" required />
               <div class="form-text">Tip: enable Developer Mode in Discord to copy user IDs.</div>
             </div>
-            <div class="col-12 col-md-3 d-grid align-self-end">
+            <div class="col-12 col-md-4 col-lg-3 d-grid align-self-end whitelist-submit-col">
               <label class="form-label d-none d-md-block">&nbsp;</label>
-              <button class="btn btn-outline-warning h-100" type="submit">Add to Whitelist</button>
+              <button class="btn btn-outline-warning whitelist-submit-btn" type="submit">Add to Whitelist</button>
             </div>
           </form>
 
           <hr class="my-3" />
 
           <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
+            <table class="table table-sm align-middle mb-0 economy-users-table economy-whitelist-table">
               <thead>
                 <tr>
                   <th>Discord ID</th>
@@ -133,9 +154,9 @@
 
                 <% (whitelistEntries || []).forEach(w => { %>
                   <tr>
-                    <td><code><%= w.discordId %></code></td>
-                    <td><%= w.username || '—' %></td>
-                    <td class="text-end">
+                    <td data-label="Discord ID"><code class="user-id-code"><%= w.discordId %></code></td>
+                    <td data-label="Username"><%= w.username || '—' %></td>
+                    <td class="text-end whitelist-actions-cell" data-label="Actions">
                       <form method="post" action="/admin/economy/users/whitelist/remove" class="d-inline">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                         <input type="hidden" name="discordId" value="<%= w.discordId %>" />
@@ -180,7 +201,7 @@
           </div>
 
           <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
+            <table class="table table-sm align-middle mb-0 economy-users-table">
               <thead>
                 <tr>
                   <th>Discord ID</th>
@@ -201,18 +222,18 @@
 
                 <% users.forEach(u => { %>
                   <tr>
-                    <td><code><%= u.discordId %></code></td>
-                    <td class="text-truncate" style="max-width: 220px"><%= u.username || '—' %></td>
-                    <td class="text-end"><%= fmt(u.balance) %></td>
-                    <td class="text-end"><%= fmt(u.bank) %></td>
-                    <td class="text-end"><%= fmt(u.level) %></td>
-                    <td class="text-muted small">
-                      <%= u.updatedAt ? new Date(u.updatedAt).toISOString().slice(0, 19).replace('T', ' ') : '—' %>
+                    <td data-label="Discord ID"><code class="user-id-code"><%= u.discordId %></code></td>
+                    <td class="text-truncate user-name-cell" style="max-width: 220px" data-label="Username"><%= u.username || '—' %></td>
+                    <td class="text-end" data-label="Wallet"><%= fmt(u.balance) %></td>
+                    <td class="text-end" data-label="Bank"><%= fmt(u.bank) %></td>
+                    <td class="text-end" data-label="Level"><%= fmt(u.level) %></td>
+                    <td class="text-muted small" data-label="Updated">
+                      <%= u.updatedAt ? formatDate(u.updatedAt) : '—' %>
                     </td>
-                    <td class="text-end">
-                      <div class="d-flex flex-wrap gap-2 justify-content-end">
+                    <td class="text-end user-actions-cell" data-label="Actions">
+                      <div class="user-actions-grid">
                         <% const isWhitelisted = whitelistSet.has(String(u.discordId)); %>
-                        <form method="post" action="/admin/economy/users/whitelist/<%= isWhitelisted ? 'remove' : 'add' %>" class="d-inline-flex">
+                        <form method="post" action="/admin/economy/users/whitelist/<%= isWhitelisted ? 'remove' : 'add' %>" class="user-action-form user-action-form--toggle">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
@@ -230,19 +251,19 @@
                           </button>
                         </form>
 
-                        <form method="post" action="/admin/economy/users/grant" class="d-inline-flex gap-2">
+                        <form method="post" action="/admin/economy/users/grant" class="user-action-form user-action-form--wide">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
-                          <input class="form-control form-control-sm" name="amount" type="number" min="1" step="1" placeholder="+ credits" style="width: 110px" required />
+                          <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="+ credits" required />
                           <button class="btn btn-success btn-sm icon-btn" type="submit" title="Grant credits" aria-label="Grant credits">➕</button>
                         </form>
 
-                        <form method="post" action="/admin/economy/users/deduct" class="d-inline-flex gap-2">
+                        <form method="post" action="/admin/economy/users/deduct" class="user-action-form user-action-form--wide">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
-                          <input class="form-control form-control-sm" name="amount" type="number" min="1" step="1" placeholder="- credits" style="width: 110px" required />
+                          <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="- credits" required />
                           <button
                             class="btn btn-outline-danger btn-sm icon-btn"
                             type="submit"
@@ -257,19 +278,19 @@
                           </button>
                         </form>
 
-                        <form method="post" action="/admin/economy/users/gift" class="d-inline-flex gap-2">
+                        <form method="post" action="/admin/economy/users/gift" class="user-action-form user-action-form--compact">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
-                          <input class="form-control form-control-sm" name="amount" type="number" min="1" step="1" placeholder="gift" style="width: 90px" required />
+                          <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="gift" required />
                           <button class="btn btn-outline-primary btn-sm icon-btn" type="submit" title="Gift credits" aria-label="Gift credits">🎁</button>
                         </form>
 
-                        <form method="post" action="/admin/economy/users/exp" class="d-inline-flex gap-2">
+                        <form method="post" action="/admin/economy/users/exp" class="user-action-form user-action-form--compact">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
-                          <input class="form-control form-control-sm" name="amount" type="number" min="1" step="1" placeholder="+ exp" style="width: 90px" required />
+                          <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="+ exp" required />
                           <button class="btn btn-outline-info btn-sm icon-btn" type="submit" title="Grant EXP" aria-label="Grant EXP">⚡</button>
                         </form>
                       </div>

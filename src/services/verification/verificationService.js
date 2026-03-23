@@ -172,6 +172,26 @@ function geoToText(geo) {
   return `\`${latFmt}, ${lonFmt}\`${a}\n${map}`;
 }
 
+function mapLocationLink(label, lat, lon) {
+  if (typeof lat !== 'number' || typeof lon !== 'number' || Number.isNaN(lat) || Number.isNaN(lon)) return '';
+  const url = `https://www.google.com/maps?q=${encodeURIComponent(`${lat},${lon}`)}`;
+  return `[${label}](${url})`;
+}
+
+function verificationLocationText(geo, ipGeo) {
+  const gpsLink = geo && typeof geo.lat === 'number' && typeof geo.lon === 'number'
+    ? mapLocationLink('Map Location', Number(geo.lat), Number(geo.lon))
+    : '';
+  if (gpsLink) return gpsLink;
+
+  if (ipGeo && typeof ipGeo.lat === 'number' && typeof ipGeo.lon === 'number') {
+    return mapLocationLink('Map Location', Number(ipGeo.lat), Number(ipGeo.lon));
+  }
+
+  const fallback = ipGeoToText(ipGeo);
+  return fallback && fallback !== '(none)' ? fallback : '(none)';
+}
+
 function safeText(value, max = 200) {
   const s = String(value || '').trim();
   if (!s) return '';
@@ -223,12 +243,13 @@ function buildVerificationEmbed({ title, guildId, user, attempt, ip, userAgent, 
 
   const statusLabel = String(status || '').toUpperCase() || 'UNKNOWN';
   const ipLabel = ip || publicIp || observedIp || '';
-  const locationText = geo ? geoToText(geo) : ipGeoToText(ipGeo);
+  const locationText = verificationLocationText(geo, ipGeo);
+  const userLabel = userId ? `${safeText(username, 60)} (${userId})` : safeText(username, 60);
   const embed = new EmbedBuilder()
     .setTitle(title)
     .setColor(color)
     .addFields(
-      { name: 'User', value: `${safeText(username, 60)}\nID: \`${userId}\``, inline: false },
+      { name: 'User', value: userLabel || '(unknown)', inline: false },
       { name: 'Status', value: statusLabel, inline: true },
       { name: 'Risk', value: typeof riskScore === 'number' ? String(riskScore) : '(n/a)', inline: true },
       { name: 'IP', value: ipLabel ? `\`${ipLabel}\`` : '(none)', inline: true },
@@ -380,6 +401,7 @@ async function submitVerification({
   if (status === 'approved') {
     const roleClientList = roleClients || discordClient;
     const roleResult = await applyVerifiedRolesWithRetry(roleClientList, guildId, user.id);
+    const userLabel = `${user.username || user.globalName || user.id} (${user.id})`;
     const embed = buildVerificationEmbed({
       title: 'Verification Result',
       guildId,
@@ -400,8 +422,8 @@ async function submitVerification({
       type: 'verification',
       webhookCategory: 'verification',
       content: roleResult.ok
-        ? `✅ Verified: ${user.username || user.id} (risk ${risk})`
-        : `⚠️ Verification role failed: ${user.username || user.id} (${roleResult.reason || 'unknown'})`,
+        ? `✅ Verified: ${userLabel} • risk ${risk}`
+        : `⚠️ Verification role failed: ${userLabel} • ${roleResult.reason || 'unknown'}`,
       embeds: [embed]
     });
     return { ok: true, status, riskScore: risk, attemptId: attempt.verificationId, roleResult };
@@ -424,7 +446,10 @@ async function submitVerification({
     guildId,
     type: 'verification',
     webhookCategory: 'verification',
-    content: status === 'pending' ? `🕒 Pending verification: ${user.username || user.id} (risk ${risk})` : `⛔ Denied: ${user.username || user.id} (risk ${risk})`,
+    content:
+      status === 'pending'
+        ? `🕒 Pending verification: ${(user.username || user.globalName || user.id)} (${user.id}) • risk ${risk}`
+        : `⛔ Denied: ${(user.username || user.globalName || user.id)} (${user.id}) • risk ${risk}`,
     embeds: [embed]
   });
 
@@ -471,8 +496,8 @@ async function reviewVerification({ discordClient, roleClients, guildId, verific
       type: 'verification',
       webhookCategory: 'verification',
       content: roleResult.ok
-        ? `✅ Approved: ${attempt.username || attempt.discordId} by ${reviewerLabel}`
-        : `⚠️ Approval role failed: ${attempt.username || attempt.discordId} (${roleResult.reason || 'unknown'})`,
+        ? `✅ Approved: ${(attempt.username || attempt.discordId)} (${attempt.discordId}) by ${reviewerLabel}`
+        : `⚠️ Approval role failed: ${(attempt.username || attempt.discordId)} (${attempt.discordId}) • ${roleResult.reason || 'unknown'}`,
       embeds: [embed]
     });
     return { ok: true, attempt, roleResult };
@@ -495,7 +520,7 @@ async function reviewVerification({ discordClient, roleClients, guildId, verific
     guildId,
     type: 'verification',
     webhookCategory: 'verification',
-    content: `⛔ Denied: ${attempt.username || attempt.discordId} by ${reviewerLabel}`,
+    content: `⛔ Denied: ${(attempt.username || attempt.discordId)} (${attempt.discordId}) by ${reviewerLabel}`,
     embeds: [denyEmbed]
   });
   return { ok: true, attempt };

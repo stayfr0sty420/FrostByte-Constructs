@@ -2,17 +2,26 @@
   const form = document.querySelector('form[data-autosave]');
   if (!form) return;
 
-  const statusEl = document.querySelector('[data-autosave-status]');
+  const statusEls = Array.from(document.querySelectorAll('[data-autosave-status], [data-autosave-status-floating]'));
+  const dock = document.querySelector('[data-autosave-dock]');
   let saveTimer = null;
   let lastPayload = '';
   let saving = false;
   let pendingPayload = '';
 
   const setStatus = (text, mode = '') => {
-    if (!statusEl) return;
-    statusEl.textContent = text || '';
-    statusEl.classList.remove('is-saving', 'is-warning', 'is-error', 'is-ok');
-    if (mode) statusEl.classList.add(`is-${mode}`);
+    statusEls.forEach((statusEl) => {
+      statusEl.textContent = text || '';
+      statusEl.classList.remove('is-saving', 'is-warning', 'is-error', 'is-ok');
+      if (mode) statusEl.classList.add(`is-${mode}`);
+    });
+    if (dock) {
+      dock.classList.remove('is-saving', 'is-warning', 'is-error', 'is-ok', 'is-pulse');
+      if (mode) dock.classList.add(`is-${mode}`);
+      dock.classList.add('is-pulse');
+      window.clearTimeout(dock._pulseTimer);
+      dock._pulseTimer = window.setTimeout(() => dock.classList.remove('is-pulse'), 1200);
+    }
   };
 
   const serializeForm = () => {

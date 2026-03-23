@@ -44,6 +44,30 @@ function presenceFromClients(discord, guildId) {
   };
 }
 
+async function resolvePresenceFromClients(discord, guildId) {
+  const result = {};
+  for (const def of BOT_DEFS) {
+    const client = discord?.[def.clientKey];
+    if (!client?.guilds || !guildId) {
+      result[def.key] = false;
+      continue;
+    }
+
+    if (client.guilds.cache.has(guildId)) {
+      result[def.key] = true;
+      continue;
+    }
+
+    // Fetch live so dashboard/approval pages do not depend only on cache state.
+    // This keeps single-guild admin pages accurate without forcing a heavy full refresh across all guilds.
+    // eslint-disable-next-line no-await-in-loop
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    result[def.key] = Boolean(guild);
+  }
+
+  return result;
+}
+
 function allBotsPresent(presence) {
   return Boolean(presence?.economy && presence?.backup && presence?.verification);
 }
@@ -199,10 +223,23 @@ function guildFromClients(discord, guildId) {
   );
 }
 
-  function guildIconUrl(discord, guildId, fallback = '') {
-    const guild = guildFromClients(discord, guildId);
-    return guild?.iconURL?.({ size: 64, extension: 'png' }) || String(fallback || '').trim() || '';
+async function fetchGuildFromClients(discord, guildId) {
+  const cached = guildFromClients(discord, guildId);
+  if (cached) return cached;
+
+  for (const key of ['verification', 'backup', 'economy']) {
+    const client = discord?.[key];
+    if (!client?.guilds) continue;
+    const guild = await client.guilds.fetch(guildId).catch(() => null);
+    if (guild) return guild;
   }
+  return null;
+}
+
+function guildIconUrl(discord, guildId, fallback = '') {
+  const guild = guildFromClients(discord, guildId);
+  return guild?.iconURL?.({ size: 64, extension: 'png' }) || String(fallback || '').trim() || '';
+}
 
 function botApprovalStatusFromConfig(cfg, botKey) {
   const key = String(botKey || '').trim();
@@ -256,6 +293,41 @@ async function sendApprovalNotice({ req, guildId, botName, status, actionLabel }
     webhookCategory: 'verification',
     content: `${text}${actionNote ? ` ${actionNote}` : ''}`
   }).catch(() => null);
+
+  const guild = await discordClient.guilds.fetch(guildId).catch(() => null);
+  if (!guild) return;
+
+  const channels = await guild.channels.fetch().catch(() => null);
+  const targetChannel =
+    (guild.systemChannelId ? channels?.get(guild.systemChannelId) : null) ||
+    (guild.rulesChannelId ? channels?.get(guild.rulesChannelId) : null) ||
+    channels
+      ?.filter((channel) => channel?.isTextBased?.() && !channel.isDMBased?.())
+      ?.find((channel) => {
+        const perms = channel.permissionsFor?.(guild.members.me || discordClient.user?.id);
+        return perms?.has?.(['ViewChannel', 'SendMessages', 'EmbedLinks']);
+      }) ||
+    null;
+
+  if (!targetChannel?.isTextBased?.()) return;
+
+  const { EmbedBuilder } = require('discord.js');
+  const color = status === 'approved' ? 0x22c55e : 0xef4444;
+  const embed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle(`${botName} ${status === 'approved' ? 'Approved' : 'Rejected'}`)
+    .setDescription(
+      status === 'approved'
+        ? `${botName} is now approved for this server.`
+        : `${botName} is no longer approved for this server.`
+    )
+    .addFields(
+      { name: 'Sanctioned By', value: req.adminUser?.email || 'admin', inline: true },
+      { name: 'Action', value: actionLabel || status, inline: true }
+    )
+    .setTimestamp();
+
+  await targetChannel.send({ embeds: [embed] }).catch(() => null);
 }
 
 // Home
@@ -365,7 +437,7 @@ router.get('/servers/:guildId/approvals', requireAdmin, async (req, res) => {
   }
 
   const discord = req.app.locals.discord;
-  const presence = { ...(cfg.bots || {}), ...presenceFromClients(discord, guildId) };
+  const presence = { ...(cfg.bots || {}), ...(await resolvePresenceFromClients(discord, guildId)) };
   const botApprovals = buildBotApprovals(cfg);
   const bots = BOT_DEFS.map((def) => {
     const present = Boolean(presence?.[def.key]);
@@ -418,6 +490,13 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
 
   if (!['approve', 'reject', 'delete'].includes(action)) {
     setFlash(req, { type: 'warning', message: 'Invalid action.' });
+    return res.redirect(`/admin/servers/${guildId}/approvals`);
+  }
+
+  const discord = req.app.locals.discord;
+  const presence = { ...(cfg.bots || {}), ...(await resolvePresenceFromClients(discord, guildId)) };
+  if (!presence?.[botKey]) {
+    setFlash(req, { type: 'warning', message: 'This bot is absent from the server. No action can be applied.' });
     return res.redirect(`/admin/servers/${guildId}/approvals`);
   }
 
@@ -475,6 +554,20 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
 
 router.post('/servers/select', requireAdmin, async (req, res) => {
   const guildId = String(req.body.guildId || '');
+  if (!guildId) return res.redirect('/admin/servers');
+
+  const cfg = await GuildConfig.findOne({ guildId }).lean();
+  if (!cfg) {
+    setFlash(req, { type: 'danger', message: 'Server not found in database yet.' });
+    return res.redirect('/admin/servers');
+  }
+
+  req.session.activeGuildId = guildId;
+  return res.redirect('/admin/dashboard');
+});
+
+router.get('/servers/select/:guildId', requireAdmin, async (req, res) => {
+  const guildId = String(req.params.guildId || '').trim();
   if (!guildId) return res.redirect('/admin/servers');
 
   const cfg = await GuildConfig.findOne({ guildId }).lean();
@@ -656,13 +749,19 @@ router.post('/accounts/enable/:id', requireAdmin, requireOwner, async (req, res)
 router.get('/dashboard', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
   const accountGuildId = getEconomyAccountGuildId(guildId);
-  const [cfg, usersCount, backupsCount, pendingCount] = await Promise.all([
+  const [cfg, backupsCount, pendingCount, guild, livePresence] = await Promise.all([
     getOrCreateGuildConfig(guildId),
-    User.countDocuments({ guildId: accountGuildId }),
     Backup.countDocuments({ guildId }),
-    VerificationAttempt.countDocuments({ guildId, status: 'pending' })
+    VerificationAttempt.countDocuments({ guildId, status: 'pending' }),
+    fetchGuildFromClients(req.app.locals.discord, guildId),
+    resolvePresenceFromClients(req.app.locals.discord, guildId)
   ]);
-  const presence = presenceFromClients(req.app.locals.discord, guildId);
+  const presence = {
+    economy: cfg.bots?.economy ?? false,
+    backup: cfg.bots?.backup ?? false,
+    verification: cfg.bots?.verification ?? false,
+    ...livePresence
+  };
   const botApprovals = buildBotApprovals(cfg);
   const bots = BOT_DEFS.map((def) => {
     const present = Boolean(presence?.[def.key]);
@@ -676,9 +775,11 @@ router.get('/dashboard', requireAdmin, requireGuild, async (req, res) => {
       present
     };
   });
+  const usersCount = Number(guild?.memberCount || 0);
   return res.render('pages/admin/dashboard', {
     title: 'Dashboard',
     cfg,
+    activeGuildIcon: guildIconUrl(req.app.locals.discord, guildId, cfg.guildIcon),
     presence,
     bots,
     stats: { usersCount, backupsCount, pendingCount, economyScope: getEconomyAccountScope() }
@@ -1078,6 +1179,39 @@ router.post('/economy/users/gift-all', requireAdmin, requireGuild, async (req, r
   return res.redirect('/admin/economy/users');
 });
 
+router.post('/economy/users/exp-all', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const accountGuildId = getEconomyAccountGuildId(guildId);
+  const amount = Math.floor(Number(req.body.amount) || 0);
+  const safeAmount = Math.min(1_000_000_000, Math.max(0, amount));
+  if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
+    setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
+    return res.redirect('/admin/economy/users');
+  }
+
+  const result = await User.updateMany({ guildId: accountGuildId }, { $inc: { exp: safeAmount } });
+  const modified = Number(result?.modifiedCount ?? result?.nModified ?? 0);
+
+  if (!modified) {
+    setFlash(req, { type: 'info', message: 'No users found to grant EXP.' });
+    return res.redirect('/admin/economy/users');
+  }
+
+  await sendLog({
+    discordClient: req.app.locals.discord.economy,
+    guildId,
+    type: 'economy',
+    webhookCategory: 'economy',
+    content: `⚡ Admin exp-all: +${safeAmount.toLocaleString('en-US')} EXP to **${Number(modified || 0).toLocaleString('en-US')}** users • ${req.adminUser.email}`
+  }).catch(() => null);
+
+  setFlash(req, {
+    type: 'success',
+    message: `Granted ${safeAmount.toLocaleString('en-US')} EXP to ${Number(modified || 0).toLocaleString('en-US')} users.`
+  });
+  return res.redirect('/admin/economy/users');
+});
+
 // Backups
 router.get('/backups', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
@@ -1125,7 +1259,8 @@ router.get('/backups', requireAdmin, requireGuild, async (req, res) => {
 router.post('/backups/create', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
   const name = String(req.body.name || '').trim();
-  const rawTypes = Array.isArray(req.body.type) ? req.body.type : [req.body.type || 'full'];
+  const rawTypeValue = req.body.type || req.body.types || req.body['type[]'] || req.body['types[]'] || 'full';
+  const rawTypes = Array.isArray(rawTypeValue) ? rawTypeValue : [rawTypeValue];
   const types = [...new Set(rawTypes.map((t) => String(t || '').trim()).filter(Boolean))];
   const normalized = types.length ? types : ['full'];
   const effectiveTypes = normalized.includes('full') ? ['full'] : normalized;
@@ -1155,7 +1290,8 @@ router.post('/backups/schedules', requireAdmin, requireGuild, async (req, res) =
         : preset === 'weekly'
           ? '0 0 * * 0'
           : String(req.body.cron || '').trim();
-  const rawTypes = Array.isArray(req.body.types) ? req.body.types : [req.body.types || 'full'];
+  const rawTypeValue = req.body.types || req.body['types[]'] || 'full';
+  const rawTypes = Array.isArray(rawTypeValue) ? rawTypeValue : [rawTypeValue];
   const types = [...new Set(rawTypes.map((t) => String(t || '').trim()).filter(Boolean))];
   const enabled = Boolean(req.body.enabled);
   const channelId = String(req.body.channelId || '').trim();

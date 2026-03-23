@@ -44,17 +44,29 @@
                 <% } %>
 
                 <% servers.forEach(s => { %>
-                  <tr class="server-row" data-guild-select="<%= s.guildId %>">
+                  <% const selectUrl = `/admin/servers/select/${s.guildId}`; %>
+                  <tr
+                    class="server-row"
+                    data-guild-select="<%= s.guildId %>"
+                    data-guild-url="<%= selectUrl %>"
+                    tabindex="0"
+                    role="link"
+                    aria-label="Open dashboard for <%= s.name %>"
+                  >
                     <td class="server-icon-cell" data-label="Icon">
-                      <span class="server-icon" data-fallback="SV">
+                      <a class="server-row-link server-row-link--icon" href="<%= selectUrl %>" aria-label="Open dashboard for <%= s.name %>">
+                        <span class="server-icon" data-fallback="SV">
                         <% if (s.iconUrl) { %>
                           <img src="<%= s.iconUrl %>" alt="<%= s.name %> icon" loading="lazy" data-fallback-img />
                         <% } %>
                         <span class="server-icon-fallback"><%= (s.name || 'S').slice(0, 2).toUpperCase() %></span>
-                      </span>
+                        </span>
+                      </a>
                     </td>
                     <td class="server-cell" data-label="Server">
-                      <div class="server-name"><%= s.name %></div>
+                      <a class="server-row-link server-row-link--name" href="<%= selectUrl %>">
+                        <span class="server-name"><%= s.name %></span>
+                      </a>
                     </td>
                     <td class="server-id" data-label="Guild ID"><code><%= s.guildId %></code></td>
                     <td class="bots-cell" data-label="Bots">
@@ -87,21 +99,22 @@
     </main>
     <script>
       (() => {
-        const card = document.querySelector('.servers-page .card[data-csrf]');
-        const csrf = card ? card.getAttribute('data-csrf') : '';
         const rows = document.querySelectorAll('.servers-table .server-row[data-guild-select]');
         if (!rows.length) return;
         rows.forEach((row) => {
           row.addEventListener('click', (event) => {
             if (event.target.closest('a,button,form,input,select,textarea,label')) return;
-            const guildId = row.getAttribute('data-guild-select');
-            if (!guildId || !csrf) return;
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = '/admin/servers/select';
-            form.innerHTML = `<input type="hidden" name="_csrf" value="${csrf}" /><input type="hidden" name="guildId" value="${guildId}" />`;
-            document.body.appendChild(form);
-            form.submit();
+            const url = row.getAttribute('data-guild-url');
+            if (!url) return;
+            window.location.href = url;
+          });
+          row.addEventListener('keydown', (event) => {
+            if (event.target.closest('a,button,form,input,select,textarea,label')) return;
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            const url = row.getAttribute('data-guild-url');
+            if (!url) return;
+            window.location.href = url;
           });
         });
       })();

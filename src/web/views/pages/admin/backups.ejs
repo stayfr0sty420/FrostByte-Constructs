@@ -39,19 +39,15 @@
                     </div>
                     <div class="col-12 col-md-7">
                       <label class="form-label">Backup Types</label>
-                      <select class="form-select" name="type" multiple size="6">
-                        <option value="full" selected>full</option>
-                        <option value="channels">channels</option>
-                        <option value="roles">roles</option>
-                        <option value="messages">messages</option>
-                        <option value="bans">bans</option>
-                        <option value="webhooks">webhooks</option>
-                        <option value="emojis">emojis</option>
-                        <option value="threads">threads</option>
-                        <option value="nicknames">nicknames</option>
-                        <option value="bots">bots</option>
-                      </select>
-                      <div class="form-text">Select one or more. Choosing <strong>full</strong> will override others.</div>
+                      <div class="backup-type-grid" role="group" aria-label="Backup types">
+                        <% ['full','channels','roles','messages','bans','webhooks','emojis','threads','nicknames','bots'].forEach((type) => { %>
+                          <label class="backup-type-option">
+                            <input class="form-check-input" type="checkbox" name="type[]" value="<%= type %>" <%= type === 'full' ? 'checked' : '' %> />
+                            <span><%= type %></span>
+                          </label>
+                        <% }) %>
+                      </div>
+                      <div class="form-text">Select one or more. If <strong>full</strong> is checked, it overrides the other types automatically.</div>
                     </div>
                     <div class="col-12 col-md-5 d-flex align-items-center">
                       <div class="form-check">
@@ -143,23 +139,21 @@
                     </div>
                     <div class="col-12 col-md-6" id="customCronWrap" style="display:none;">
                       <label class="form-label">Cron</label>
-                      <input class="form-control" name="cron" placeholder="0 0 * * *" />
-                      <div class="form-text">Example: Hourly 0 * * * * · Daily 0 0 * * * · Weekly 0 0 * * 0</div>
+                      <input class="form-control" name="cron" id="customCronInput" placeholder="0 0 * * *" />
+                      <div class="form-text">Format: <code>minute hour day month weekday</code>. Example: Hourly <code>0 * * * *</code> · Daily <code>0 0 * * *</code> · Weekly <code>0 0 * * 0</code></div>
+                      <div class="text-muted small mt-1" id="customCronPreview">Custom schedule preview: waiting for cron input.</div>
                     </div>
                     <div class="col-12 col-md-6">
                       <label class="form-label">Types</label>
-                      <select class="form-select" name="types" multiple size="4" required>
-                        <option value="full">full</option>
-                        <option value="channels">channels</option>
-                        <option value="roles">roles</option>
-                        <option value="messages">messages</option>
-                        <option value="bans">bans</option>
-                        <option value="webhooks">webhooks</option>
-                        <option value="emojis">emojis</option>
-                        <option value="threads">threads</option>
-                        <option value="nicknames">nicknames</option>
-                        <option value="bots">bots</option>
-                      </select>
+                      <div class="backup-type-grid" role="group" aria-label="Scheduled backup types">
+                        <% ['full','channels','roles','messages','bans','webhooks','emojis','threads','nicknames','bots'].forEach((type) => { %>
+                          <label class="backup-type-option">
+                            <input class="form-check-input" type="checkbox" name="types[]" value="<%= type %>" <%= type === 'full' ? 'checked' : '' %> />
+                            <span><%= type %></span>
+                          </label>
+                        <% }) %>
+                      </div>
+                      <div class="form-text">Pick one or more types for scheduled backups. If <strong>full</strong> is checked, that schedule runs as a full backup.</div>
                     </div>
                     <div class="col-12 col-md-6">
                       <label class="form-label">Notify Channel</label>
@@ -201,7 +195,7 @@
                     </thead>
                     <tbody>
                       <% if (!schedules || !schedules.length) { %>
-                        <tr><td colspan="6" class="text-muted small">No schedules yet.</td></tr>
+                        <tr><td colspan="7" class="text-muted small">No schedules yet.</td></tr>
                       <% } %>
                       <% (schedules || []).forEach(s => { %>
                         <tr>
@@ -406,13 +400,48 @@
       (() => {
         const preset = document.getElementById('schedulePreset');
         const wrap = document.getElementById('customCronWrap');
+        const cronInput = document.getElementById('customCronInput');
+        const preview = document.getElementById('customCronPreview');
+        const scheduleForm = preset?.closest('form') || null;
+        const createForm = document.querySelector('form[action="/admin/backups/create"]');
         if (!preset || !wrap) return;
+        const presetDescriptions = {
+          hourly: 'Preset preview: every hour at minute 0.',
+          daily: 'Preset preview: every day at 12:00 AM.',
+          weekly: 'Preset preview: every Sunday at 12:00 AM.',
+          custom: 'Custom schedule preview: waiting for cron input.'
+        };
+
+        const ensureAtLeastOneChecked = (formSelector, inputName, message) => {
+          const form = formSelector;
+          if (!form) return;
+          form.addEventListener('submit', (event) => {
+            const checked = form.querySelectorAll(`input[name="${inputName}"]:checked`);
+            if (checked.length) return;
+            event.preventDefault();
+            window.alert(message);
+          });
+        };
+
         const sync = () => {
           const isCustom = preset.value === 'custom';
           wrap.style.display = isCustom ? 'block' : 'none';
           const input = wrap.querySelector('input[name="cron"]');
           if (input) input.required = isCustom;
+          if (preview) {
+            preview.textContent = isCustom
+              ? `Custom schedule preview: ${String(cronInput?.value || '').trim() || 'waiting for cron input.'}`
+              : (presetDescriptions[preset.value] || '');
+          }
+          if (isCustom && cronInput) cronInput.focus();
         };
+        if (cronInput && preview) {
+          cronInput.addEventListener('input', () => {
+            preview.textContent = `Custom schedule preview: ${String(cronInput.value || '').trim() || 'waiting for cron input.'}`;
+          });
+        }
+        ensureAtLeastOneChecked(createForm, 'type[]', 'Select at least one backup type before creating a backup.');
+        ensureAtLeastOneChecked(scheduleForm, 'types[]', 'Select at least one backup type before saving an automated backup schedule.');
         preset.addEventListener('change', sync);
         sync();
       })();

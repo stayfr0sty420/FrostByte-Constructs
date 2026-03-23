@@ -792,6 +792,11 @@ code {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.servers-table .server-row:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.9);
+  outline-offset: -2px;
+}
+
 .servers-table tbody tr:last-child {
   border-bottom: 0;
 }
@@ -804,6 +809,24 @@ code {
 .server-name {
   font-weight: 600;
   word-break: break-word;
+}
+
+.server-row-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.server-row-link:hover {
+  color: inherit;
+}
+
+.server-row-link--icon {
+  display: inline-flex;
+}
+
+.server-row-link--name {
+  display: inline-flex;
+  align-items: center;
 }
 
   .server-icon {
@@ -1106,6 +1129,194 @@ code {
   color: #fff;
 }
 
+.whitelist-submit-btn {
+  min-height: 42px;
+  width: 100%;
+}
+
+.whitelist-add-form {
+  align-items: end;
+}
+
+.whitelist-submit-col {
+  display: grid;
+}
+
+.bulk-aid-stack {
+  height: 100%;
+}
+
+.bulk-aid-form .btn {
+  min-height: 42px;
+}
+
+.economy-users-table thead th {
+  white-space: nowrap;
+}
+
+.economy-users-table td {
+  vertical-align: middle;
+}
+
+.user-id-code {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.user-name-cell {
+  font-weight: 600;
+}
+
+.user-actions-cell,
+.whitelist-actions-cell {
+  min-width: 360px;
+}
+
+.user-actions-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.user-action-form {
+  display: grid;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.user-action-form--toggle {
+  grid-template-columns: 1fr;
+}
+
+.user-action-form--wide {
+  grid-template-columns: minmax(122px, 1fr) 36px;
+  width: 170px;
+}
+
+.user-action-form--compact {
+  grid-template-columns: minmax(92px, 1fr) 36px;
+  width: 140px;
+}
+
+.user-action-input {
+  min-width: 0;
+}
+
+@media (max-width: 1200px) {
+  .user-actions-cell,
+  .whitelist-actions-cell {
+    min-width: 310px;
+  }
+
+  .user-action-form--wide {
+    width: 156px;
+  }
+
+  .user-action-form--compact {
+    width: 132px;
+  }
+}
+
+@media (max-width: 992px) {
+  .whitelist-submit-col {
+    width: 100%;
+  }
+
+  .economy-users-table thead {
+    display: none;
+  }
+
+  .economy-users-table tbody tr {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+    padding: 0.75rem 0;
+  }
+
+  .economy-users-table tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    text-align: right;
+    padding: 0.35rem 0.5rem;
+  }
+
+  .economy-users-table tbody td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.7rem;
+    color: rgba(229, 231, 235, 0.6);
+  }
+
+  .economy-users-table tbody td[colspan] {
+    display: block;
+    text-align: left;
+  }
+
+  .economy-users-table tbody td[colspan]::before {
+    content: none;
+  }
+
+  .user-actions-cell,
+  .whitelist-actions-cell {
+    min-width: 0;
+    display: block !important;
+    text-align: left !important;
+    padding-top: 0.5rem !important;
+  }
+
+  .user-actions-cell::before,
+  .whitelist-actions-cell::before {
+    content: none !important;
+  }
+
+  .user-actions-grid {
+    justify-content: stretch;
+  }
+}
+
+@media (max-width: 576px) {
+  .whitelist-submit-btn {
+    width: 100%;
+  }
+
+  .economy-users-table tbody td {
+    align-items: flex-start;
+    flex-direction: column;
+    text-align: left;
+  }
+
+  .economy-users-table tbody td::before {
+    margin-bottom: 0.15rem;
+  }
+
+  .user-actions-grid {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .user-action-form,
+  .user-action-form--wide,
+  .user-action-form--compact {
+    width: 100%;
+    grid-template-columns: minmax(0, 1fr) 36px;
+  }
+
+  .user-action-form--toggle {
+    width: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .whitelist-actions-cell form {
+    width: 100%;
+  }
+}
+
 .log-search {
   min-width: 240px;
   max-width: 360px;
@@ -1333,6 +1544,70 @@ code {
   color: #34d399 !important;
 }
 
+.autosave-dock {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 1080;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 0.8rem 0.95rem;
+  border-radius: 16px;
+  background: rgba(13, 6, 10, 0.94);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(10px);
+}
+
+.autosave-dock-label {
+  margin-bottom: 0.18rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(248, 113, 113, 0.75);
+}
+
+.autosave-dock-status {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: rgba(248, 250, 252, 0.92);
+}
+
+.autosave-dock.is-saving,
+.autosave-dock .is-saving {
+  border-color: rgba(251, 191, 36, 0.45);
+}
+
+.autosave-dock.is-warning,
+.autosave-dock .is-warning {
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.autosave-dock.is-error,
+.autosave-dock .is-error {
+  border-color: rgba(248, 113, 113, 0.52);
+}
+
+.autosave-dock.is-ok,
+.autosave-dock .is-ok {
+  border-color: rgba(52, 211, 153, 0.42);
+}
+
+.autosave-dock.is-pulse {
+  animation: autosavePulse 1.2s ease;
+}
+
+@keyframes autosavePulse {
+  0% {
+    transform: translateY(6px);
+    opacity: 0.75;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 .role-preview {
   min-height: 26px;
 }
@@ -1466,6 +1741,33 @@ code {
   gap: 0.5rem 0.75rem;
 }
 
+.backup-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.55rem;
+}
+
+.backup-type-option {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-height: 42px;
+  padding: 0.7rem 0.85rem;
+  border-radius: 14px;
+  background: rgba(12, 5, 8, 0.88);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #fee2e2;
+}
+
+.backup-type-option input {
+  margin: 0;
+}
+
+.backup-type-option span {
+  font-size: 0.92rem;
+  text-transform: capitalize;
+}
+
 .backup-feature-grid {
   margin: 1.5rem 0 2rem;
   display: grid;
@@ -1581,6 +1883,10 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .backup-type-grid {
+    grid-template-columns: 1fr;
+  }
+
   .backup-actions {
     flex-direction: column;
     align-items: stretch;
@@ -1592,6 +1898,14 @@ code {
 }
 
 @media (max-width: 576px) {
+  .autosave-dock {
+    right: 12px;
+    left: 12px;
+    bottom: 12px;
+    max-width: none;
+    min-width: 0;
+  }
+
   .log-search {
     width: 100%;
     max-width: none;
