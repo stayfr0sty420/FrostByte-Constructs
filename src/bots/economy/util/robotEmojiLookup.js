@@ -1,20 +1,21 @@
 'use strict';
 
 const RO_BOT_EMOJIS = {
-  credit: '<:RBCredit:1483607195684700290>',
-  heads: '<:RBHeads:1483594097423028224>',
-  tails: '<:RBTails:1483594110236622910>',
+  brand: '<a:RodstarkG:1484834711611375736>',
+
+  credit: '<:RBCredit:1483630454379905044>',
+  heads: '<:RBHeads:1483630486134849687>',
+  tails: '<:RBTails:1483630502396301353>',
   coinflip: '<a:RBCoinflip:1483630522881015938>',
-  brand: ':RodstarkG:',
 
   dice: {
     faces: {
-      1: '<:RBDice1:1478660715861774407>',
-      2: '<:RBDice2:1478660717828767837>',
-      3: '<:RBDice3:1478660720400007291>',
-      4: '<:RBDice4:1478660722744492042>',
-      5: '<:RBDice5:1478660724460093441>',
-      6: '<:RBDice6:1478660726490140814>'
+      1: '<:RBDice1:1483630601687928902>',
+      2: '<:RBDice2:1483630622953181265>',
+      3: '<:RBDice3:1483630640405680188>',
+      4: '<:RBDice4:1483630656868188333>',
+      5: '<:RBDice5:1483630673104208033>',
+      6: '<:RBDice6:1483630688610549812>'
     },
     betType: {
       bothDiceTheSame: '<:RBDiceBDTS:1483630705601810564>',
@@ -27,21 +28,21 @@ const RO_BOT_EMOJIS = {
   },
 
   blackjack: {
-    hit: '<:RBHit:1483607305734979674>',
-    stand: '<:RBStand:1483594203362492511>',
-    double: '<:RBDouble:1483594210988003412>'
+    hit: '<:RBHit:1483630845918187631>',
+    stand: '<:RBStand:1483630858639249428>',
+    double: '<:RBDouble:1483630832076718101>'
   },
 
   slots: {
     symbols: {
-      seven: '<:RBSlots777:1483594182126862480>',
-      bar: '<:RBSlotsBar:1483594176535855114>',
-      bell: '<:RBSlotsBell:1483594170198261953>',
-      cherry: '<:RBSlotsCherry:1483594146013909024>',
-      diamond: '<:RBSlotsDiamond:1483594190045577266>',
-      gold: '<:RBSlotsGold:1483594140158787675>'
+      seven: '<:RBSlots777:1484834915617865839>',
+      bar: '<:RBSlotsBar:1484834931736842321>',
+      bell: '<:RBSlotsBell:1484834947540975736>',
+      cherry: '<:RBSlotsCherry:1484834963269619912>',
+      diamond: '<:RBSlotsDiamond:1484834978985672764>',
+      gold: '<:RBSlotsGold:1484834996253364234>'
     },
-    spin: ['<a:RBSlotSpin:1483594121154138286>', '<a:RBSlotSpin2:1483594129194877099>', '<a:RBSlotSpin3:1483607238877773876>']
+    spin: ['<a:RBSlotSpin:1483630908664713216>', '<a:RBSlotSpin2:1483630928122089532>', '<a:RBSlotSpin3:1483630945478377522>']
   },
 
   cards: {
