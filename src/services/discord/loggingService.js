@@ -79,6 +79,16 @@ function toggleForType(cfg, type) {
   return true;
 }
 
+async function writeMessageLog({ guildId, type, botLabel, safeEmbeds, content }) {
+  try {
+    await MessageLog.create({ guildId, type, bot: botLabel, data: { content, embeds: safeEmbeds, bot: botLabel } });
+    return true;
+  } catch (err) {
+    logger.warn({ err }, 'MessageLog write failed');
+    return false;
+  }
+}
+
 async function sendLog({ discordClient, guildId, type, content, embeds = [], webhookCategory = '', channelIdOverride = '' }) {
   const cfg = await getOrCreateGuildConfig(guildId);
   if (!toggleForType(cfg, type)) return { ok: true, skipped: true };
@@ -89,10 +99,10 @@ async function sendLog({ discordClient, guildId, type, content, embeds = [], web
     .map((e) => (e instanceof EmbedBuilder ? e.toJSON() : e));
 
   const botLabel = resolveBotLabel({ discordClient, webhookCategory, type });
-  try {
-    await MessageLog.create({ guildId, type, bot: botLabel, data: { content, embeds: safeEmbeds, bot: botLabel } });
-  } catch (err) {
-    logger.warn({ err }, 'MessageLog write failed');
+  const written = await writeMessageLog({ guildId, type, botLabel, safeEmbeds, content });
+  if (!written) {
+    await new Promise((r) => setTimeout(r, 120));
+    await writeMessageLog({ guildId, type, botLabel, safeEmbeds, content });
   }
 
   const webhookUrl =

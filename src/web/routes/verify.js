@@ -3,12 +3,10 @@ const { requireAuth } = require('../middleware/requireAuth');
 const { getOrCreateGuildConfig } = require('../../services/economy/guildConfigService');
 const { submitVerification, logIpVisit, getReqIp } = require('../../services/verification/verificationService');
 const VerificationSession = require('../../db/models/VerificationSession');
-const { sendLog } = require('../../services/discord/loggingService');
-const { EmbedBuilder } = require('discord.js');
 const { sha256 } = require('../../services/utils/crypto');
 const { createVerifyToken, verifyVerifyToken, getVerifyTokenFromReq } = require('../../services/verification/verifyTokenService');
 const net = require('net');
-const { lookupIpGeo, ipGeoToText } = require('../../services/verification/ipGeoService');
+const { lookupIpGeo } = require('../../services/verification/ipGeoService');
 
 const router = express.Router();
 
@@ -108,29 +106,7 @@ router.get('/:guildId', async (req, res) => {
     { upsert: true }
   ).catch(() => null);
 
-  const embed = new EmbedBuilder()
-    .setTitle('Verification Page Opened')
-    .setColor(0xe11d48)
-    .addFields(
-      { name: 'Guild', value: `\`${guildId}\``, inline: true },
-      { name: 'Discord ID', value: `\`${v.payload.uid}\``, inline: true },
-      { name: 'Session', value: `\`${v.payload.sid}\``, inline: true },
-      { name: 'Observed IP', value: `\`${ip}\``, inline: true },
-      { name: 'Location Required', value: cfg.verification?.requireLocation === false ? 'no' : 'yes', inline: true },
-      { name: 'X-Forwarded-For', value: req.headers['x-forwarded-for'] ? `\`${String(req.headers['x-forwarded-for']).slice(0, 120)}\`` : '(none)', inline: false },
-      { name: 'CF-Connecting-IP', value: req.headers['cf-connecting-ip'] ? `\`${String(req.headers['cf-connecting-ip']).slice(0, 60)}\`` : '(none)', inline: true },
-      { name: 'User-Agent', value: userAgent ? `\`${String(userAgent).slice(0, 200)}\`` : '(none)', inline: false }
-    )
-    .setTimestamp();
-
-  await sendLog({
-    discordClient: req.app.locals.discord.verification,
-    guildId,
-    type: 'verification',
-    webhookCategory: 'verification',
-    content: `🔎 Verification page opened (discordId: ${v.payload.uid})`,
-    embeds: [embed]
-  }).catch(() => null);
+  // Note: intermediate verification events are intentionally not logged to reduce log spam.
 
   const requireLocation = cfg.verification?.requireLocation !== false;
   const baseQuestions = Array.isArray(cfg.verification?.questions) && cfg.verification.questions.length
@@ -203,31 +179,7 @@ router.post('/:guildId/client', async (req, res) => {
     { upsert: true }
   ).catch(() => null);
 
-  const embed = new EmbedBuilder()
-    .setTitle('Verification Public IP Captured')
-    .setColor(0x22c55e)
-    .addFields(
-      { name: 'Guild', value: `\`${guildId}\``, inline: true },
-      { name: 'Discord ID', value: `\`${v.payload.uid}\``, inline: true },
-      { name: 'Session', value: `\`${v.payload.sid}\``, inline: true },
-      { name: 'Observed IP', value: ip ? `\`${ip}\`` : '(none)', inline: true },
-      { name: 'Public IP', value: `\`${publicIp}\``, inline: true },
-      { name: 'Match', value: ip && publicIp && ip === publicIp ? 'yes' : 'no', inline: true },
-      { name: 'IP Geo', value: ipGeo ? ipGeoToText(ipGeo) : '(not available)', inline: false },
-      { name: 'X-Forwarded-For', value: req.headers['x-forwarded-for'] ? `\`${String(req.headers['x-forwarded-for']).slice(0, 120)}\`` : '(none)', inline: false },
-      { name: 'CF-Connecting-IP', value: req.headers['cf-connecting-ip'] ? `\`${String(req.headers['cf-connecting-ip']).slice(0, 60)}\`` : '(none)', inline: true },
-      { name: 'User-Agent', value: userAgent ? `\`${String(userAgent).slice(0, 200)}\`` : '(none)', inline: false }
-    )
-    .setTimestamp();
-
-  await sendLog({
-    discordClient: req.app.locals.discord.verification,
-    guildId,
-    type: 'verification',
-    webhookCategory: 'verification',
-    content: `🌐 Public IP captured (discordId: ${v.payload.uid})`,
-    embeds: [embed]
-  }).catch(() => null);
+  // Intermediate log suppressed.
 
   return res.json({ ok: true });
 });
@@ -283,35 +235,7 @@ router.post('/:guildId/geo', async (req, res) => {
     { upsert: true }
   ).catch(() => null);
 
-  const map = `https://www.google.com/maps?q=${encodeURIComponent(`${parsed.geo.lat},${parsed.geo.lon}`)}`;
-  const embed = new EmbedBuilder()
-    .setTitle('Verification Location Captured')
-    .setColor(0x0ea5e9)
-    .addFields(
-      { name: 'Guild', value: `\`${guildId}\``, inline: true },
-      { name: 'Discord ID', value: `\`${v.payload.uid}\``, inline: true },
-      { name: 'Session', value: `\`${v.payload.sid}\``, inline: true },
-      { name: 'Observed IP', value: `\`${ip}\``, inline: true },
-      { name: 'Public IP', value: publicIpValid ? `\`${publicIp}\`` : '(none)', inline: true },
-      {
-        name: 'Geo',
-        value: `\`${parsed.geo.lat}, ${parsed.geo.lon}\` (±${Math.round(parsed.geo.accuracy)}m)\n${map}`,
-        inline: false
-      },
-      { name: 'X-Forwarded-For', value: req.headers['x-forwarded-for'] ? `\`${String(req.headers['x-forwarded-for']).slice(0, 120)}\`` : '(none)', inline: false },
-      { name: 'CF-Connecting-IP', value: req.headers['cf-connecting-ip'] ? `\`${String(req.headers['cf-connecting-ip']).slice(0, 60)}\`` : '(none)', inline: true },
-      { name: 'User-Agent', value: userAgent ? `\`${String(userAgent).slice(0, 200)}\`` : '(none)', inline: false }
-    )
-    .setTimestamp();
-
-  await sendLog({
-    discordClient: req.app.locals.discord.verification,
-    guildId,
-    type: 'verification',
-    webhookCategory: 'verification',
-    content: `📍 Location captured (discordId: ${v.payload.uid})`,
-    embeds: [embed]
-  }).catch(() => null);
+  // Intermediate log suppressed.
 
   return res.json({ ok: true });
 });
@@ -356,31 +280,7 @@ router.post('/:guildId/geo/denied', async (req, res) => {
     { upsert: true }
   ).catch(() => null);
 
-  const reason = String(req.body?.reason || '').slice(0, 200);
-  const embed = new EmbedBuilder()
-    .setTitle('Verification Location Denied')
-    .setColor(0xef4444)
-    .addFields(
-      { name: 'Guild', value: `\`${guildId}\``, inline: true },
-      { name: 'Discord ID', value: `\`${v.payload.uid}\``, inline: true },
-      { name: 'Session', value: `\`${v.payload.sid}\``, inline: true },
-      { name: 'Observed IP', value: `\`${ip}\``, inline: true },
-      { name: 'Public IP', value: publicIpValid ? `\`${publicIp}\`` : '(none)', inline: true },
-      { name: 'Reason', value: reason ? `\`${reason}\`` : '(none)', inline: true },
-      { name: 'X-Forwarded-For', value: req.headers['x-forwarded-for'] ? `\`${String(req.headers['x-forwarded-for']).slice(0, 120)}\`` : '(none)', inline: false },
-      { name: 'CF-Connecting-IP', value: req.headers['cf-connecting-ip'] ? `\`${String(req.headers['cf-connecting-ip']).slice(0, 60)}\`` : '(none)', inline: true },
-      { name: 'User-Agent', value: userAgent ? `\`${String(userAgent).slice(0, 200)}\`` : '(none)', inline: false }
-    )
-    .setTimestamp();
-
-  await sendLog({
-    discordClient: req.app.locals.discord.verification,
-    guildId,
-    type: 'verification',
-    webhookCategory: 'verification',
-    content: `⛔ Location denied (discordId: ${v.payload.uid})`,
-    embeds: [embed]
-  }).catch(() => null);
+  // Intermediate log suppressed.
 
   return res.json({ ok: true });
 });
@@ -470,29 +370,7 @@ router.post('/:guildId', async (req, res) => {
     { upsert: true }
   ).catch(() => null);
 
-  const embed = new EmbedBuilder()
-    .setTitle('Verification Questionnaire Submitted')
-    .setColor(0xf59e0b)
-    .addFields(
-      { name: 'Guild', value: `\`${guildId}\``, inline: true },
-      { name: 'Discord ID', value: `\`${v.payload.uid}\``, inline: true },
-      { name: 'Session', value: `\`${v.payload.sid}\``, inline: true },
-      { name: 'Observed IP', value: `\`${ip}\``, inline: true },
-      { name: 'Location Required', value: requireLocation ? 'yes' : 'no', inline: true },
-      { name: 'X-Forwarded-For', value: req.headers['x-forwarded-for'] ? `\`${String(req.headers['x-forwarded-for']).slice(0, 120)}\`` : '(none)', inline: false },
-      { name: 'CF-Connecting-IP', value: req.headers['cf-connecting-ip'] ? `\`${String(req.headers['cf-connecting-ip']).slice(0, 60)}\`` : '(none)', inline: true },
-      { name: 'User-Agent', value: userAgent ? `\`${String(userAgent).slice(0, 200)}\`` : '(none)', inline: false }
-    )
-    .setTimestamp();
-
-  await sendLog({
-    discordClient: req.app.locals.discord.verification,
-    guildId,
-    type: 'verification',
-    webhookCategory: 'verification',
-    content: `📝 Questionnaire submitted (discordId: ${v.payload.uid})`,
-    embeds: [embed]
-  }).catch(() => null);
+  // Intermediate log suppressed.
 
   const returnTo = encodeURIComponent(`/verify/${guildId}/complete?t=${token}`);
   const redirectUrl = `/auth/discord?returnTo=${returnTo}`;
@@ -522,26 +400,7 @@ router.get('/:guildId/complete', requireAuth, async (req, res) => {
   if (!req.user?.id || req.user.id !== v.payload.uid) {
     const ip = getReqIp(req);
     const userAgent = req.headers['user-agent'] || '';
-    const embed = new EmbedBuilder()
-      .setTitle('Verification OAuth Mismatch')
-      .setColor(0xef4444)
-      .addFields(
-        { name: 'Guild', value: `\`${guildId}\``, inline: true },
-        { name: 'Token Discord ID', value: `\`${v.payload.uid}\``, inline: true },
-        { name: 'OAuth Discord ID', value: req.user?.id ? `\`${req.user.id}\`` : '(none)', inline: true },
-        { name: 'IP', value: `\`${ip}\``, inline: true },
-        { name: 'User-Agent', value: userAgent ? `\`${String(userAgent).slice(0, 200)}\`` : '(none)', inline: false }
-      )
-      .setTimestamp();
-
-    await sendLog({
-      discordClient: req.app.locals.discord.verification,
-      guildId,
-      type: 'verification',
-      webhookCategory: 'verification',
-      content: `⚠️ OAuth mismatch (token uid ${v.payload.uid})`,
-      embeds: [embed]
-    }).catch(() => null);
+    // Intermediate log suppressed.
 
     return res.render('pages/verify_result', {
       title: 'Verification Result',
