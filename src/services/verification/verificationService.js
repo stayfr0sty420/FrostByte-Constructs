@@ -21,6 +21,19 @@ function getReqIp(req) {
     return ip;
   };
 
+  const isPrivate = (ip) => {
+    if (!ip) return false;
+    if (ip === '127.0.0.1') return true;
+    if (ip.startsWith('10.')) return true;
+    if (ip.startsWith('192.168.')) return true;
+    if (ip.startsWith('172.')) {
+      const parts = ip.split('.');
+      const second = Number(parts[1] || '');
+      return second >= 16 && second <= 31;
+    }
+    return false;
+  };
+
   // If behind a proxy/CDN, trust proxy must be enabled so forwarded headers are reliable.
   if (env.TRUST_PROXY) {
     const cf = normalize(req.headers?.['cf-connecting-ip']);
@@ -35,6 +48,14 @@ function getReqIp(req) {
 
   // Express respects the app's `trust proxy` setting when computing `req.ip`.
   const ip = normalize(req.ip || req.socket?.remoteAddress || req.connection?.remoteAddress || '');
+  if (!env.TRUST_PROXY && isPrivate(ip)) {
+    const cf = normalize(req.headers?.['cf-connecting-ip']);
+    if (cf && net.isIP(cf)) return cf;
+    const real = normalize(req.headers?.['x-real-ip']);
+    if (real && net.isIP(real)) return real;
+    const xff = normalize(req.headers?.['x-forwarded-for']);
+    if (xff && net.isIP(xff)) return xff;
+  }
   return ip;
 }
 
@@ -82,8 +103,11 @@ async function logIpVisit({ guildId, discordId = '', username = '', email = '', 
   const parsedIpGeo = normalizeIpGeo(ipGeo);
   const safeEmail = String(email || '').trim();
   const safeUsername = String(username || '').trim();
+  const safeIp = String(ip || '').trim();
+  const ipFinal = safeIp || (publicIpValid ? parsedPublicIp : '');
+  if (!ipFinal) return;
 
-  const doc = await IpLog.findOne({ guildId, ip, discordId });
+  const doc = await IpLog.findOne({ guildId, ip: ipFinal, discordId });
   if (doc) {
     doc.lastSeenAt = now;
     doc.count += 1;
@@ -107,7 +131,7 @@ async function logIpVisit({ guildId, discordId = '', username = '', email = '', 
   } else {
     await IpLog.create({
       guildId,
-      ip,
+      ip: ipFinal,
       discordId,
       username: safeUsername,
       email: safeEmail,

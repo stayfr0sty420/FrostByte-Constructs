@@ -335,7 +335,8 @@ router.post('/:guildId', async (req, res) => {
     return fail('location_required', 'Location is required.');
   }
 
-  const publicIp = String(session?.publicIp || '').trim();
+  const publicIpFromBody = String(req.body.publicIp || '').trim();
+  const publicIp = String(session?.publicIp || publicIpFromBody || '').trim();
 
   const ip = getReqIp(req);
   const userAgent = req.headers['user-agent'] || '';
@@ -371,6 +372,12 @@ router.post('/:guildId', async (req, res) => {
   ).catch(() => null);
 
   // Intermediate log suppressed.
+
+  if (req.user?.id && req.user.id === v.payload.uid) {
+    const directUrl = `/verify/${guildId}/complete?t=${token}`;
+    if (wantsJson) return res.json({ ok: true, redirect: directUrl });
+    return res.redirect(directUrl);
+  }
 
   const returnTo = encodeURIComponent(`/verify/${guildId}/complete?t=${token}`);
   const redirectUrl = `/auth/discord?returnTo=${returnTo}`;

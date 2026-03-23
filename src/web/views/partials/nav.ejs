@@ -1,6 +1,11 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark navbar-minimal">
   <div class="container-fluid">
-    <a class="navbar-brand" href="<%= adminUser ? '/admin/dashboard' : '/' %>">
+    <%
+      const safeAdminUser = typeof adminUser !== 'undefined' ? adminUser : null;
+      const safeDiscordUser = typeof discordUser !== 'undefined' ? discordUser : null;
+      const safeCsrfToken = typeof csrfToken !== 'undefined' ? csrfToken : '';
+    %>
+    <a class="navbar-brand" href="<%= safeAdminUser ? '/admin/dashboard' : '/' %>">
       <span class="brand">
         <span class="brand-icon brand-icon-sm" data-fallback="RS">
           <img src="/assets/images/bots/Rodstarkian_Bot.png" alt="Rodstarkian Bot logo" loading="lazy" data-fallback-img />
@@ -12,7 +17,7 @@
     <%
       const safeActiveGuildId = typeof activeGuildId !== 'undefined' ? activeGuildId : '';
       const safeActiveGuildName = typeof activeGuildName !== 'undefined' ? activeGuildName : '';
-      const hasActiveGuild = adminUser && safeActiveGuildId;
+      const hasActiveGuild = safeAdminUser && safeActiveGuildId;
     %>
     <% if (hasActiveGuild) { %>
       <span class="navbar-text small text-white-50 d-none d-lg-inline">
@@ -32,7 +37,7 @@
     </button>
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-        <% if (adminUser) { %>
+        <% if (safeAdminUser) { %>
           <li class="nav-item"><a class="nav-link" href="/admin/servers">Servers</a></li>
           <% if (hasActiveGuild) { %>
             <li class="nav-item"><a class="nav-link" href="/admin/dashboard">Dashboard</a></li>
@@ -69,7 +74,7 @@
             </li>
           <% } %>
 
-          <% if (adminUser.role === 'owner') { %>
+          <% if (safeAdminUser && safeAdminUser.role === 'owner') { %>
             <li class="nav-item"><a class="nav-link" href="/admin/accounts">Accounts</a></li>
           <% } %>
 
@@ -77,21 +82,21 @@
         <% } %>
       </ul>
       <ul class="navbar-nav ms-auto">
-        <% if (adminUser) { %>
+        <% if (safeAdminUser) { %>
           <li class="nav-item">
             <a class="nav-link" href="/admin/help">Help</a>
           </li>
         <% } %>
-        <% if (adminUser) { %>
+        <% if (safeAdminUser) { %>
         <li class="nav-item">
           <span class="user-pill me-3">
             <span class="user-name">Admin</span>
-            <span class="user-email"><%= adminUser.email %></span>
+            <span class="user-email"><%= safeAdminUser.email %></span>
           </span>
         </li>
         <li class="nav-item">
           <form method="post" action="/admin/logout" class="d-inline">
-            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <input type="hidden" name="_csrf" value="<%= safeCsrfToken %>" />
             <button
               class="btn btn-outline-light btn-sm"
               type="submit"
@@ -104,16 +109,16 @@
             </button>
           </form>
         </li>
-        <% } else if (discordUser) { %>
+        <% } else if (safeDiscordUser) { %>
         <li class="nav-item">
           <span class="user-pill me-3">
             <span class="user-name">Discord</span>
-            <span class="user-email"><%= discordUser.username %></span>
+            <span class="user-email"><%= safeDiscordUser.username %></span>
           </span>
         </li>
         <li class="nav-item">
           <form method="post" action="/auth/logout" class="d-inline">
-            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <input type="hidden" name="_csrf" value="<%= safeCsrfToken %>" />
             <button
               class="btn btn-outline-light btn-sm"
               type="submit"

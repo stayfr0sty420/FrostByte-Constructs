@@ -38,6 +38,7 @@
                 <input type="hidden" name="geoLat" id="geoLat" />
                 <input type="hidden" name="geoLon" id="geoLon" />
                 <input type="hidden" name="geoAcc" id="geoAcc" />
+                <input type="hidden" name="publicIp" id="publicIp" />
 
                 <% const qs = Array.isArray(questions) && questions.length ? questions : [cfg.verification.question1, cfg.verification.question2, cfg.verification.question3].filter(Boolean); %>
                 <% qs.forEach((q, idx) => { %>

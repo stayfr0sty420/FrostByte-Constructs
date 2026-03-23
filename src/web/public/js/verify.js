@@ -120,6 +120,7 @@
     const ip = publicIpValue || (await fetchPublicIp());
     if (!ip) return false;
     publicIpValue = ip;
+    setValue('publicIp', ip);
     const ok = await postPublicIp(ip);
     publicIpPostedOk = ok;
     return ok;
