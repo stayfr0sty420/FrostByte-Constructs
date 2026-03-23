@@ -39,7 +39,10 @@ async function ensureManageable(guild, roleId) {
   const role = await guild.roles.fetch(roleId);
   if (!role) return { ok: false, reason: 'Role not found.' };
   if (role.managed) return { ok: false, reason: 'Role is managed by an integration and cannot be assigned.' };
-  const me = await guild.members.fetchMe();
+  const me = await guild.members.fetchMe({ force: true }).catch(() => null);
+  if (!me) {
+    return { ok: false, reason: 'Bot member record could not be loaded.' };
+  }
   if (!me.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
     return { ok: false, reason: 'Bot lacks Manage Roles permission.' };
   }
@@ -47,6 +50,14 @@ async function ensureManageable(guild, roleId) {
     return { ok: false, reason: 'Role is higher than the bot.' };
   }
   return { ok: true, role };
+}
+
+async function fetchMember(guild, userId) {
+  return (
+    guild.members.cache.get(userId) ||
+    (await guild.members.fetch(userId).catch(() => null)) ||
+    (await guild.members.fetch({ user: userId, force: true }).catch(() => null))
+  );
 }
 
 async function resolveRoleFromConfig({ guild, cfg, idKey, nameKey }) {
@@ -85,9 +96,7 @@ async function addRole(discordClient, guildId, userId, roleId) {
   for (const client of clients) {
     try {
       const guild = await fetchGuild(client, guildId);
-      const member =
-        (await guild.members.fetch(userId).catch(() => null)) ||
-        (await guild.members.fetch({ user: userId, force: true }).catch(() => null));
+      const member = await fetchMember(guild, userId);
       if (!member) {
         errors.push('Member not found in guild.');
         continue;
@@ -114,9 +123,7 @@ async function removeRole(discordClient, guildId, userId, roleId) {
   for (const client of clients) {
     try {
       const guild = await fetchGuild(client, guildId);
-      const member =
-        (await guild.members.fetch(userId).catch(() => null)) ||
-        (await guild.members.fetch({ user: userId, force: true }).catch(() => null));
+      const member = await fetchMember(guild, userId);
       if (!member) {
         errors.push('Member not found in guild.');
         continue;
@@ -159,9 +166,7 @@ async function applyJoinGate(discordClient, guildId, userId) {
         errors.push('Temp role not found. Please reconfigure verification roles.');
         continue;
       }
-      const member =
-        (await guild.members.fetch(userId).catch(() => null)) ||
-        (await guild.members.fetch({ user: userId, force: true }).catch(() => null));
+      const member = await fetchMember(guild, userId);
       if (!member) {
         errors.push('Member not found in guild.');
         continue;
@@ -213,9 +218,7 @@ async function applyVerifiedRoles(discordClient, guildId, userId) {
         nameKey: 'tempRoleName'
       });
 
-      const member =
-        (await guild.members.fetch(userId).catch(() => null)) ||
-        (await guild.members.fetch({ user: userId, force: true }).catch(() => null));
+      const member = await fetchMember(guild, userId);
       if (!member) {
         errors.push('Member not found in guild.');
         continue;
@@ -226,7 +229,9 @@ async function applyVerifiedRoles(discordClient, guildId, userId) {
         errors.push(add.reason || 'Role not manageable.');
         continue;
       }
-      await member.roles.add(verifiedRole.id);
+      if (!member.roles.cache.has(verifiedRole.id)) {
+        await member.roles.add(verifiedRole.id);
+      }
 
       if (tempRole?.id) {
         const remove = await ensureManageable(guild, tempRole.id);

@@ -179,6 +179,29 @@ function safeText(value, max = 200) {
   return `${s.slice(0, max - 1)}…`;
 }
 
+async function applyVerifiedRolesWithRetry(roleClients, guildId, userId) {
+  const delays = [0, 350, 900];
+  let lastResult = { ok: false, reason: 'Role apply failed.' };
+
+  for (const delayMs of delays) {
+    if (delayMs) {
+      // Allow Discord member/role state to settle after OAuth redirect and page completion.
+      // Short delays keep the flow responsive while still covering transient API/cache timing.
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+
+    // eslint-disable-next-line no-await-in-loop
+    lastResult = await applyVerifiedRoles(roleClients, guildId, userId).catch((err) => ({
+      ok: false,
+      reason: String(err?.message || err || 'Role apply failed')
+    }));
+    if (lastResult.ok) return lastResult;
+  }
+
+  return lastResult;
+}
+
 function buildVerificationEmbed({ title, guildId, user, attempt, ip, userAgent, geo, riskScore, status, note = '' }) {
   const username = user?.username || user?.globalName || attempt?.username || '(unknown)';
   const userId = user?.id || attempt?.discordId || '';
@@ -356,17 +379,7 @@ async function submitVerification({
 
   if (status === 'approved') {
     const roleClientList = roleClients || discordClient;
-    let roleResult = await applyVerifiedRoles(roleClientList, guildId, user.id).catch((err) => ({
-      ok: false,
-      reason: String(err?.message || err || 'Role apply failed')
-    }));
-    if (!roleResult.ok) {
-      await new Promise((r) => setTimeout(r, 1200));
-      roleResult = await applyVerifiedRoles(roleClientList, guildId, user.id).catch((err) => ({
-        ok: false,
-        reason: String(err?.message || err || 'Role apply failed')
-      }));
-    }
+    const roleResult = await applyVerifiedRolesWithRetry(roleClientList, guildId, user.id);
     const embed = buildVerificationEmbed({
       title: 'Verification Result',
       guildId,

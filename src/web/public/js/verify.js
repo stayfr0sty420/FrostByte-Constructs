@@ -67,6 +67,17 @@
 
   const formatAccuracy = (acc) => (Number.isFinite(acc) ? `±${Math.round(acc)}m` : '');
 
+  const allowIpFallback = async () => {
+    await ensurePublicIp().catch(() => null);
+    if (publicIpValue) {
+      setFormError('');
+      setGeoStatus('Using network location fallback');
+      clearLocationError();
+      return true;
+    }
+    return false;
+  };
+
   const clearLocationError = () => {
     if (locationError) locationError.classList.add('d-none');
     try {
@@ -196,6 +207,7 @@
     if (!requireGeo) return true;
     if (hasGeo()) return true;
     if (!navigator.geolocation) {
+      if (await allowIpFallback()) return true;
       setFormError('Please allow the required permissions to verify.');
       return false;
     }
@@ -207,6 +219,7 @@
       const lon = Number(pos.coords.longitude);
       const acc = Number(pos.coords.accuracy);
       if (!Number.isFinite(acc) || acc > GEO_MIN_ACCEPTED_ACCURACY) {
+        if (await allowIpFallback()) return true;
         setFormError('Location accuracy is too low. Turn on GPS/location services and try again.');
         setGeoStatus('');
         return false;
@@ -214,7 +227,7 @@
       setValue('geoLat', String(lat));
       setValue('geoLon', String(lon));
       setValue('geoAcc', String(acc));
-      setGeoStatus(`Access confirmed ${formatAccuracy(acc)}`.trim());
+      setGeoStatus(`Location ready ${formatAccuracy(acc)}`.trim());
       clearLocationError();
 
       if (guildId && csrfToken && token) {
@@ -235,6 +248,7 @@
       }
       return true;
     } catch {
+      if (await allowIpFallback()) return true;
       setFormError('Please allow the required permissions to verify.');
       if (guildId && csrfToken && token) {
         fetch(`/verify/${encodeURIComponent(guildId)}/geo/denied`, {
@@ -263,7 +277,7 @@
       setValue('geoLat', String(lat));
       setValue('geoLon', String(lon));
       setValue('geoAcc', String(acc));
-      setGeoStatus(`Access confirmed ${formatAccuracy(acc)}`.trim());
+      setGeoStatus(`Location ready ${formatAccuracy(acc)}`.trim());
       clearLocationError();
     } catch {
       // ignore warm-up errors

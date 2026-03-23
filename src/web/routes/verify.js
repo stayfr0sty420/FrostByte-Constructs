@@ -314,7 +314,6 @@ router.post('/:guildId', async (req, res) => {
   const answer2 = String(req.body.answer2 || '').trim() || '-';
   const answer3 = String(req.body.answer3 || '').trim();
 
-  const requireLocation = cfg.verification?.requireLocation !== false;
   const session = await VerificationSession.findOne({
     sessionId: v.payload.sid,
     guildId,
@@ -331,9 +330,6 @@ router.post('/:guildId', async (req, res) => {
     sessionGeo.accuracy !== null;
   const geoPayload = parsedGeo.ok ? parsedGeo.geo : sessionGeo;
   const geoCaptured = sessionGeoOk || parsedGeo.ok;
-  if (requireLocation && !geoCaptured) {
-    return fail('location_required', 'Location is required.');
-  }
 
   const publicIpFromBody = String(req.body.publicIp || '').trim();
   const publicIp = String(session?.publicIp || publicIpFromBody || '').trim();
@@ -446,7 +442,6 @@ router.get('/:guildId/complete', requireAuth, async (req, res) => {
     });
   }
 
-  const requireLocation = cfg.verification?.requireLocation !== false;
   const geo = session.geo || { lat: null, lon: null, accuracy: null };
   const geoMissing =
     geo.lat === null ||
@@ -455,10 +450,6 @@ router.get('/:guildId/complete', requireAuth, async (req, res) => {
     Number.isNaN(Number(geo.lon)) ||
     geo.accuracy === null ||
     Number.isNaN(Number(geo.accuracy));
-
-  if (requireLocation && geoMissing) {
-    return res.redirect(`/verify/${guildId}?t=${encodeURIComponent(token)}&error=location_required`);
-  }
 
   const answerHashes = session.answers || {};
 
@@ -473,7 +464,7 @@ router.get('/:guildId/complete', requireAuth, async (req, res) => {
     guildId,
     user: req.user,
     req,
-    geo,
+    geo: geoMissing ? null : geo,
     ip: observedIp,
     publicIp,
     ipGeo,
