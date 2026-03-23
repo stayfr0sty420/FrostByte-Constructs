@@ -198,24 +198,18 @@ function buildVerificationEmbed({ title, guildId, user, attempt, ip, userAgent, 
     return 0xe11d48;
   })();
 
+  const statusLabel = String(status || '').toUpperCase() || 'UNKNOWN';
+  const ipLabel = ip || publicIp || observedIp || '';
+  const locationText = geo ? geoToText(geo) : ipGeoToText(ipGeo);
   const embed = new EmbedBuilder()
     .setTitle(title)
     .setColor(color)
     .addFields(
-      { name: 'Guild', value: `\`${guildId}\``, inline: true },
-      { name: 'Status', value: String(status || '').toUpperCase() || 'UNKNOWN', inline: true },
+      { name: 'User', value: `${safeText(username, 60)}\nID: \`${userId}\``, inline: false },
+      { name: 'Status', value: statusLabel, inline: true },
       { name: 'Risk', value: typeof riskScore === 'number' ? String(riskScore) : '(n/a)', inline: true },
-      { name: 'Discord', value: `${safeText(username, 60)}\nID: \`${userId}\``, inline: false },
-      { name: 'Email', value: email ? `\`${safeText(email, 120)}\`` : '(none)', inline: false },
-      { name: 'IP (Decision)', value: ip ? `\`${ip}\`` : '(none)', inline: true },
-      { name: 'Public IP', value: publicIp ? `\`${publicIp}\`` : '(none)', inline: true },
-      { name: 'Observed IP', value: observedIp ? `\`${observedIp}\`` : '(none)', inline: true },
-      { name: 'Geo (GPS/Wi‑Fi)', value: geoToText(geo), inline: false },
-      { name: 'Geo (IP)', value: ipGeoToText(ipGeo), inline: false },
-      { name: 'Attempt ID', value: attemptId ? `\`${attemptId}\`` : '(n/a)', inline: true },
-      { name: 'Risk Decision', value: riskDecisionValue ? String(riskDecisionValue).toUpperCase() : '(n/a)', inline: true },
-      { name: 'Auto-Approved', value: autoApproved ? 'yes' : 'no', inline: true },
-      { name: 'User-Agent', value: userAgent ? `\`${safeText(userAgent, 200)}\`` : '(none)', inline: false }
+      { name: 'IP', value: ipLabel ? `\`${ipLabel}\`` : '(none)', inline: true },
+      { name: 'Location', value: locationText || '(none)', inline: false }
     )
     .setTimestamp();
 

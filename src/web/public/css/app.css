@@ -784,6 +784,14 @@ code {
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.servers-table .server-row {
+  cursor: pointer;
+}
+
+.servers-table .server-row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
 .servers-table tbody tr:last-child {
   border-bottom: 0;
 }
@@ -885,6 +893,15 @@ code {
 
 .bot-status-dot.pending {
   background: #f59e0b;
+}
+
+.bot-status-dot.absent {
+  background: #64748b;
+}
+
+.bot-icon-sm.absent {
+  opacity: 0.6;
+  filter: grayscale(0.2);
 }
 
 .server-id code {

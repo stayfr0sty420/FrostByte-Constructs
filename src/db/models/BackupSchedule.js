@@ -11,7 +11,8 @@ const BackupScheduleSchema = new mongoose.Schema(
     lastRun: { type: Date, default: null },
     channelId: { type: String, default: '' },
     enabled: { type: Boolean, default: true, index: true },
-    createdBy: { type: String, default: '' }
+    createdBy: { type: String, default: '' },
+    replacePrevious: { type: Boolean, default: false }
   },
   { timestamps: true }
 );

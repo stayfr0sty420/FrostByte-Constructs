@@ -61,8 +61,12 @@
                       </div>
                     </td>
                     <td>
-                      <% const badge = b.status === 'approved' ? 'success' : (b.status === 'rejected' ? 'danger' : 'warning'); %>
-                      <span class="badge text-bg-<%= badge %>"><%= b.status %></span>
+                      <%
+                        const badge = b.status === 'approved'
+                          ? 'success'
+                          : (b.status === 'rejected' ? 'danger' : (b.status === 'absent' ? 'secondary' : 'warning'));
+                      %>
+                      <span class="badge text-bg-<%= badge %> text-uppercase"><%= b.status %></span>
                     </td>
                     <td class="text-muted small"><%= formatDate(b.sanctionedAt) || '—' %></td>
                     <td class="text-muted small"><%= b.sanctionedBy || '—' %></td>

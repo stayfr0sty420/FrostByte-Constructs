@@ -234,6 +234,30 @@ function aggregateApprovalStatus(botApprovals) {
   return 'pending';
 }
 
+function displayBotStatus({ approvalStatus, present }) {
+  const status = String(approvalStatus || 'pending');
+  if (!present) return 'absent';
+  if (status === 'approved' || status === 'rejected') return status;
+  return 'pending';
+}
+
+async function sendApprovalNotice({ req, guildId, botName, status, actionLabel }) {
+  const discordClient = req.app.locals.discord?.verification;
+  if (!discordClient) return;
+  const icon = status === 'approved' ? '✅' : '⛔';
+  const reviewer = req.adminUser?.email || 'admin';
+  const text = `${icon} ${botName} ${status} by ${reviewer}.`;
+  const actionNote = actionLabel ? `Action: ${actionLabel}.` : '';
+
+  await sendLog({
+    discordClient,
+    guildId,
+    type: 'verification',
+    webhookCategory: 'verification',
+    content: `${text}${actionNote ? ` ${actionNote}` : ''}`
+  }).catch(() => null);
+}
+
 // Home
 router.get('/', requireAdmin, async (req, res) => {
   if (!req.session.activeGuildId) return res.redirect('/admin/servers');
@@ -291,12 +315,18 @@ router.get('/servers', requireAdmin, async (req, res) => {
 
       const botApprovals = buildBotApprovals(cfg);
       const status = aggregateApprovalStatus(botApprovals);
-      const bots = BOT_DEFS.map((def) => ({
+      const bots = BOT_DEFS.map((def) => {
+        const present = Boolean(presence?.[def.key]);
+        const approvalStatus = botApprovals[def.key]?.status || 'pending';
+        return {
         key: def.key,
         name: def.name,
         icon: def.icon,
-        status: botApprovals[def.key]?.status || 'pending'
-      }));
+          status: displayBotStatus({ approvalStatus, present }),
+          approvalStatus,
+          present
+        };
+      });
       return {
         guildId,
         name,
@@ -337,15 +367,20 @@ router.get('/servers/:guildId/approvals', requireAdmin, async (req, res) => {
   const discord = req.app.locals.discord;
   const presence = { ...(cfg.bots || {}), ...presenceFromClients(discord, guildId) };
   const botApprovals = buildBotApprovals(cfg);
-  const bots = BOT_DEFS.map((def) => ({
-    key: def.key,
-    name: def.name,
-    icon: def.icon,
-    status: botApprovals[def.key]?.status || 'pending',
-    sanctionedBy: botApprovals[def.key]?.sanctionedBy || '',
-    sanctionedAt: botApprovals[def.key]?.sanctionedAt || null,
-    present: Boolean(presence?.[def.key])
-  }));
+  const bots = BOT_DEFS.map((def) => {
+    const present = Boolean(presence?.[def.key]);
+    const approvalStatus = botApprovals[def.key]?.status || 'pending';
+    return {
+      key: def.key,
+      name: def.name,
+      icon: def.icon,
+      status: displayBotStatus({ approvalStatus, present }),
+      approvalStatus,
+      sanctionedBy: botApprovals[def.key]?.sanctionedBy || '',
+      sanctionedAt: botApprovals[def.key]?.sanctionedAt || null,
+      present
+    };
+  });
 
   const name =
     cfg.guildName ||
@@ -419,6 +454,13 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
       content: `${icon} ${def?.name || botKey} ${statusLabel} by ${req.adminUser.email}.`
     }).catch(() => null);
   }
+  await sendApprovalNotice({
+    req,
+    guildId,
+    botName: def?.name || botKey,
+    status: statusLabel,
+    actionLabel: action === 'delete' ? 'Delete + Reject' : statusLabel
+  });
 
   if (action === 'delete' && discordClient) {
     await leaveGuildIfPresent(discordClient, guildId);
@@ -621,10 +663,24 @@ router.get('/dashboard', requireAdmin, requireGuild, async (req, res) => {
     VerificationAttempt.countDocuments({ guildId, status: 'pending' })
   ]);
   const presence = presenceFromClients(req.app.locals.discord, guildId);
+  const botApprovals = buildBotApprovals(cfg);
+  const bots = BOT_DEFS.map((def) => {
+    const present = Boolean(presence?.[def.key]);
+    const approvalStatus = botApprovals[def.key]?.status || 'pending';
+    return {
+      key: def.key,
+      name: def.name,
+      icon: def.icon,
+      status: displayBotStatus({ approvalStatus, present }),
+      approvalStatus,
+      present
+    };
+  });
   return res.render('pages/admin/dashboard', {
     title: 'Dashboard',
     cfg,
     presence,
+    bots,
     stats: { usersCount, backupsCount, pendingCount, economyScope: getEconomyAccountScope() }
   });
 });
@@ -1033,7 +1089,37 @@ router.get('/backups', requireAdmin, requireGuild, async (req, res) => {
   ]);
   const flash = req.session.flash || null;
   delete req.session.flash;
-  return res.render('pages/admin/backups', { title: 'Backups', backups, schedules, channels, cfg, flash });
+  const labeledBackups = (backups || []).map((b) => {
+    const meta = b.metadata || {};
+    const source =
+      String(meta.source || '').trim() ||
+      (String(b.createdBy || '').toLowerCase().includes('schedule') ? 'automated' : '') ||
+      (String(b.name || '').startsWith('Auto ') ? 'automated' : '') ||
+      'manual';
+    return { ...b.toObject?.() ? b.toObject() : b, source };
+  });
+
+  const labeledSchedules = (schedules || []).map((s) => {
+    const cronExpr = s.interval || s.cron || '';
+    const label =
+      cronExpr === '0 * * * *'
+        ? 'Hourly'
+        : cronExpr === '0 0 * * *'
+          ? 'Daily'
+          : cronExpr === '0 0 * * 0'
+            ? 'Weekly'
+            : 'Custom';
+    return { ...s.toObject?.() ? s.toObject() : s, label };
+  });
+
+  return res.render('pages/admin/backups', {
+    title: 'Backups',
+    backups: labeledBackups,
+    schedules: labeledSchedules,
+    channels,
+    cfg,
+    flash
+  });
 });
 
 router.post('/backups/create', requireAdmin, requireGuild, async (req, res) => {
@@ -1060,11 +1146,20 @@ router.post('/backups/create', requireAdmin, requireGuild, async (req, res) => {
 
 router.post('/backups/schedules', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
-  const cronExpr = String(req.body.cron || '').trim();
+  const preset = String(req.body.preset || '').trim().toLowerCase();
+  const cronExpr =
+    preset === 'hourly'
+      ? '0 * * * *'
+      : preset === 'daily'
+        ? '0 0 * * *'
+        : preset === 'weekly'
+          ? '0 0 * * 0'
+          : String(req.body.cron || '').trim();
   const rawTypes = Array.isArray(req.body.types) ? req.body.types : [req.body.types || 'full'];
   const types = [...new Set(rawTypes.map((t) => String(t || '').trim()).filter(Boolean))];
   const enabled = Boolean(req.body.enabled);
   const channelId = String(req.body.channelId || '').trim();
+  const replacePrevious = Boolean(req.body.replacePrevious);
 
   if (!cronExpr) {
     setFlash(req, { type: 'warning', message: 'Cron expression is required.' });
@@ -1084,7 +1179,8 @@ router.post('/backups/schedules', requireAdmin, requireGuild, async (req, res) =
       backupType: type,
       createdBy: req.adminUser.email,
       channelId,
-      enabled
+      enabled,
+      replacePrevious
     });
     if (!result.ok) {
       setFlash(req, { type: 'danger', message: result.reason || 'Failed to create schedule.' });

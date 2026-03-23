@@ -29,9 +29,14 @@
           </div>
           <div class="d-flex align-items-center gap-2">
             <span class="badge text-bg-<%= badge %>"><%= status %></span>
-            <span class="badge <%= presence && presence.economy ? 'text-bg-success' : 'text-bg-secondary' %>">E</span>
-            <span class="badge <%= presence && presence.backup ? 'text-bg-success' : 'text-bg-secondary' %>">B</span>
-            <span class="badge <%= presence && presence.verification ? 'text-bg-success' : 'text-bg-secondary' %>">V</span>
+            <div class="d-flex align-items-center gap-2">
+              <% (bots || []).forEach(b => { %>
+                <span class="bot-icon-sm <%= b.status %>" title="<%= b.name %>: <%= b.status %>">
+                  <img src="<%= b.icon %>" alt="<%= b.name %> logo" loading="lazy" />
+                  <span class="bot-status-dot <%= b.status %>"></span>
+                </span>
+              <% }) %>
+            </div>
             <a href="/admin/servers" class="btn btn-outline-primary btn-sm">Approvals</a>
           </div>
         </div>
@@ -42,7 +47,7 @@
           <div class="card shadow-sm">
             <div class="card-body">
               <div class="text-muted">Users</div>
-              <div class="display-6">2</div>
+              <div class="display-6"><%= stats.usersCount %></div>
             </div>
           </div>
         </div>

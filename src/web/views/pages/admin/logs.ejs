@@ -52,13 +52,14 @@
                 const searchText = String(rawSearch || '').toLowerCase();
 
                 const summaryLines = [];
+                const allowedFields = new Set(['user', 'status', 'risk', 'ip', 'location', 'note', 'result', 'action', 'type']);
                 embeds.forEach((e) => {
                   if (e?.title) summaryLines.push(String(e.title));
                   if (e?.description) summaryLines.push(String(e.description));
                   const fields = Array.isArray(e.fields) ? e.fields : [];
                   fields.forEach((f) => {
                     const fieldName = String(f?.name || '').trim();
-                    if (fieldName.toLowerCase() === 'message id') return;
+                    if (!allowedFields.has(fieldName.toLowerCase())) return;
                     const val = String(f?.value || '').trim();
                     if (!val) return;
                     summaryLines.push(`${fieldName}: ${val}`);

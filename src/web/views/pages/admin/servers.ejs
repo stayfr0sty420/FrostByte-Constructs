@@ -20,7 +20,7 @@
         <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
       <% } %>
 
-      <div class="card shadow-sm">
+      <div class="card shadow-sm" data-csrf="<%= csrfToken %>">
         <div class="card-body p-0">
           <div class="table-responsive">
             <table class="table table-sm table-hover align-middle mb-0 servers-table">
@@ -44,7 +44,7 @@
                 <% } %>
 
                 <% servers.forEach(s => { %>
-                  <tr>
+                  <tr class="server-row" data-guild-select="<%= s.guildId %>">
                     <td class="server-icon-cell" data-label="Icon">
                       <span class="server-icon" data-fallback="SV">
                         <% if (s.iconUrl) { %>
@@ -85,6 +85,27 @@
         </div>
       </div>
     </main>
+    <script>
+      (() => {
+        const card = document.querySelector('.servers-page .card[data-csrf]');
+        const csrf = card ? card.getAttribute('data-csrf') : '';
+        const rows = document.querySelectorAll('.servers-table .server-row[data-guild-select]');
+        if (!rows.length) return;
+        rows.forEach((row) => {
+          row.addEventListener('click', (event) => {
+            if (event.target.closest('a,button,form,input,select,textarea,label')) return;
+            const guildId = row.getAttribute('data-guild-select');
+            if (!guildId || !csrf) return;
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/admin/servers/select';
+            form.innerHTML = `<input type="hidden" name="_csrf" value="${csrf}" /><input type="hidden" name="guildId" value="${guildId}" />`;
+            document.body.appendChild(form);
+            form.submit();
+          });
+        });
+      })();
+    </script>
     <%- include('../../partials/footer') %>
   </body>
 </html>

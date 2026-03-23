@@ -51,7 +51,7 @@
                         <option value="nicknames">nicknames</option>
                         <option value="bots">bots</option>
                       </select>
-                      <div class="form-text">Tip: hold Ctrl/Command to select multiple types.</div>
+                      <div class="form-text">Select one or more. Choosing <strong>full</strong> will override others.</div>
                     </div>
                     <div class="col-12 col-md-5 d-flex align-items-center">
                       <div class="form-check">
@@ -132,9 +132,19 @@
                   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                   <div class="row g-2">
                     <div class="col-12 col-md-6">
+                      <label class="form-label">Schedule</label>
+                      <select class="form-select" name="preset" id="schedulePreset" required>
+                        <option value="hourly">Hourly</option>
+                        <option value="daily" selected>Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="custom">Custom Cron</option>
+                      </select>
+                      <div class="form-text">Pick a preset, or choose Custom for cron.</div>
+                    </div>
+                    <div class="col-12 col-md-6" id="customCronWrap" style="display:none;">
                       <label class="form-label">Cron</label>
-                      <input class="form-control" name="cron" placeholder="0 0 * * *" required />
-                      <div class="form-text">Hourly: 0 * * * * · Daily: 0 0 * * * · Weekly: 0 0 * * 0</div>
+                      <input class="form-control" name="cron" placeholder="0 0 * * *" />
+                      <div class="form-text">Example: Hourly 0 * * * * · Daily 0 0 * * * · Weekly 0 0 * * 0</div>
                     </div>
                     <div class="col-12 col-md-6">
                       <label class="form-label">Types</label>
@@ -160,10 +170,14 @@
                         <% }) %>
                       </select>
                     </div>
-                    <div class="col-12 col-md-6 d-flex align-items-center">
+                    <div class="col-12 col-md-6 d-flex align-items-center gap-3">
                       <div class="form-check form-switch mt-3">
                         <input class="form-check-input" type="checkbox" name="enabled" value="1" checked />
                         <label class="form-check-label">Enabled</label>
+                      </div>
+                      <div class="form-check form-switch mt-3">
+                        <input class="form-check-input" type="checkbox" name="replacePrevious" value="1" />
+                        <label class="form-check-label">Keep latest only</label>
                       </div>
                     </div>
                     <div class="col-12">
@@ -176,11 +190,12 @@
                   <table class="table table-sm align-middle mb-0">
                     <thead>
                       <tr>
-                        <th>Cron</th>
+                        <th>Schedule</th>
                         <th>Type</th>
                         <th>Next Run</th>
                         <th>Notify</th>
                         <th>Enabled</th>
+                        <th>Latest Only</th>
                         <th class="text-end">Actions</th>
                       </tr>
                     </thead>
@@ -190,11 +205,15 @@
                       <% } %>
                       <% (schedules || []).forEach(s => { %>
                         <tr>
-                          <td><code><%= s.interval || s.cron %></code></td>
+                          <td>
+                            <div class="fw-semibold"><%= s.label || 'Custom' %></div>
+                            <div class="text-muted small"><code><%= s.interval || s.cron %></code></div>
+                          </td>
                           <td><%= s.backupType %></td>
                           <td class="text-muted small"><%= formatDate(s.nextRun) || '—' %></td>
                           <td class="text-muted small"><%= channelNameById.get(s.channelId) || s.channelId || '—' %></td>
                           <td><%= s.enabled ? 'yes' : 'no' %></td>
+                          <td><%= s.replacePrevious ? 'yes' : 'no' %></td>
                           <td class="text-end">
                             <form method="post" action="/admin/backups/schedules/<%= s.scheduleId %>/delete" class="d-inline">
                               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
@@ -322,6 +341,7 @@
                   <th>Status</th>
                   <th>Size</th>
                   <th>Archived</th>
+                  <th>Source</th>
                   <th>Created</th>
                   <th class="text-end">Actions</th>
                 </tr>
@@ -335,6 +355,9 @@
                     <td data-label="Status"><%= b.status %></td>
                     <td data-label="Size" class="text-muted small"><%= b.size ? (b.size / (1024 * 1024)).toFixed(2) + ' MB' : '0 MB' %></td>
                     <td data-label="Archived"><%= b.archived ? 'yes' : 'no' %></td>
+                    <td data-label="Source">
+                      <span class="badge <%= b.source === 'automated' ? 'text-bg-primary' : 'text-bg-secondary' %>"><%= b.source %></span>
+                    </td>
                     <td data-label="Created" class="text-muted small"><%= formatDate(b.createdAt) || '—' %></td>
                     <td data-label="Actions" class="text-end">
                       <div class="backup-actions">
@@ -379,6 +402,21 @@
         </div>
       </section>
     </main>
+    <script>
+      (() => {
+        const preset = document.getElementById('schedulePreset');
+        const wrap = document.getElementById('customCronWrap');
+        if (!preset || !wrap) return;
+        const sync = () => {
+          const isCustom = preset.value === 'custom';
+          wrap.style.display = isCustom ? 'block' : 'none';
+          const input = wrap.querySelector('input[name="cron"]');
+          if (input) input.required = isCustom;
+        };
+        preset.addEventListener('change', sync);
+        sync();
+      })();
+    </script>
     <%- include('../../partials/footer') %>
   </body>
 </html>

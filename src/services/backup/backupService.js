@@ -445,6 +445,8 @@ async function createBackup({
   const backupType = normalizeBackupType(type);
   const typeOptions = { ...buildTypeOptions(backupType), ...(options.typeOptions || {}) };
   const messageLimit = Math.max(0, Math.floor(options.messageLimit || 1000));
+  const scheduleId = String(options.scheduleId || '').trim();
+  const source = String(options.source || '').trim();
 
   const backupId = nanoid(12);
   const ts = timestampSlug(new Date());
@@ -464,7 +466,11 @@ async function createBackup({
     filePath: dir,
     zipPath,
     timestamp: new Date(),
-    archived: Boolean(options.archive)
+    archived: Boolean(options.archive),
+    metadata: {
+      scheduleId: scheduleId || '',
+      source: source || ''
+    }
   });
 
   await sendBackupLog({
@@ -539,7 +545,9 @@ async function createBackup({
           stats,
           metadata: {
             options: typeOptions,
-            messageLimit
+            messageLimit,
+            scheduleId: scheduleId || '',
+            source: source || ''
           }
         }
       }

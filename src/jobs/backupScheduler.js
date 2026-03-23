@@ -2,7 +2,8 @@ const cron = require('node-cron');
 const cronParser = require('cron-parser');
 const BackupSchedule = require('../db/models/BackupSchedule');
 const { logger } = require('../config/logger');
-const { createBackup, normalizeBackupType } = require('../services/backup/backupService');
+const { createBackup, deleteBackup, normalizeBackupType } = require('../services/backup/backupService');
+const Backup = require('../db/models/Backup');
 const { isGuildApproved } = require('../services/admin/guildRegistryService');
 
 const tasks = new Map(); // scheduleId -> cron task
@@ -44,6 +45,16 @@ async function scheduleOne({ discordClient, schedule }) {
         logger.info({ guildId: schedule.guildId, scheduleId: schedule.scheduleId }, 'Skipping scheduled backup (not approved)');
         return;
       }
+
+      if (schedule.replacePrevious) {
+        const previous = await Backup.findOne({
+          guildId: schedule.guildId,
+          'metadata.scheduleId': schedule.scheduleId
+        }).sort({ createdAt: -1 });
+        if (previous) {
+          await deleteBackup({ guildId: schedule.guildId, backupId: previous.backupId }).catch(() => null);
+        }
+      }
       const next = computeNextRun();
       await BackupSchedule.updateOne(
         { scheduleId: schedule.scheduleId },
@@ -55,7 +66,7 @@ async function scheduleOne({ discordClient, schedule }) {
         type: normalizeBackupType(schedule.backupType),
         name: `Auto ${schedule.backupType}`,
         createdBy: schedule.createdBy || 'scheduler',
-        options: { channelId: schedule.channelId || '' }
+        options: { channelId: schedule.channelId || '', scheduleId: schedule.scheduleId, source: 'automated' }
       });
     } catch (err) {
       logger.error({ err, scheduleId: schedule.scheduleId }, 'Scheduled backup failed');
@@ -71,7 +82,7 @@ async function initBackupScheduler({ discordClient }) {
   logger.info({ count: schedules.length }, 'Backup scheduler initialized');
 }
 
-async function upsertSchedule({ discordClient, guildId, cronExpr, backupType, createdBy, channelId = '', enabled = true }) {
+async function upsertSchedule({ discordClient, guildId, cronExpr, backupType, createdBy, channelId = '', enabled = true, replacePrevious = false }) {
   if (!cron.validate(cronExpr)) return { ok: false, reason: 'Invalid cron expression.' };
   const schedule = await BackupSchedule.create({
     scheduleId: require('nanoid').nanoid(12),
@@ -81,7 +92,8 @@ async function upsertSchedule({ discordClient, guildId, cronExpr, backupType, cr
     backupType: normalizeBackupType(backupType),
     enabled: Boolean(enabled),
     createdBy: createdBy || '',
-    channelId: channelId || ''
+    channelId: channelId || '',
+    replacePrevious: Boolean(replacePrevious)
   });
   await scheduleOne({ discordClient, schedule });
   return { ok: true, schedule };
