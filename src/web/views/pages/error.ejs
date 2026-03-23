@@ -5,21 +5,23 @@
   </head>
   <body class="app">
     <%- include('../partials/nav') %>
+    <% const safeBackUrl = typeof backUrl !== 'undefined' ? backUrl : ''; %>
+    <% const safeAutoBack = typeof autoBack !== 'undefined' ? autoBack : false; %>
     <main class="container py-5">
       <div class="alert alert-danger">
         <h1 class="h5 mb-2"><%= title %></h1>
         <div><%= message %></div>
       </div>
       <div class="d-flex flex-wrap gap-2">
-        <a href="<%= backUrl || '/' %>" class="btn btn-secondary">Go Back</a>
+        <a href="<%= safeBackUrl || '/' %>" class="btn btn-secondary">Go Back</a>
         <a href="/" class="btn btn-outline-light">Home</a>
       </div>
     </main>
     <%- include('../partials/footer') %>
-    <% if (autoBack && backUrl) { %>
+    <% if (safeAutoBack && safeBackUrl) { %>
       <script>
         setTimeout(() => {
-          window.location.href = '<%= backUrl %>';
+          window.location.href = '<%= safeBackUrl %>';
         }, 1500);
       </script>
     <% } %>
