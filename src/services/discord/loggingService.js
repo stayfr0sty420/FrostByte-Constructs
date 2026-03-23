@@ -158,6 +158,38 @@ function extractAuditId(embed, fields) {
   return snowflakeMatch ? snowflakeMatch[0] : '';
 }
 
+function listFromMultiline(value) {
+  return String(value || '')
+    .split('\n')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function buildAttachmentLinks(rawUrls, rawNames) {
+  const urls = listFromMultiline(rawUrls);
+  const names = listFromMultiline(rawNames);
+  if (!urls.length) return '';
+
+  return urls
+    .map((url, index) => {
+      const fallbackName = decodeURIComponent(
+        String(url)
+          .split('?')[0]
+          .split('/')
+          .pop() || `attachment-${index + 1}`
+      );
+      const label = compactText(names[index] || fallbackName, 96).replace(/[[\]()]/g, '') || `attachment-${index + 1}`;
+      return `[${label}](${url})`;
+    })
+    .join('\n');
+}
+
+function pickFirstImageUrl(embed, fields) {
+  if (embed?.image?.url) return embed.image.url;
+  const urls = listFromMultiline(fields['attachment urls'] || fields.attachments || '');
+  return urls.find((url) => /\.(png|jpe?g|gif|webp|bmp|tiff?)(\?|$)/i.test(url)) || '';
+}
+
 function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
   const user = fields.user || '';
   const channel = fields.channel || '';
@@ -178,6 +210,7 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
   const accountCreated = fields['account created'] || '';
   const until = fields.until || '';
   const previous = fields.previous || '';
+  const attachmentLinks = buildAttachmentLinks(fields['attachment urls'] || fields.attachments || '', fields['attachment names'] || '');
 
   switch (type) {
     case 'voice_join':
@@ -224,9 +257,16 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
       return compactText(`${user} used ${command || 'a command'} in ${channel}${options ? `\n${options}` : ''}`, 900);
     case 'invite_info':
       return compactText(`Invite: ${code || '(unknown)'}\nChannel: ${channel}${fields.inviter ? `\nInviter: ${fields.inviter}` : ''}`, 900);
-    case 'message_delete':
     case 'image_delete':
-      return compactText(`${user} deleted a message in ${channel}${content ? `\n${content}` : ''}${attachments ? `\n${attachments}` : ''}`, 900);
+      return compactText(
+        `${user} deleted a message in ${channel}\n${content || '(no content)'}${attachmentLinks ? `\n${attachmentLinks}` : ''}`,
+        1400
+      );
+    case 'message_delete':
+      return compactText(
+        `${user} deleted a message in ${channel}\n${content || '(no content)'}${attachmentLinks ? `\n${attachmentLinks}` : ''}`,
+        1400
+      );
     case 'message_edit':
       return compactText(`${user} edited a message in ${channel}\nBefore: ${before || '(empty)'}\nAfter: ${after || '(empty)'}`, 900);
     case 'bulk_message_delete':
@@ -253,8 +293,18 @@ function buildCompactAuditEmbed(type, embed) {
   const title = compactText(normalized.title || 'Audit Log', 120) || 'Audit Log';
   const ts = normalized.timestamp ? new Date(normalized.timestamp) : new Date();
   const footerBits = [];
-  if (entityId) footerBits.push(`ID: ${entityId}`);
-  const footerText = footerBits.join(' • ');
+  const authorId = String(fields['author id'] || '').replace(/[^\d]/g, '');
+  const avatarUrl = normalized.author?.icon_url || normalized.author?.iconURL || '';
+  const displayName = compactText(normalized.author?.name || fields['display name'] || '', 120);
+  const imageUrl = pickFirstImageUrl(normalized, fields);
+
+  if (type === 'image_delete' || type === 'message_delete') {
+    if (authorId) footerBits.push(`Author: ${authorId}`);
+    if (entityId) footerBits.push(`Message ID: ${entityId}`);
+  } else if (entityId) {
+    footerBits.push(`ID: ${entityId}`);
+  }
+  const footerText = footerBits.join(type === 'image_delete' || type === 'message_delete' ? ' | ' : ' • ');
 
   const compact = new EmbedBuilder()
     .setColor(Number(normalized.color || 0xef4444))
@@ -263,8 +313,11 @@ function buildCompactAuditEmbed(type, embed) {
     .setTimestamp(Number.isNaN(ts.getTime()) ? new Date() : ts);
 
   if (footerText) compact.setFooter({ text: footerText });
+  if (displayName) {
+    compact.setAuthor(avatarUrl ? { name: displayName, iconURL: avatarUrl } : { name: displayName });
+  }
   if (normalized.thumbnail?.url) compact.setThumbnail(normalized.thumbnail.url);
-  if (normalized.image?.url) compact.setImage(normalized.image.url);
+  if (imageUrl) compact.setImage(imageUrl);
   return compact.toJSON();
 }
 
