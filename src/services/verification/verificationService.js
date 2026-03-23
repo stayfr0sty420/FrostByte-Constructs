@@ -9,7 +9,7 @@ const { sendLog } = require('../discord/loggingService');
 const { getOrCreateGuildConfig } = require('../economy/guildConfigService');
 const { env } = require('../../config/env');
 const net = require('net');
-const { ipGeoToText } = require('./ipGeoService');
+const { ipGeoToText, lookupIpGeo } = require('./ipGeoService');
 
 function getReqIp(req) {
   const normalize = (value) => {
@@ -217,30 +217,56 @@ async function submitVerification({
 }) {
   const cfg = await getOrCreateGuildConfig(guildId);
   if (!cfg.verification?.enabled) return { ok: false, reason: 'Verification is disabled.' };
-  if (cfg.verification?.requireLocation !== false) {
-    const lat = geo?.lat ?? null;
-    const lon = geo?.lon ?? null;
-    const acc = geo?.accuracy ?? null;
-    if (lat === null || lon === null || acc === null || Number.isNaN(Number(lat)) || Number.isNaN(Number(lon)) || Number.isNaN(Number(acc))) {
-      return { ok: false, reason: 'Location is required to verify.' };
-    }
-  }
 
   const observedIp = String(ipOverride || '').trim() || getReqIp(req);
   const publicIpRaw = String(publicIp || '').trim();
   const publicIpValid = publicIpRaw && net.isIP(publicIpRaw) ? publicIpRaw : '';
-  const ipForDecision = publicIpValid || observedIp;
+  const ipForDecision = publicIpValid || observedIp || '';
   const userAgent = String(userAgentOverride ?? req.headers['user-agent'] ?? '').trim();
-  const parsedIpGeo = normalizeIpGeo(ipGeo);
+  let parsedIpGeo = normalizeIpGeo(ipGeo);
+  if (!parsedIpGeo.ok || !parsedIpGeo.ipGeo) {
+    const lookup = lookupIpGeo(publicIpValid || observedIp);
+    if (lookup.ok) {
+      parsedIpGeo = {
+        ok: true,
+        ipGeo: {
+          source: lookup.source,
+          country: lookup.country,
+          region: lookup.region,
+          city: lookup.city,
+          timezone: lookup.timezone,
+          lat: lookup.lat,
+          lon: lookup.lon
+        }
+      };
+    }
+  }
+
+  const geoCheck = normalizeGeo(geo);
+  let geoFinal = geoCheck.ok ? geoCheck.geo : null;
+  let geoFallback = false;
+
+  if (cfg.verification?.requireLocation !== false) {
+    if (!geoFinal) {
+      if (parsedIpGeo.ok && parsedIpGeo.ipGeo && typeof parsedIpGeo.ipGeo.lat === 'number' && typeof parsedIpGeo.ipGeo.lon === 'number') {
+        geoFinal = { lat: parsedIpGeo.ipGeo.lat, lon: parsedIpGeo.ipGeo.lon, accuracy: 50000 };
+        geoFallback = true;
+      } else {
+        return { ok: false, reason: 'Location is required to verify.' };
+      }
+    }
+  }
+
+  const observedIpFinal = observedIp || publicIpValid || '';
 
   await logIpVisit({
     guildId,
     discordId: user.id,
     username: user.username || user.globalName || '',
     email: user.email || '',
-    ip: observedIp,
+    ip: observedIpFinal,
     userAgent,
-    geo,
+    geo: geoFinal,
     verified: true,
     ...(publicIpValid ? { publicIp: publicIpValid } : {}),
     ...(parsedIpGeo.ok && parsedIpGeo.ipGeo ? { ipGeo: parsedIpGeo.ipGeo } : {})
@@ -254,7 +280,7 @@ async function submitVerification({
   if (userEmail) verifiedUpdate.email = userEmail;
   await IpLog.updateMany({ guildId, discordId: user.id }, { $set: verifiedUpdate }).catch(() => null);
 
-  const risk = await computeRiskScore({ guildId, discordId: user.id, ip: ipForDecision, email: user.email || '' });
+  const risk = await computeRiskScore({ guildId, discordId: user.id, ip: ipForDecision || observedIpFinal, email: user.email || '' });
   const decision = riskDecision(risk);
   const autoApprove = true;
   const status = 'approved';
@@ -291,12 +317,12 @@ async function submitVerification({
     email: user.email || '',
     ip: ipForDecision,
     publicIp: publicIpValid,
-    observedIp,
+    observedIp: observedIpFinal,
     userAgent,
     geo: {
-      lat: geo?.lat ?? null,
-      lon: geo?.lon ?? null,
-      accuracy: geo?.accuracy ?? null
+      lat: geoFinal?.lat ?? null,
+      lon: geoFinal?.lon ?? null,
+      accuracy: geoFinal?.accuracy ?? null
     },
     ...(parsedIpGeo.ok && parsedIpGeo.ipGeo ? { ipGeo: parsedIpGeo.ipGeo } : {}),
     answers: {
@@ -330,10 +356,12 @@ async function submitVerification({
       attempt,
       ip: ipForDecision,
       userAgent,
-      geo,
+      geo: geoFinal,
       riskScore: risk,
       status,
-      note: roleResult.ok ? 'Roles applied successfully.' : `Role apply failed: ${roleResult.reason || 'unknown'}`
+      note: `${geoFallback ? 'GPS missing; used IP location fallback. ' : ''}${
+        roleResult.ok ? 'Roles applied successfully.' : `Role apply failed: ${roleResult.reason || 'unknown'}`
+      }`
     });
     await sendLog({
       discordClient,
