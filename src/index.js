@@ -11,6 +11,68 @@ const { startJobs } = require('./jobs/startJobs');
 const { applyEphemeralFlagPatch } = require('./discord/patchEphemeralFlags');
 const { bootstrapAdminIfNeeded } = require('./services/admin/bootstrapAdmin');
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shouldRetryDiscordLogin(err) {
+  const message = String(err?.message || '').toLowerCase();
+  if (!message) return false;
+
+  return [
+    'unexpected server response: 500',
+    'unexpected server response: 502',
+    'unexpected server response: 503',
+    'unexpected server response: 504',
+    'unexpected server response: 521',
+    'unexpected server response: 522',
+    'unexpected server response: 523',
+    'unexpected server response: 524',
+    'econnreset',
+    'etimedout',
+    'eai_again',
+    'gateway',
+    'fetch failed'
+  ].some((fragment) => message.includes(fragment));
+}
+
+async function loginClientWithRetry({ client, token, label, maxAttempts = 5, baseDelayMs = 2500 }) {
+  let lastErr = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await client.login(token);
+      logger.info({ label, attempt }, 'Discord client login succeeded');
+      return;
+    } catch (err) {
+      lastErr = err;
+      const retryable = shouldRetryDiscordLogin(err);
+
+      logger.warn(
+        {
+          label,
+          attempt,
+          maxAttempts,
+          retryable,
+          message: String(err?.message || err || 'Unknown login error')
+        },
+        'Discord client login failed'
+      );
+
+      try {
+        client.destroy();
+      } catch (destroyErr) {
+        logger.warn({ err: destroyErr, label }, 'Discord client destroy failed during login retry');
+      }
+
+      if (!retryable || attempt >= maxAttempts) throw err;
+      await sleep(baseDelayMs * attempt);
+    }
+  }
+
+  throw lastErr || new Error(`Failed to login ${label}`);
+}
+
 async function listenWithPortFallback(server, preferredPort, maxRetries = 15) {
   const basePort = Math.max(1, Math.floor(Number(preferredPort) || 3000));
   const retries = Math.max(0, Math.floor(Number(maxRetries) || 0));
@@ -104,9 +166,21 @@ async function main() {
   });
 
   await Promise.all([
-    economyClient.login(env.ECONOMY_DISCORD_TOKEN),
-    backupClient.login(env.BACKUP_DISCORD_TOKEN),
-    verificationClient.login(env.VERIFICATION_DISCORD_TOKEN)
+    loginClientWithRetry({
+      client: economyClient,
+      token: env.ECONOMY_DISCORD_TOKEN,
+      label: 'economy'
+    }),
+    loginClientWithRetry({
+      client: backupClient,
+      token: env.BACKUP_DISCORD_TOKEN,
+      label: 'backup'
+    }),
+    loginClientWithRetry({
+      client: verificationClient,
+      token: env.VERIFICATION_DISCORD_TOKEN,
+      label: 'verification'
+    })
   ]);
 
   logger.info({ economy: economyClient.user?.tag }, 'RoBot logged in');

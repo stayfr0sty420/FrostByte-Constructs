@@ -26,7 +26,8 @@ const { adminSession } = require('./middleware/requireAdmin');
 async function createWebApp({ economyClient, backupClient, verificationClient }) {
   const app = express();
 
-  app.set('trust proxy', env.TRUST_PROXY);
+  const trustProxy = Boolean(env.TRUST_PROXY || env.NODE_ENV === 'production');
+  app.set('trust proxy', trustProxy);
   app.set('view engine', 'ejs');
   app.set('views', path.join(__dirname, 'views'));
 
