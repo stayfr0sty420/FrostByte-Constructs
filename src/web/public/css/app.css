@@ -901,10 +901,12 @@ code {
 }
 
 .bot-hub .bot-icon img {
-  object-fit: contain;
-  padding: 6px;
+  object-fit: cover;
+  object-position: center;
+  padding: 0;
   box-sizing: border-box;
-  background: rgba(8, 10, 18, 0.45);
+  background: transparent;
+  transform: scale(1.08);
 }
 
 .bot-fallback {
@@ -950,6 +952,7 @@ code {
   object-position: center;
   padding: 0;
   background: transparent;
+  transform: scale(1);
 }
 
 .bot-name {

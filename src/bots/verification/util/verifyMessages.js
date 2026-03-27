@@ -4,7 +4,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const { env } = require('../../../config/env');
 
 const VERIFICATION_ASSET_PATHS = Object.freeze({
-  avatar: '/assets/images/verification/core-guardian.png',
+  avatar: '/assets/images/branding/gods-eye/gods-eye-clear.png',
   sigil: '/assets/images/verification/core-guardian.png',
   banner: '/assets/images/verification/watchpoint-banner2.gif',
   brand: '/assets/images/verification/rodstark-mark.png'
