@@ -222,7 +222,7 @@ const BOT_DEFS = [
     clientKey: 'verification'
   },
   { key: 'economy', name: 'RoBot', icon: '/assets/images/bots/robot.png', clientKey: 'economy' },
-  { key: 'backup', name: 'Rodstarkian Vault', icon: '/assets/images/bots/vault.png', clientKey: 'backup' }
+  { key: 'backup', name: 'Rodstarkian Vault', icon: '/assets/images/bots/gods-eye.png', clientKey: 'backup' }
 ];
 
 function guildFromClients(discord, guildId) {

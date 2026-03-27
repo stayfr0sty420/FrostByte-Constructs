@@ -17,7 +17,7 @@ const botInvites = [
     name: 'Rodstarkian Vault',
     short: 'RV',
     url: 'https://discord.com/oauth2/authorize?client_id=1474982972020232354',
-    icon: '/assets/images/bots/vault.png',
+    icon: '/assets/images/bots/gods-eye.png',
     description: 'Server backups, templates, and automated restore utilities.',
     tags: ['Backups', 'Templates', 'Security']
   },
