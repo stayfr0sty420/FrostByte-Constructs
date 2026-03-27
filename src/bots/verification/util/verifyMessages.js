@@ -6,7 +6,7 @@ const { env } = require('../../../config/env');
 const VERIFICATION_ASSET_PATHS = Object.freeze({
   avatar: '/assets/images/verification/core-guardian.png',
   sigil: '/assets/images/verification/core-guardian.png',
-  banner: '/assets/images/verification/watchpoint-banner.gif',
+  banner: '/assets/images/verification/watchpoint-banner2.gif',
   brand: '/assets/images/verification/rodstark-mark.png'
 });
 
