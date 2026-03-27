@@ -215,7 +215,12 @@ function inviteLink(clientId) {
 }
 
 const BOT_DEFS = [
-  { key: 'verification', name: "God's Eye", icon: '/assets/images/bots/gods-eye.png', clientKey: 'verification' },
+  {
+    key: 'verification',
+    name: "God's Eye",
+    icon: '/assets/images/verification/core-guardian.png',
+    clientKey: 'verification'
+  },
   { key: 'economy', name: 'RoBot', icon: '/assets/images/bots/robot.png', clientKey: 'economy' },
   { key: 'backup', name: 'Rodstarkian Vault', icon: '/assets/images/bots/vault.png', clientKey: 'backup' }
 ];

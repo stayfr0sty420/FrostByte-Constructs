@@ -4,9 +4,9 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const { env } = require('../../../config/env');
 
 const VERIFICATION_ASSET_PATHS = Object.freeze({
-  avatar: '/assets/images/verification/gods-eye-avatar.png',
-  sigil: '/assets/images/verification/winged-eye.png',
-  banner: '/assets/images/verification/watchpoint-banner.png',
+  avatar: '/assets/images/verification/core-guardian.png',
+  sigil: '/assets/images/verification/core-guardian.png',
+  banner: '/assets/images/verification/watchpoint-banner.gif',
   brand: '/assets/images/verification/rodstark-mark.png'
 });
 
@@ -26,8 +26,8 @@ function hasPublicAssetBase() {
 
 function buildVerifyDescription(guildName) {
   const label = String(guildName || '').trim();
-  const accessLine = label ? `Access to ${label} is restricted.` : 'Access to this server is restricted.';
-  return `${accessLine} You must complete profiling before proceeding. Non-compliance will be denied entry.\n\nClick **Verify** below to continue.`;
+  const accessLine = label ? `🚨 Access to **${label}** is restricted.` : '🚨 Access to this server is restricted.';
+  return `${accessLine} You must complete profiling before proceeding. Non-compliance will be denied entry.\n\n➡️ Click **Verify** below to continue.`;
 }
 
 function buildVerificationEmbed({ title, guildName }) {
@@ -40,8 +40,7 @@ function buildVerificationEmbed({ title, guildName }) {
     .setDescription(buildVerifyDescription(guildName))
     .setFooter({
       text: 'Rodstarkian Bot Ecosystem • Powered by FrostByte Constructs LLC'
-    })
-    .setTimestamp();
+    });
 
   if (hasPublicAssetBase()) {
     embed

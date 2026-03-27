@@ -26,7 +26,7 @@ const botInvites = [
     name: "God's Eye",
     short: 'GE',
     url: 'https://discord.com/oauth2/authorize?client_id=1474983040953356512',
-    icon: '/assets/images/bots/gods-eye.png',
+    icon: '/assets/images/verification/core-guardian.png',
     description: 'Verification, gatekeeping, and anti-alt monitoring.',
     tags: ['Verification', 'Access', 'Safety']
   }
