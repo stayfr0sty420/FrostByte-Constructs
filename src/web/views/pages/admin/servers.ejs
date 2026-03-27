@@ -72,7 +72,7 @@
                     <td class="bots-cell" data-label="Bots">
                       <div class="bot-icon-row d-inline-flex align-items-center gap-2 flex-wrap">
                         <% (s.bots || []).forEach(b => { %>
-                          <span class="bot-icon-sm <%= b.status %>" title="<%= b.name %>: <%= b.status %>">
+                          <span class="bot-icon-sm <%= b.status %><%= b.key === 'verification' ? ' bot-icon-sm--website' : '' %>" title="<%= b.name %>: <%= b.status %>">
                             <img src="<%= b.icon %>" alt="<%= b.name %> logo" loading="lazy" />
                             <span class="bot-status-dot <%= b.status %>"></span>
                           </span>

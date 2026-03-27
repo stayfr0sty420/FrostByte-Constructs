@@ -51,7 +51,7 @@
           <div class="glass-card switcher-card">
             <div class="switcher-title">Quick Invite</div>
             <div class="switcher-preview">
-              <div class="bot-icon bot-icon-lg" data-fallback="<%= bots[0] ? bots[0].short : 'B' %>">
+              <div class="bot-icon bot-icon-lg<%= bots[0] && bots[0].key === 'gods-eye' ? ' bot-icon--website' : '' %>" data-fallback="<%= bots[0] ? bots[0].short : 'B' %>">
                 <% if (bots[0] && bots[0].icon) { %>
                   <img data-bot-preview data-fallback-img src="<%= bots[0].icon %>" alt="<%= bots[0].name %> logo" />
                 <% } %>
@@ -65,7 +65,7 @@
             <div class="switcher-row">
               <select class="form-select" data-bot-select aria-label="Select a bot">
                 <% bots.forEach(b => { %>
-                  <option value="<%= b.url %>" data-icon="<%= b.icon || '' %>" data-name="<%= b.name %>" data-desc="<%= b.description %>">
+                  <option value="<%= b.url %>" data-key="<%= b.key %>" data-icon="<%= b.icon || '' %>" data-name="<%= b.name %>" data-desc="<%= b.description %>">
                     <%= b.name %>
                   </option>
                 <% }) %>
@@ -82,7 +82,7 @@
           <% bots.forEach((b, i) => { %>
             <div class="bot-card glass-card">
               <div class="bot-head">
-                <div class="bot-icon" data-fallback="<%= b.short %>">
+                <div class="bot-icon<%= b.key === 'gods-eye' ? ' bot-icon--website' : '' %>" data-fallback="<%= b.short %>">
                   <% if (b.icon) { %>
                     <img src="<%= b.icon %>" alt="<%= b.name %> logo" loading="lazy" data-fallback-img />
                   <% } %>

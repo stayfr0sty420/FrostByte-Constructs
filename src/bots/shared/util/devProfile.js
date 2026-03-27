@@ -5,11 +5,7 @@ const { env } = require('../../../config/env');
 
 const DEV_PROFILE_URL = 'https://guns.lol/_zevexclsv';
 const DEV_DISPLAY_NAME = '𝐙𝐞𝐯𝐞𝐱𝐜𝐥𝐬𝐯';
-const DEV_ASSET_PATHS = Object.freeze({
-  robot: '/assets/images/bots/robot.png',
-  vault: '/assets/images/bots/vault.png',
-  verification: '/assets/images/verification/core-guardian.png'
-});
+const DEV_LOGO_PATH = '/assets/images/branding/developer/exc-modified.png';
 
 function getBaseUrl() {
   const value = String(env.PUBLIC_BASE_URL || '').trim();
@@ -23,26 +19,19 @@ function getAssetUrl(pathname) {
   return `${base}${pathname}`;
 }
 
-function botAssetPath(botName) {
-  const normalized = String(botName || '').trim().toLowerCase();
-  if (normalized.includes('vault')) return DEV_ASSET_PATHS.vault;
-  if (normalized.includes('god')) return DEV_ASSET_PATHS.verification;
-  return DEV_ASSET_PATHS.robot;
-}
-
 function buildDevProfileEmbed(botName) {
-  const name = String(botName || 'Bot').trim() || 'Bot';
+  const _name = String(botName || 'Bot').trim() || 'Bot';
   const embed = new EmbedBuilder()
     .setColor(0xe11d48)
-    .setAuthor({ name: `${name} Developer` })
+    .setAuthor({ name: 'Developer' })
     .setTitle(DEV_DISPLAY_NAME)
     .setDescription(`${DEV_PROFILE_URL} - ${DEV_DISPLAY_NAME}`)
-    .setFooter({ text: `${name} • Developer Profile` })
+    .setFooter({ text: 'Developer Profile' })
     .setTimestamp();
 
-  const assetUrl = getAssetUrl(botAssetPath(name));
+  const assetUrl = getAssetUrl(DEV_LOGO_PATH);
   if (assetUrl) {
-    embed.setAuthor({ name: `${name} Developer`, iconURL: assetUrl }).setThumbnail(assetUrl);
+    embed.setAuthor({ name: 'Developer', iconURL: assetUrl }).setThumbnail(assetUrl);
   }
 
   return embed;

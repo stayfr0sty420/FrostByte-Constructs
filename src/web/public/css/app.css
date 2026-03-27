@@ -930,6 +930,28 @@ code {
   border-radius: 999px;
 }
 
+.bot-icon--website,
+.bot-icon-sm--website {
+  background:
+    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.1), transparent 48%),
+    linear-gradient(180deg, rgba(38, 10, 18, 0.96), rgba(15, 8, 12, 0.98));
+  border-color: rgba(248, 113, 113, 0.42);
+  box-shadow: 0 10px 24px rgba(127, 29, 29, 0.28);
+}
+
+.bot-icon--website img {
+  object-fit: contain;
+  object-position: center;
+  background: transparent;
+}
+
+.bot-hub .bot-icon.bot-icon--website img {
+  object-fit: contain;
+  object-position: center;
+  padding: 0;
+  background: transparent;
+}
+
 .bot-name {
   font-weight: 600;
 }
@@ -1198,6 +1220,13 @@ code {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.bot-icon-sm.bot-icon-sm--website img {
+  object-fit: contain;
+  object-position: center;
+  padding: 0;
+  background: transparent;
 }
 
 .bot-status-dot {

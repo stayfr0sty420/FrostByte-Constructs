@@ -15,6 +15,7 @@
 
     const update = () => {
       const option = select.selectedOptions && select.selectedOptions[0] ? select.selectedOptions[0] : null;
+      const key = option ? String(option.getAttribute('data-key') || '').trim() : '';
       const url = option ? String(option.value || '').trim() : '';
       const icon = option ? String(option.getAttribute('data-icon') || '').trim() : '';
       const label = option ? String(option.getAttribute('data-name') || '').trim() : '';
@@ -24,6 +25,7 @@
         preview.setAttribute('src', icon);
         if (previewWrap) previewWrap.classList.remove('image-failed');
       }
+      if (previewWrap) previewWrap.classList.toggle('bot-icon--website', key === 'gods-eye');
       if (name) name.textContent = label || name.textContent;
       if (desc) desc.textContent = text || desc.textContent;
     };

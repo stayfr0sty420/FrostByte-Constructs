@@ -49,7 +49,7 @@
                   <tr>
                     <td class="bot-cell">
                       <div class="d-flex align-items-center gap-2">
-                        <span class="bot-icon-sm <%= b.status %>">
+                        <span class="bot-icon-sm <%= b.status %><%= b.key === 'verification' ? ' bot-icon-sm--website' : '' %>">
                           <img src="<%= b.icon %>" alt="<%= b.name %> logo" loading="lazy" />
                           <span class="bot-status-dot <%= b.status %>"></span>
                         </span>

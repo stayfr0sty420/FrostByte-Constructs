@@ -218,7 +218,7 @@ const BOT_DEFS = [
   {
     key: 'verification',
     name: "God's Eye",
-    icon: '/assets/images/verification/core-guardian.png',
+    icon: '/assets/images/branding/website/gods-eye-website.png',
     clientKey: 'verification'
   },
   { key: 'economy', name: 'RoBot', icon: '/assets/images/bots/robot.png', clientKey: 'economy' },
