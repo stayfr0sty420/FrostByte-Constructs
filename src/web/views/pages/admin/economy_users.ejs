@@ -30,7 +30,7 @@
         <div class="card-body">
           <div class="row g-3 align-items-end">
             <div class="col-12 col-lg-7">
-              <form method="get" action="/admin/economy/users" class="row g-2">
+              <form method="get" action="/admin/economy/users" class="row g-2 economy-search-form">
                 <div class="col-12">
                   <label class="form-label">Search</label>
                   <input
@@ -42,7 +42,7 @@
                   />
                   <div class="form-text">Tip: paste a Discord ID for exact match.</div>
                 </div>
-                <div class="col-12 d-flex gap-2">
+                <div class="col-12 d-flex gap-2 align-items-end">
                   <button class="btn btn-outline-primary" type="submit">Search</button>
                   <a class="btn btn-outline-secondary" href="/admin/economy/users">Clear</a>
                 </div>
@@ -52,7 +52,7 @@
             <div class="col-12 col-lg-5">
                 <div class="border rounded p-3 bulk-aid-stack">
                   <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                    <div class="fw-semibold">Bulk Ayuda</div>
+                    <div class="fw-semibold">Economy Booster</div>
                     <span class="badge text-bg-warning">Bulk</span>
                   </div>
                   <form method="post" action="/admin/economy/users/gift-all" class="row g-2 bulk-aid-form">
@@ -66,19 +66,19 @@
                       <button
                         class="btn btn-danger"
                         type="submit"
-                        data-confirm="<%= economyScope === 'global' ? 'Gift this amount to ALL economy users (global across all servers)?' : 'Gift this amount to ALL economy users in this server?' %>"
-                        data-confirm-title="Gift all users?"
-                        data-confirm-ok="Gift"
+                        data-confirm="<%= economyScope === 'global' ? 'Provide this credit amount to ALL economy users (global across all servers)?' : 'Provide this credit amount to ALL economy users in this server?' %>"
+                        data-confirm-title="Provide credits to all?"
+                        data-confirm-ok="Provide"
                         data-confirm-cancel="Cancel"
                       >
-                        Gift All
+                        Provide Credits
                       </button>
                     </div>
                   </form>
                   <form method="post" action="/admin/economy/users/exp-all" class="row g-2 bulk-aid-form mt-1">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                     <div class="col-12 col-md-7">
-                      <label class="form-label">EXP</label>
+                      <label class="form-label">Experience</label>
                       <input class="form-control" name="amount" type="number" min="1" step="1" placeholder="100" required />
                     </div>
                     <div class="col-12 col-md-5 d-grid">
@@ -86,12 +86,12 @@
                       <button
                         class="btn btn-outline-info"
                         type="submit"
-                        data-confirm="<%= economyScope === 'global' ? 'Grant this EXP amount to ALL economy users (global across all servers)?' : 'Grant this EXP amount to ALL economy users in this server?' %>"
-                        data-confirm-title="Grant EXP to all?"
+                        data-confirm="<%= economyScope === 'global' ? 'Provide this EXP amount to ALL economy users (global across all servers)?' : 'Provide this EXP amount to ALL economy users in this server?' %>"
+                        data-confirm-title="Provide EXP to all?"
                         data-confirm-ok="Grant"
                         data-confirm-cancel="Cancel"
                       >
-                        EXP All
+                        Provide EXP
                       </button>
                     </div>
                   </form>
@@ -282,17 +282,17 @@
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
-                          <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="gift" required />
-                          <button class="btn btn-outline-primary btn-sm icon-btn" type="submit" title="Gift credits" aria-label="Gift credits">🎁</button>
-                        </form>
+                            <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="credits" required />
+                            <button class="btn btn-outline-primary btn-sm icon-btn" type="submit" title="Provide credits" aria-label="Provide credits">🎁</button>
+                          </form>
 
                         <form method="post" action="/admin/economy/users/exp" class="user-action-form user-action-form--compact">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
-                          <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="+ exp" required />
-                          <button class="btn btn-outline-info btn-sm icon-btn" type="submit" title="Grant EXP" aria-label="Grant EXP">⚡</button>
-                        </form>
+                            <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="+ exp" required />
+                            <button class="btn btn-outline-info btn-sm icon-btn" type="submit" title="Provide EXP" aria-label="Provide EXP">⚡</button>
+                          </form>
                       </div>
                     </td>
                   </tr>

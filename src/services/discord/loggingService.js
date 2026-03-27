@@ -339,14 +339,12 @@ async function sendLog({ discordClient, guildId, type, content, embeds = [], web
 
   const webhookUrl =
     webhookCategory && cfg.webhooks?.[webhookCategory] ? cfg.webhooks[webhookCategory] : '';
+  const isCompact = COMPACT_AUDIT_TYPES.has(String(type || '').toLowerCase());
   const outgoingEmbeds =
-    COMPACT_AUDIT_TYPES.has(String(type || '').toLowerCase()) && safeEmbeds.length
+    isCompact && safeEmbeds.length
       ? safeEmbeds.map((embed) => buildCompactAuditEmbed(type, embed)).filter(Boolean)
       : safeEmbeds;
-  const outgoingContent =
-    COMPACT_AUDIT_TYPES.has(String(type || '').toLowerCase()) && outgoingEmbeds.length
-      ? undefined
-      : (content || undefined);
+  const outgoingContent = isCompact ? undefined : (content || undefined);
   if (webhookUrl) {
     await sendWebhook(webhookUrl, {
       username: botLabel || 'RoBot',

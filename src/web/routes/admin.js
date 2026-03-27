@@ -76,6 +76,13 @@ function setFlash(req, flash) {
   req.session.flash = flash;
 }
 
+function adminDisplayName(adminUser) {
+  const name = String(adminUser?.name || '').trim();
+  if (name) return name;
+  const email = String(adminUser?.email || '').trim();
+  return email || 'admin';
+}
+
 function isSnowflake(id) {
   return /^\d{15,22}$/.test(String(id || '').trim());
 }
@@ -113,7 +120,7 @@ async function upsertVerificationPanel({ discordClient, guildId, cfg }) {
   const channel = await guild.channels.fetch(channelId).catch(() => null);
   if (!channel || !channel.isTextBased()) return { ok: false, reason: 'Verification channel is not text-based.' };
 
-  const embed = buildVerifyPanelEmbed(cfg);
+  const embed = buildVerifyPanelEmbed(cfg, { guildName: guild.name || '' });
   const row = buildVerifyPanelRow(guildId);
   let msg = null;
   if (messageId) {
@@ -247,6 +254,13 @@ function botApprovalStatusFromConfig(cfg, botKey) {
   return cfg?.botApprovals?.[key]?.status || cfg?.approval?.status || 'pending';
 }
 
+function normalizeApprovalStatus(entryStatus, fallbackStatus) {
+  const status = String(entryStatus || '').trim().toLowerCase();
+  const fallback = String(fallbackStatus || '').trim().toLowerCase() || 'pending';
+  if (!status || status === 'pending') return fallback;
+  return status;
+}
+
 function buildBotApprovals(cfg) {
   const fallbackStatus = cfg?.approval?.status || 'pending';
   const fallbackBy = cfg?.approval?.reviewedBy || '';
@@ -256,7 +270,7 @@ function buildBotApprovals(cfg) {
   for (const def of BOT_DEFS) {
     const entry = cfg?.botApprovals?.[def.key] || {};
     result[def.key] = {
-      status: entry.status || fallbackStatus,
+      status: normalizeApprovalStatus(entry.status, fallbackStatus),
       sanctionedBy: entry.sanctionedBy || fallbackBy,
       sanctionedAt: entry.sanctionedAt || fallbackAt
     };
@@ -281,18 +295,7 @@ function displayBotStatus({ approvalStatus, present }) {
 async function sendApprovalNotice({ req, guildId, botName, status, actionLabel }) {
   const discordClient = req.app.locals.discord?.verification;
   if (!discordClient) return;
-  const icon = status === 'approved' ? '✅' : '⛔';
-  const reviewer = req.adminUser?.email || 'admin';
-  const text = `${icon} ${botName} ${status} by ${reviewer}.`;
-  const actionNote = actionLabel ? `Action: ${actionLabel}.` : '';
-
-  await sendLog({
-    discordClient,
-    guildId,
-    type: 'verification',
-    webhookCategory: 'verification',
-    content: `${text}${actionNote ? ` ${actionNote}` : ''}`
-  }).catch(() => null);
+  const reviewer = adminDisplayName(req.adminUser);
 
   const guild = await discordClient.guilds.fetch(guildId).catch(() => null);
   if (!guild) return;
@@ -322,10 +325,18 @@ async function sendApprovalNotice({ req, guildId, botName, status, actionLabel }
         : `${botName} is no longer approved for this server.`
     )
     .addFields(
-      { name: 'Sanctioned By', value: req.adminUser?.email || 'admin', inline: true },
+      { name: 'Sanctioned By', value: reviewer, inline: true },
       { name: 'Action', value: actionLabel || status, inline: true }
     )
     .setTimestamp();
+
+  await sendLog({
+    discordClient,
+    guildId,
+    type: 'verification',
+    webhookCategory: 'verification',
+    embeds: [embed]
+  }).catch(() => null);
 
   await targetChannel.send({ embeds: [embed] }).catch(() => null);
 }
@@ -503,7 +514,8 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
   const now = new Date();
   const status = action === 'approve' ? 'approved' : 'rejected';
   const botApprovals = buildBotApprovals(cfg);
-  botApprovals[botKey] = { status, sanctionedBy: req.adminUser.email, sanctionedAt: now };
+  const reviewer = adminDisplayName(req.adminUser);
+  botApprovals[botKey] = { status, sanctionedBy: reviewer, sanctionedAt: now };
   const aggregateStatus = aggregateApprovalStatus(botApprovals);
 
   await GuildConfig.updateOne(
@@ -511,10 +523,10 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
     {
       $set: {
         [`botApprovals.${botKey}.status`]: status,
-        [`botApprovals.${botKey}.sanctionedBy`]: req.adminUser.email,
+        [`botApprovals.${botKey}.sanctionedBy`]: reviewer,
         [`botApprovals.${botKey}.sanctionedAt`]: now,
         'approval.status': aggregateStatus,
-        'approval.reviewedBy': req.adminUser.email,
+        'approval.reviewedBy': reviewer,
         'approval.reviewedAt': now
       }
     }
@@ -523,16 +535,6 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
   const def = BOT_DEFS.find((b) => b.key === botKey);
   const discordClient = def ? req.app.locals.discord?.[def.clientKey] : null;
   const statusLabel = status === 'approved' ? 'approved' : 'rejected';
-  const icon = status === 'approved' ? '✅' : '⛔';
-
-  if (discordClient) {
-    await sendLog({
-      discordClient,
-      guildId,
-      type: 'approval',
-      content: `${icon} ${def?.name || botKey} ${statusLabel} by ${req.adminUser.email}.`
-    }).catch(() => null);
-  }
   await sendApprovalNotice({
     req,
     guildId,
@@ -583,14 +585,17 @@ router.get('/servers/select/:guildId', requireAdmin, async (req, res) => {
 router.post('/servers/approve/:guildId', requireAdmin, async (req, res) => {
   const guildId = String(req.params.guildId || '');
   const discord = req.app.locals.discord;
-  const presence = presenceFromClients(discord, guildId);
+  const livePresence = await resolvePresenceFromClients(discord, guildId);
+  const presence = { ...presenceFromClients(discord, guildId), ...livePresence };
   const missingBots = !allBotsPresent(presence);
 
   await getOrCreateGuildConfig(guildId);
   const now = new Date();
+  const reviewer = adminDisplayName(req.adminUser);
   const botSets = BOT_DEFS.reduce((acc, def) => {
+    if (!presence?.[def.key]) return acc;
     acc[`botApprovals.${def.key}.status`] = 'approved';
-    acc[`botApprovals.${def.key}.sanctionedBy`] = req.adminUser.email;
+    acc[`botApprovals.${def.key}.sanctionedBy`] = reviewer;
     acc[`botApprovals.${def.key}.sanctionedAt`] = now;
     return acc;
   }, {});
@@ -600,7 +605,7 @@ router.post('/servers/approve/:guildId', requireAdmin, async (req, res) => {
       $set: {
         'approval.status': 'approved',
         'approval.reviewedAt': now,
-        'approval.reviewedBy': req.adminUser.email,
+        'approval.reviewedBy': reviewer,
         ...botSets
       }
     }
@@ -617,11 +622,16 @@ router.post('/servers/approve/:guildId', requireAdmin, async (req, res) => {
 
 router.post('/servers/reject/:guildId', requireAdmin, async (req, res) => {
   const guildId = String(req.params.guildId || '');
+  const discord = req.app.locals.discord;
+  const livePresence = await resolvePresenceFromClients(discord, guildId);
+  const presence = { ...presenceFromClients(discord, guildId), ...livePresence };
   await getOrCreateGuildConfig(guildId);
   const now = new Date();
+  const reviewer = adminDisplayName(req.adminUser);
   const botSets = BOT_DEFS.reduce((acc, def) => {
+    if (!presence?.[def.key]) return acc;
     acc[`botApprovals.${def.key}.status`] = 'rejected';
-    acc[`botApprovals.${def.key}.sanctionedBy`] = req.adminUser.email;
+    acc[`botApprovals.${def.key}.sanctionedBy`] = reviewer;
     acc[`botApprovals.${def.key}.sanctionedAt`] = now;
     return acc;
   }, {});
@@ -631,7 +641,7 @@ router.post('/servers/reject/:guildId', requireAdmin, async (req, res) => {
       $set: {
         'approval.status': 'rejected',
         'approval.reviewedAt': now,
-        'approval.reviewedBy': req.adminUser.email,
+        'approval.reviewedBy': reviewer,
         ...botSets
       }
     }
@@ -702,7 +712,7 @@ router.post('/guilds/select', requireAdmin, async (req, res) => {
 // Accounts (owner only)
 router.get('/accounts', requireAdmin, requireOwner, async (req, res) => {
   const users = await AdminUser.find({})
-    .select('email role disabled createdAt lastLoginAt')
+    .select('name email role disabled createdAt lastLoginAt')
     .sort({ createdAt: -1 })
     .lean();
   const flash = req.session.flash || null;
@@ -711,11 +721,12 @@ router.get('/accounts', requireAdmin, requireOwner, async (req, res) => {
 });
 
 router.post('/accounts', requireAdmin, requireOwner, async (req, res) => {
+  const name = String(req.body.name || '');
   const email = String(req.body.email || '');
   const password = String(req.body.password || '');
   const role = String(req.body.role || 'admin') === 'owner' ? 'owner' : 'admin';
 
-  const created = await createAdminUser({ email, password, role });
+  const created = await createAdminUser({ email, password, role, name });
   if (!created.ok) {
     setFlash(req, { type: 'danger', message: created.reason || 'Failed to create user.' });
     return res.redirect('/admin/accounts');
@@ -1289,7 +1300,9 @@ router.post('/backups/schedules', requireAdmin, requireGuild, async (req, res) =
         ? '0 0 * * *'
         : preset === 'weekly'
           ? '0 0 * * 0'
-          : String(req.body.cron || '').trim();
+          : preset === 'monthly'
+            ? '0 0 1 * *'
+            : '';
   const rawTypeValue = req.body.types || req.body['types[]'] || 'full';
   const rawTypes = Array.isArray(rawTypeValue) ? rawTypeValue : [rawTypeValue];
   const types = [...new Set(rawTypes.map((t) => String(t || '').trim()).filter(Boolean))];
@@ -1298,7 +1311,7 @@ router.post('/backups/schedules', requireAdmin, requireGuild, async (req, res) =
   const replacePrevious = Boolean(req.body.replacePrevious);
 
   if (!cronExpr) {
-    setFlash(req, { type: 'warning', message: 'Cron expression is required.' });
+    setFlash(req, { type: 'warning', message: 'Pick a valid schedule preset.' });
     return res.redirect('/admin/backups');
   }
   if (!types.length) {
@@ -1431,6 +1444,7 @@ router.get('/verification/settings', requireAdmin, requireGuild, async (req, res
 router.post('/verification/settings', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
   const wantsJson = String(req.headers['x-settings-autosave'] || '') === '1';
+  const panelPostRequested = Boolean(req.body.panelPost);
   const cfg = await getOrCreateGuildConfig(guildId);
   cfg.verification.enabled = Boolean(req.body.enabled);
   cfg.verification.requireLocation = Boolean(req.body.requireLocation);
@@ -1505,11 +1519,17 @@ router.post('/verification/settings', requireAdmin, requireGuild, async (req, re
 
   await cfg.save();
 
-  const panelResult = await upsertVerificationPanel({
-    discordClient: req.app.locals.discord.verification,
-    guildId,
-    cfg
-  }).catch((err) => ({ ok: false, reason: String(err?.message || err || 'Failed') }));
+  const panelPostBlocked =
+    panelPostRequested && (!cfg.verification.panelEnabled || !cfg.verification.panelChannelId)
+      ? 'Enable the panel and select a channel before posting.'
+      : '';
+  const panelResult = panelPostBlocked
+    ? { ok: false, reason: panelPostBlocked }
+    : await upsertVerificationPanel({
+        discordClient: req.app.locals.discord.verification,
+        guildId,
+        cfg
+      }).catch((err) => ({ ok: false, reason: String(err?.message || err || 'Failed') }));
   if (panelResult?.ok && cfg.isModified()) {
     await cfg.save();
   }
@@ -1540,6 +1560,8 @@ router.post('/verification/settings', requireAdmin, requireGuild, async (req, re
     setFlash(req, { type: 'warning', message: warning });
   } else if (panelResult?.ok === false) {
     setFlash(req, { type: 'warning', message: panelResult.reason || 'Verification panel update failed.' });
+  } else if (panelPostRequested) {
+    setFlash(req, { type: 'success', message: 'Verification panel posted.' });
   } else {
     setFlash(req, { type: 'success', message: 'Verification settings updated.' });
   }

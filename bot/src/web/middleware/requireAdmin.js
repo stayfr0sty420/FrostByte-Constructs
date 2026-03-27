@@ -3,7 +3,7 @@ const AdminUser = require('../../db/models/AdminUser');
 async function loadAdminUser(req) {
   const id = String(req.session?.adminUserId || '');
   if (!id) return null;
-  const user = await AdminUser.findById(id).select('email role disabled').lean().catch(() => null);
+  const user = await AdminUser.findById(id).select('name email role disabled').lean().catch(() => null);
   if (!user || user.disabled) return null;
   return user;
 }

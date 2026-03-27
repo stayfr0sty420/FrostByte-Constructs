@@ -241,7 +241,7 @@ router.post('/guilds/select', requireAdmin, async (req, res) => {
 // Accounts (owner only)
 router.get('/accounts', requireAdmin, requireOwner, async (req, res) => {
   const users = await AdminUser.find({})
-    .select('email role disabled createdAt lastLoginAt')
+    .select('name email role disabled createdAt lastLoginAt')
     .sort({ createdAt: -1 })
     .lean();
   const flash = req.session.flash || null;
@@ -250,11 +250,12 @@ router.get('/accounts', requireAdmin, requireOwner, async (req, res) => {
 });
 
 router.post('/accounts', requireAdmin, requireOwner, async (req, res) => {
+  const name = String(req.body.name || '');
   const email = String(req.body.email || '');
   const password = String(req.body.password || '');
   const role = String(req.body.role || 'admin') === 'owner' ? 'owner' : 'admin';
 
-  const created = await createAdminUser({ email, password, role });
+  const created = await createAdminUser({ email, password, role, name });
   if (!created.ok) {
     setFlash(req, { type: 'danger', message: created.reason || 'Failed to create user.' });
     return res.redirect('/admin/accounts');

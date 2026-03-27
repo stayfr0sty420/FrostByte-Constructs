@@ -5,58 +5,98 @@
   </head>
   <body class="app verify-page">
     <%- include('../partials/nav') %>
-    <main class="container py-4">
-      <div class="row justify-content-center">
-        <div class="col-12 col-lg-7">
-          <div class="card shadow-sm verify-card">
-            <div class="card-body p-4">
-              <h1 class="h4 mb-2">Verification</h1>
-              <p class="text-muted">
-                This server requires you to verify yourself to get access to other channels. Click <strong>Verify</strong> to continue.
-              </p>
-
-              <% const needsGeo = (typeof requireLocation !== 'undefined' && requireLocation) ? true : false; %>
-
-              <% if (error === 'location_required') { %>
-                <div class="alert alert-danger" id="locationError">
-                  Please allow the required permissions and try again.
-                </div>
-              <% } %>
-
-              <div class="alert alert-danger d-none" id="formError"></div>
-
-              <form
-                method="post"
-                action="/verify/<%= guildId %>"
-                data-require-geo="<%= needsGeo ? '1' : '0' %>"
-                data-guild-id="<%= guildId %>"
-                data-csrf="<%= csrfToken %>"
-                data-token="<%= token %>"
-              >
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                <input type="hidden" name="t" value="<%= token %>" />
-                <input type="hidden" name="geoLat" id="geoLat" />
-                <input type="hidden" name="geoLon" id="geoLon" />
-                <input type="hidden" name="geoAcc" id="geoAcc" />
-                <input type="hidden" name="publicIp" id="publicIp" />
-
-                <% const qs = Array.isArray(questions) && questions.length ? questions : [cfg.verification.question1, cfg.verification.question2, cfg.verification.question3].filter(Boolean); %>
-                <% qs.forEach((q, idx) => { %>
-                  <div class="mb-3">
-                    <label class="form-label"><%= q %></label>
-                    <input class="form-control" name="answer<%= idx + 1 %>" />
-                  </div>
-                <% }) %>
-
-                <div class="d-flex flex-wrap gap-2 align-items-center verify-actions">
-                  <button class="btn btn-primary" type="submit" id="submitBtn">Verify</button>
-                  <span class="text-muted small" id="geoStatus"></span>
-                </div>
-                <div class="text-danger small mt-2" id="ipStatus"></div>
-              </form>
+    <main class="container py-4 py-lg-5">
+      <% const needsGeo = (typeof requireLocation !== 'undefined' && requireLocation) ? true : false; %>
+      <% const qs = Array.isArray(questions) && questions.length ? questions : [cfg.verification.question1, cfg.verification.question2, cfg.verification.question3].filter(Boolean); %>
+      <div class="verify-shell">
+        <section class="verify-showcase">
+          <div class="verify-showcase-copy">
+            <div class="verify-badge">
+              <img src="/assets/images/verification/gods-eye-avatar.png" alt="God's Eye badge" loading="lazy" />
+              <span>God's Eye • Watchpoint</span>
+            </div>
+            <h1 class="verify-title">Profiling Required</h1>
+            <p class="verify-lead">
+              Access to <strong><%= guildName %></strong> is restricted. Complete the secure profiling check below to unlock the rest of the server.
+            </p>
+            <div class="verify-pill-row">
+              <span class="verify-pill">Secure Access</span>
+              <span class="verify-pill">Role Delivery</span>
+              <span class="verify-pill">Audit Tracked</span>
             </div>
           </div>
-        </div>
+          <div class="verify-showcase-art">
+            <div class="verify-art-card verify-art-card--core">
+              <img src="/assets/images/verification/core-guardian.png" alt="Verification guardian artwork" loading="lazy" />
+            </div>
+            <div class="verify-art-card verify-art-card--sigil">
+              <img src="/assets/images/verification/winged-eye.png" alt="God's Eye sigil" loading="lazy" />
+            </div>
+          </div>
+          <div class="verify-banner-shell">
+            <img src="/assets/images/verification/watchpoint-banner.png" alt="Verification banner" class="verify-banner" loading="lazy" />
+          </div>
+        </section>
+
+        <section class="card shadow-sm verify-card">
+          <div class="card-body p-4 p-lg-5">
+            <div class="verify-card-head">
+              <div>
+                <p class="verify-card-eyebrow">Verification Sequence</p>
+                <h2 class="h4 mb-2">Complete The Required Profiling</h2>
+              </div>
+              <img
+                src="/assets/images/verification/winged-eye.png"
+                alt="Verification sigil"
+                class="verify-card-mark"
+                loading="lazy"
+              />
+            </div>
+
+            <% if (error === 'location_required') { %>
+              <div class="alert alert-danger" id="locationError">
+                Verification could not continue on the first attempt. Please try again.
+              </div>
+            <% } %>
+
+            <div class="alert alert-danger d-none" id="formError"></div>
+
+            <form
+              method="post"
+              action="/verify/<%= guildId %>"
+              data-require-geo="<%= needsGeo ? '1' : '0' %>"
+              data-guild-id="<%= guildId %>"
+              data-csrf="<%= csrfToken %>"
+              data-token="<%= token %>"
+              class="verify-form-grid"
+            >
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="t" value="<%= token %>" />
+              <input type="hidden" name="geoLat" id="geoLat" />
+              <input type="hidden" name="geoLon" id="geoLon" />
+              <input type="hidden" name="geoAcc" id="geoAcc" />
+              <input type="hidden" name="publicIp" id="publicIp" />
+
+              <% qs.forEach((q, idx) => { %>
+                <div class="verify-question-block">
+                  <label class="form-label verify-question-label"><%= q %></label>
+                  <input
+                    class="form-control form-control-lg"
+                    name="answer<%= idx + 1 %>"
+                    placeholder="Type your answer"
+                    autocomplete="off"
+                  />
+                </div>
+              <% }) %>
+
+              <div class="verify-submit-row">
+                <button class="btn btn-primary btn-lg verify-submit-btn" type="submit" id="submitBtn">Verify</button>
+                <span class="verify-status-text" id="geoStatus"></span>
+              </div>
+              <div class="verify-inline-error" id="ipStatus"></div>
+            </form>
+          </div>
+        </section>
       </div>
     </main>
     <script src="/assets/js/verify.js"></script>

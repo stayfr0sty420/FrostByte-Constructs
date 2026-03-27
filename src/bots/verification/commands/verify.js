@@ -49,7 +49,7 @@ module.exports = {
         }).catch(() => null);
       }
 
-      const embed = buildVerifyPanelEmbed(cfg);
+      const embed = buildVerifyPanelEmbed(cfg, { guildName: interaction.guild?.name || '' });
       const row = buildVerifyPanelRow(guildId);
 
       let msg = null;
@@ -89,7 +89,7 @@ module.exports = {
 
     const baseUrl = getBaseUrl();
     const url = `${baseUrl}/verify/${guildId}/start`;
-    const embed = buildVerifyLinkEmbed(cfg);
+    const embed = buildVerifyLinkEmbed(cfg, { guildName: interaction.guild?.name || '' });
     const row = buildVerifyLinkRow(url);
     return await safeReply(interaction, { embeds: [embed], components: [row], ephemeral: true });
   }

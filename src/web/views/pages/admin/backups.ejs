@@ -133,15 +133,9 @@
                         <option value="hourly">Hourly</option>
                         <option value="daily" selected>Daily</option>
                         <option value="weekly">Weekly</option>
-                        <option value="custom">Custom Cron</option>
+                        <option value="monthly">Monthly</option>
                       </select>
-                      <div class="form-text">Pick a preset, or choose Custom for cron.</div>
-                    </div>
-                    <div class="col-12 col-md-6" id="customCronWrap" style="display:none;">
-                      <label class="form-label">Cron</label>
-                      <input class="form-control" name="cron" id="customCronInput" placeholder="0 0 * * *" />
-                      <div class="form-text">Format: <code>minute hour day month weekday</code>. Example: Hourly <code>0 * * * *</code> · Daily <code>0 0 * * *</code> · Weekly <code>0 0 * * 0</code></div>
-                      <div class="text-muted small mt-1" id="customCronPreview">Custom schedule preview: waiting for cron input.</div>
+                      <div class="form-text">Pick a preset schedule for automated backups.</div>
                     </div>
                     <div class="col-12 col-md-6">
                       <label class="form-label">Types</label>
@@ -399,18 +393,9 @@
     <script>
       (() => {
         const preset = document.getElementById('schedulePreset');
-        const wrap = document.getElementById('customCronWrap');
-        const cronInput = document.getElementById('customCronInput');
-        const preview = document.getElementById('customCronPreview');
         const scheduleForm = preset?.closest('form') || null;
         const createForm = document.querySelector('form[action="/admin/backups/create"]');
-        if (!preset || !wrap) return;
-        const presetDescriptions = {
-          hourly: 'Preset preview: every hour at minute 0.',
-          daily: 'Preset preview: every day at 12:00 AM.',
-          weekly: 'Preset preview: every Sunday at 12:00 AM.',
-          custom: 'Custom schedule preview: waiting for cron input.'
-        };
+        if (!preset) return;
 
         const ensureAtLeastOneChecked = (formSelector, inputName, message) => {
           const form = formSelector;
@@ -423,27 +408,8 @@
           });
         };
 
-        const sync = () => {
-          const isCustom = preset.value === 'custom';
-          wrap.style.display = isCustom ? 'block' : 'none';
-          const input = wrap.querySelector('input[name="cron"]');
-          if (input) input.required = isCustom;
-          if (preview) {
-            preview.textContent = isCustom
-              ? `Custom schedule preview: ${String(cronInput?.value || '').trim() || 'waiting for cron input.'}`
-              : (presetDescriptions[preset.value] || '');
-          }
-          if (isCustom && cronInput) cronInput.focus();
-        };
-        if (cronInput && preview) {
-          cronInput.addEventListener('input', () => {
-            preview.textContent = `Custom schedule preview: ${String(cronInput.value || '').trim() || 'waiting for cron input.'}`;
-          });
-        }
         ensureAtLeastOneChecked(createForm, 'type[]', 'Select at least one backup type before creating a backup.');
         ensureAtLeastOneChecked(scheduleForm, 'types[]', 'Select at least one backup type before saving an automated backup schedule.');
-        preset.addEventListener('change', sync);
-        sync();
       })();
     </script>
     <%- include('../../partials/footer') %>

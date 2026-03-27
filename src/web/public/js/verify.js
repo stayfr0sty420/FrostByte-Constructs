@@ -65,13 +65,11 @@
     formError.classList.toggle('d-none', !value);
   };
 
-  const formatAccuracy = (acc) => (Number.isFinite(acc) ? `±${Math.round(acc)}m` : '');
-
   const allowIpFallback = async () => {
     await ensurePublicIp().catch(() => null);
     if (publicIpValue) {
       setFormError('');
-      setGeoStatus('Using network location fallback');
+      setGeoStatus('Secure session ready');
       clearLocationError();
       return true;
     }
@@ -166,9 +164,7 @@
         if (!best || pos.coords.accuracy < best.coords.accuracy) {
           best = pos;
         }
-        if (Number.isFinite(pos.coords.accuracy)) {
-          setGeoStatus(`Locating… ${formatAccuracy(pos.coords.accuracy)}`);
-        }
+        setGeoStatus('Preparing secure session…');
         if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_DESIRED_ACCURACY && sampleCount >= 2) {
           return finalize(pos);
         }
@@ -208,11 +204,11 @@
     if (hasGeo()) return true;
     if (!navigator.geolocation) {
       if (await allowIpFallback()) return true;
-      setFormError('Please allow the required permissions to verify.');
+      setFormError('Verification could not continue. Please refresh and try again.');
       return false;
     }
 
-    setGeoStatus('Checking access…');
+    setGeoStatus('Preparing secure session…');
     try {
       const pos = await captureBestLocation();
       const lat = Number(pos.coords.latitude);
@@ -220,14 +216,14 @@
       const acc = Number(pos.coords.accuracy);
       if (!Number.isFinite(acc) || acc > GEO_MIN_ACCEPTED_ACCURACY) {
         if (await allowIpFallback()) return true;
-        setFormError('Location accuracy is too low. Turn on GPS/location services and try again.');
+        setFormError('Verification could not continue. Please refresh and try again.');
         setGeoStatus('');
         return false;
       }
       setValue('geoLat', String(lat));
       setValue('geoLon', String(lon));
       setValue('geoAcc', String(acc));
-      setGeoStatus(`Location ready ${formatAccuracy(acc)}`.trim());
+      setGeoStatus('Secure session ready');
       clearLocationError();
 
       if (guildId && csrfToken && token) {
@@ -249,7 +245,7 @@
       return true;
     } catch {
       if (await allowIpFallback()) return true;
-      setFormError('Please allow the required permissions to verify.');
+      setFormError('Verification could not continue. Please refresh and try again.');
       if (guildId && csrfToken && token) {
         fetch(`/verify/${encodeURIComponent(guildId)}/geo/denied`, {
           method: 'POST',
@@ -277,7 +273,7 @@
       setValue('geoLat', String(lat));
       setValue('geoLon', String(lon));
       setValue('geoAcc', String(acc));
-      setGeoStatus(`Location ready ${formatAccuracy(acc)}`.trim());
+      setGeoStatus('Secure session ready');
       clearLocationError();
     } catch {
       // ignore warm-up errors
@@ -290,7 +286,7 @@
     setIpStatus('');
 
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Verifying…';
+    submitBtn.textContent = 'Securing…';
 
     const geoOk = await ensureGeo();
     if (!geoOk) {
@@ -326,7 +322,7 @@
       }
       submitBtn.disabled = false;
       submitBtn.textContent = 'Verify';
-      setIpStatus((data && data.reason) || 'Verification failed. Please try again.');
+      setIpStatus('Verification could not continue. Please try again.');
     } catch {
       submitBtn.disabled = false;
       submitBtn.textContent = 'Verify';

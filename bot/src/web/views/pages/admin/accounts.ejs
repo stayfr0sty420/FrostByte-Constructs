@@ -20,6 +20,10 @@
               <form method="post" action="/admin/accounts" class="row g-2">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                 <div class="col-12">
+                  <label class="form-label">Name</label>
+                  <input class="form-control" type="text" name="name" required />
+                </div>
+                <div class="col-12">
                   <label class="form-label">Email</label>
                   <input class="form-control" type="email" name="email" required />
                 </div>
@@ -51,6 +55,7 @@
                 <table class="table table-sm align-middle mb-0">
                   <thead>
                     <tr>
+                      <th>Name</th>
                       <th>Email</th>
                       <th>Role</th>
                       <th>Status</th>
@@ -60,6 +65,7 @@
                   <tbody>
                     <% users.forEach(u => { %>
                       <tr>
+                        <td class="fw-semibold"><%= u.name || '—' %></td>
                         <td class="fw-semibold"><%= u.email %></td>
                         <td><span class="badge text-bg-secondary"><%= u.role %></span></td>
                         <td>
@@ -104,4 +110,3 @@
     <%- include('../../partials/footer') %>
   </body>
 </html>
-

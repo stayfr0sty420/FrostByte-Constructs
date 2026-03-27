@@ -43,10 +43,11 @@ router.post('/setup', async (req, res) => {
   const count = await countAdmins();
   if (count > 0) return res.redirect('/admin/login');
 
+  const name = String(req.body.name || '');
   const email = String(req.body.email || '');
   const password = String(req.body.password || '');
 
-  const created = await createAdminUser({ email, password, role: 'owner' });
+  const created = await createAdminUser({ email, password, role: 'owner', name });
   if (!created.ok) {
     return res.status(400).render('pages/admin_setup', { title: 'Setup Owner Account', error: created.reason || 'Setup failed.' });
   }

@@ -5,6 +5,10 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
+function normalizeName(name) {
+  return String(name || '').trim();
+}
+
 function validatePassword(password) {
   const p = String(password || '');
   if (p.length < 10) return { ok: false, reason: 'Password must be at least 10 characters.' };
@@ -24,7 +28,7 @@ async function countAdmins() {
   return await AdminUser.countDocuments({});
 }
 
-async function createAdminUser({ email, password, role = 'admin' }) {
+async function createAdminUser({ email, password, role = 'admin', name = '' }) {
   const normalized = normalizeEmail(email);
   if (!normalized) return { ok: false, reason: 'Email is required.' };
   const pass = validatePassword(password);
@@ -34,7 +38,7 @@ async function createAdminUser({ email, password, role = 'admin' }) {
   if (exists) return { ok: false, reason: 'Email already exists.' };
 
   const passwordHash = await hashPassword(password);
-  const user = await AdminUser.create({ email: normalized, passwordHash, role });
+  const user = await AdminUser.create({ email: normalized, passwordHash, role, name: normalizeName(name) });
   return { ok: true, user };
 }
 
@@ -53,6 +57,7 @@ async function authenticateAdminUser({ email, password }) {
 
 module.exports = {
   normalizeEmail,
+  normalizeName,
   validatePassword,
   hashPassword,
   verifyPassword,
@@ -60,4 +65,3 @@ module.exports = {
   createAdminUser,
   authenticateAdminUser
 };
-

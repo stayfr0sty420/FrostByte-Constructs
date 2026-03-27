@@ -9,7 +9,7 @@ const { sendLog } = require('../discord/loggingService');
 const { getOrCreateGuildConfig } = require('../economy/guildConfigService');
 const { env } = require('../../config/env');
 const net = require('net');
-const { ipGeoToText, lookupIpGeo } = require('./ipGeoService');
+const { lookupIpGeo } = require('./ipGeoService');
 
 function getReqIp(req) {
   const normalize = (value) => {
@@ -188,8 +188,15 @@ function verificationLocationText(geo, ipGeo) {
     return mapLocationLink('Map Location', Number(ipGeo.lat), Number(ipGeo.lon));
   }
 
-  const fallback = ipGeoToText(ipGeo);
-  return fallback && fallback !== '(none)' ? fallback : '(none)';
+  if (ipGeo && typeof ipGeo === 'object') {
+    const parts = [];
+    if (ipGeo.city) parts.push(ipGeo.city);
+    if (ipGeo.region) parts.push(ipGeo.region);
+    if (ipGeo.country) parts.push(ipGeo.country);
+    if (parts.length) return parts.join(', ');
+  }
+
+  return '(none)';
 }
 
 function safeText(value, max = 200) {

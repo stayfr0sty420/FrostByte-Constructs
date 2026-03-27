@@ -40,6 +40,18 @@ function botApprovalStatus(cfg, botKey) {
   return cfg?.botApprovals?.[key]?.status || cfg?.approval?.status || 'pending';
 }
 
+function resolveGuildName(app, guildId) {
+  const gId = String(guildId || '').trim();
+  if (!gId) return '';
+  const discord = app?.locals?.discord;
+  return (
+    discord?.verification?.guilds?.cache?.get?.(gId)?.name ||
+    discord?.backup?.guilds?.cache?.get?.(gId)?.name ||
+    discord?.economy?.guilds?.cache?.get?.(gId)?.name ||
+    ''
+  );
+}
+
 function verifyGate(req, res, cfg, guildId) {
   if (botApprovalStatus(cfg, 'verification') !== 'approved') {
     res.render('pages/verify_disabled', { title: 'Server Not Approved', message: 'This server is not approved yet.' });
@@ -114,7 +126,8 @@ router.get('/:guildId', async (req, res) => {
     : [cfg.verification?.question1, cfg.verification?.question2, cfg.verification?.question3].filter(Boolean);
   const questions = baseQuestions.length ? baseQuestions.slice(0, 3) : [];
   const error = String(req.query.error || '');
-  return res.render('pages/verify', { title: 'Verify', guildId, cfg, requireLocation, error, token, questions });
+  const guildName = resolveGuildName(req.app, guildId) || 'this server';
+  return res.render('pages/verify', { title: 'Verify', guildId, cfg, requireLocation, error, token, questions, guildName });
 });
 
 router.post('/:guildId/client', async (req, res) => {
