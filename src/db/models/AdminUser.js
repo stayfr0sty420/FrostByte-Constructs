@@ -22,4 +22,24 @@ const AdminUserSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+AdminUserSchema.pre('validate', function syncLegacyPasswordFields(next) {
+  if (!this.password && this.passwordHash) {
+    this.password = this.passwordHash;
+  }
+
+  if (!this.passwordHash && this.password) {
+    this.passwordHash = this.password;
+  }
+
+  if (this.email) {
+    this.email = String(this.email).trim().toLowerCase();
+  }
+
+  if (typeof this.name === 'string') {
+    this.name = this.name.trim();
+  }
+
+  next();
+});
+
 module.exports = mongoose.model('AdminUser', AdminUserSchema);
