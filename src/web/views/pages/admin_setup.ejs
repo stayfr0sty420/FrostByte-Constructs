@@ -18,6 +18,14 @@
               <% if (error) { %>
                 <div class="alert alert-danger"><%= error %></div>
               <% } %>
+              <% if (success) { %>
+                <div class="alert alert-success"><%= success %></div>
+              <% } %>
+              <% if (allowedEmailsHint) { %>
+                <div class="alert alert-warning">
+                  Allowed admin email(s): <code><%= allowedEmailsHint %></code>
+                </div>
+              <% } %>
 
               <form method="post" action="/admin/setup">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>" />

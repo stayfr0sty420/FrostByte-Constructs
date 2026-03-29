@@ -28,39 +28,148 @@
 
       <div class="landing-grid auth-grid">
         <section class="hero-copy">
-          <div class="hero-eyebrow">Secure Access</div>
-          <h1 class="hero-title">Admin Sign In</h1>
+          <div class="hero-eyebrow">Restricted Access</div>
+          <h1 class="hero-title">Secure Admin Authentication</h1>
           <p class="hero-text">
-            Manage approvals, verification settings, backups, and logs from one secure dashboard.
+            This portal is reserved for approved admin emails only. Password login is protected with Google Authenticator,
+            account lockouts, rate limiting, and audit logging.
           </p>
-          <div class="hero-meta text-muted small">
-            Use your owner/admin credentials. If this is your first time, open <code>/admin/setup</code> to create the owner account.
+          <div class="hero-meta text-muted small d-grid gap-2">
+            <span>Use your assigned admin email and a strong password.</span>
+            <% if (allowedEmailsHint) { %>
+              <span>Allowed admin email(s): <code><%= allowedEmailsHint %></code></span>
+            <% } else { %>
+              <span>Add <code>ADMIN_ALLOWED_EMAILS</code> to your environment to restrict access even further.</span>
+            <% } %>
           </div>
         </section>
 
         <aside class="glass-card auth-card">
-          <h2 class="h5 mb-2">Login</h2>
-          <p class="text-muted small mb-3">Enter your admin email and password.</p>
+          <% if (viewMode === '2fa-setup-intro') { %>
+            <h2 class="h5 mb-2">Set Up Google Authenticator</h2>
+            <p class="text-muted small mb-3">Before admin access is granted, scan a QR code once to enable your 6-digit TOTP login.</p>
+          <% } else if (viewMode === '2fa-setup') { %>
+            <h2 class="h5 mb-2">Scan Your QR Code</h2>
+            <p class="text-muted small mb-3">Open Google Authenticator, scan the QR, then enter the current 6-digit code below.</p>
+          <% } else if (viewMode === '2fa-verify') { %>
+            <h2 class="h5 mb-2">Enter 2FA Code</h2>
+            <p class="text-muted small mb-3">Use the 6-digit code from Google Authenticator to finish admin login.</p>
+          <% } else if (viewMode === 'forgot-password') { %>
+            <h2 class="h5 mb-2">Forgot Password</h2>
+            <p class="text-muted small mb-3">Request a 60-second password reset OTP for your approved admin email.</p>
+          <% } else if (viewMode === 'verify-reset-otp') { %>
+            <h2 class="h5 mb-2">Verify Reset OTP</h2>
+            <p class="text-muted small mb-3">Enter the 6-digit code sent to your admin email.</p>
+          <% } else if (viewMode === 'reset-password') { %>
+            <h2 class="h5 mb-2">Reset Password</h2>
+            <p class="text-muted small mb-3">Set a new strong password to regain admin access.</p>
+          <% } else { %>
+            <h2 class="h5 mb-2">Login</h2>
+            <p class="text-muted small mb-3">Enter your admin email and password.</p>
+          <% } %>
 
           <% if (error) { %>
             <div class="alert alert-danger"><%= error %></div>
           <% } %>
+          <% if (success) { %>
+            <div class="alert alert-success"><%= success %></div>
+          <% } %>
 
-          <form method="post" action="/admin/login">
-            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-            <input type="hidden" name="returnTo" value="<%= returnTo %>" />
-
-            <div class="mb-3">
-              <label class="form-label">Email</label>
-              <input class="form-control" type="email" name="email" placeholder="you@example.com" required />
+          <% if (viewMode === '2fa-setup-intro') { %>
+            <form method="post" action="/admin/2fa/setup" class="d-grid gap-3">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="challengeToken" value="<%= challengeToken %>" />
+              <div class="form-text text-start">Admin email: <strong><%= email %></strong></div>
+              <button class="btn btn-primary w-100" type="submit">Generate QR Setup</button>
+              <a class="btn btn-ghost w-100" href="/admin/login">Start Over</a>
+            </form>
+          <% } else if (viewMode === '2fa-setup') { %>
+            <div class="text-center mb-3">
+              <img
+                src="<%= qrCodeDataUrl %>"
+                alt="Google Authenticator QR code"
+                class="img-fluid rounded-4 border border-danger-subtle bg-white p-3"
+                style="max-width: 260px;"
+              />
             </div>
-            <div class="mb-3">
-              <label class="form-label">Password</label>
-              <input class="form-control" type="password" name="password" placeholder="••••••••••" required />
-            </div>
+            <form method="post" action="/admin/2fa/verify" class="d-grid gap-3">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="authToken" value="<%= setupToken %>" />
+              <div>
+                <label class="form-label">6-Digit Authenticator Code</label>
+                <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
+              </div>
+              <button class="btn btn-primary w-100" type="submit">Enable 2FA & Login</button>
+            </form>
+          <% } else if (viewMode === '2fa-verify') { %>
+            <form method="post" action="/admin/2fa/verify" class="d-grid gap-3">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="authToken" value="<%= challengeToken %>" />
+              <div class="form-text text-start">Admin email: <strong><%= email %></strong></div>
+              <div>
+                <label class="form-label">6-Digit Authenticator Code</label>
+                <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
+              </div>
+              <button class="btn btn-primary w-100" type="submit">Verify & Login</button>
+              <a class="btn btn-ghost w-100" href="/admin/login?mode=forgot-password">Forgot Password</a>
+            </form>
+          <% } else if (viewMode === 'forgot-password') { %>
+            <form method="post" action="/admin/forgot-password" class="d-grid gap-3">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <div>
+                <label class="form-label">Admin Email</label>
+                <input class="form-control" type="email" name="email" value="<%= forgotEmail %>" placeholder="rdskbots@gmail.com" required />
+              </div>
+              <button class="btn btn-primary w-100" type="submit">Send Reset OTP</button>
+              <a class="btn btn-ghost w-100" href="/admin/login">Back to Login</a>
+            </form>
+          <% } else if (viewMode === 'verify-reset-otp') { %>
+            <form method="post" action="/admin/verify-reset-otp" class="d-grid gap-3">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <div>
+                <label class="form-label">Admin Email</label>
+                <input class="form-control" type="email" name="email" value="<%= forgotEmail %>" placeholder="rdskbots@gmail.com" required />
+              </div>
+              <div>
+                <label class="form-label">6-Digit OTP</label>
+                <input class="form-control" type="text" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
+              </div>
+              <button class="btn btn-primary w-100" type="submit">Verify OTP</button>
+              <a class="btn btn-ghost w-100" href="/admin/login?mode=forgot-password">Request New OTP</a>
+            </form>
+          <% } else if (viewMode === 'reset-password') { %>
+            <form method="post" action="/admin/reset-password" class="d-grid gap-3">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="resetToken" value="<%= resetToken %>" />
+              <div>
+                <label class="form-label">New Password</label>
+                <input class="form-control" type="password" name="password" placeholder="Use uppercase, lowercase, and a number" required />
+              </div>
+              <div>
+                <label class="form-label">Confirm Password</label>
+                <input class="form-control" type="password" name="confirmPassword" placeholder="Repeat your new password" required />
+              </div>
+              <button class="btn btn-primary w-100" type="submit">Update Password</button>
+              <a class="btn btn-ghost w-100" href="/admin/login">Back to Login</a>
+            </form>
+          <% } else { %>
+            <form method="post" action="/admin/login" class="d-grid gap-3">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="returnTo" value="<%= returnTo %>" />
 
-            <button class="btn btn-primary w-100" type="submit">Login</button>
-          </form>
+              <div>
+                <label class="form-label">Email</label>
+                <input class="form-control" type="email" name="email" value="<%= email %>" placeholder="rdskbots@gmail.com" required />
+              </div>
+              <div>
+                <label class="form-label">Password</label>
+                <input class="form-control" type="password" name="password" placeholder="••••••••••" required />
+              </div>
+
+              <button class="btn btn-primary w-100" type="submit">Login</button>
+              <a class="btn btn-ghost w-100" href="/admin/login?mode=forgot-password">Forgot Password</a>
+            </form>
+          <% } %>
         </aside>
       </div>
     </main>
