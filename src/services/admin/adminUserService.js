@@ -55,30 +55,58 @@ function isLocked(user) {
   return Boolean(user?.lockUntil && user.lockUntil instanceof Date && user.lockUntil.getTime() > Date.now());
 }
 
+async function persistUserState(user, updates = {}) {
+  if (!user?._id) return user;
+
+  const $set = {};
+  const $unset = {};
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === undefined) continue;
+    if (value === null) {
+      $unset[key] = 1;
+      if (Object.prototype.hasOwnProperty.call(user, key)) {
+        user[key] = null;
+      }
+      continue;
+    }
+
+    $set[key] = value;
+    user[key] = value;
+  }
+
+  const query = {};
+  if (Object.keys($set).length) query.$set = $set;
+  if (Object.keys($unset).length) query.$unset = $unset;
+  if (!Object.keys(query).length) return user;
+
+  await AdminUser.updateOne({ _id: user._id }, query, { runValidators: false });
+  return user;
+}
+
 async function clearExpiredLock(user) {
   if (!user?.lockUntil) return user;
   if (user.lockUntil.getTime() > Date.now()) return user;
-  user.lockUntil = null;
-  user.loginAttempts = 0;
-  await user.save();
-  return user;
+  return await persistUserState(user, {
+    lockUntil: null,
+    loginAttempts: 0
+  });
 }
 
 async function incrementLoginAttempts(user) {
   const current = Number(user?.loginAttempts || 0) + 1;
-  user.loginAttempts = current;
+  const updates = { loginAttempts: current };
   if (current >= Number(env.ADMIN_LOGIN_MAX_ATTEMPTS || 5)) {
-    user.lockUntil = new Date(Date.now() + Number(env.ADMIN_LOCK_MINUTES || 15) * 60 * 1000);
+    updates.lockUntil = new Date(Date.now() + Number(env.ADMIN_LOCK_MINUTES || 15) * 60 * 1000);
   }
-  await user.save();
-  return user;
+  return await persistUserState(user, updates);
 }
 
 async function resetLoginAttempts(user) {
-  user.loginAttempts = 0;
-  user.lockUntil = null;
-  await user.save();
-  return user;
+  return await persistUserState(user, {
+    loginAttempts: 0,
+    lockUntil: null
+  });
 }
 
 async function countAdmins() {
@@ -155,54 +183,57 @@ async function verifyAdminCredentials({ email, password }) {
 }
 
 async function markLoginSuccess(user, ipAddress) {
-  user.lastLoginIP = String(ipAddress || '').trim();
-  user.lastLoginDate = new Date();
-  user.lastLoginAt = user.lastLoginDate;
-  user.loginAttempts = 0;
-  user.lockUntil = null;
-  await user.save();
-  return user;
+  const loginDate = new Date();
+  return await persistUserState(user, {
+    lastLoginIP: String(ipAddress || '').trim(),
+    lastLoginDate: loginDate,
+    lastLoginAt: loginDate,
+    loginAttempts: 0,
+    lockUntil: null
+  });
 }
 
 async function enableTwoFactor(user, secretBase32) {
-  user.twoFASecret = String(secretBase32 || '').trim();
-  user.is2FAEnabled = Boolean(user.twoFASecret);
-  await user.save();
-  return user;
+  const normalizedSecret = String(secretBase32 || '').trim();
+  return await persistUserState(user, {
+    twoFASecret: normalizedSecret,
+    is2FAEnabled: Boolean(normalizedSecret)
+  });
 }
 
 async function disableTwoFactor(user) {
-  user.twoFASecret = '';
-  user.is2FAEnabled = false;
-  await user.save();
-  return user;
+  return await persistUserState(user, {
+    twoFASecret: '',
+    is2FAEnabled: false
+  });
 }
 
 async function setPasswordResetOtp(user, otpHash, expiresAt) {
-  user.resetOTP = String(otpHash || '').trim();
-  user.resetOTPExpiry = expiresAt || null;
-  await user.save();
-  return user;
+  return await persistUserState(user, {
+    resetOTP: String(otpHash || '').trim(),
+    resetOTPExpiry: expiresAt || null
+  });
 }
 
 async function clearPasswordResetOtp(user) {
-  user.resetOTP = '';
-  user.resetOTPExpiry = null;
-  await user.save();
-  return user;
+  return await persistUserState(user, {
+    resetOTP: '',
+    resetOTPExpiry: null
+  });
 }
 
 async function updateAdminPassword(user, password) {
   const pass = validatePassword(password);
   if (!pass.ok) return pass;
   const passwordHash = await hashPassword(password);
-  user.password = passwordHash;
-  user.passwordHash = passwordHash;
-  user.resetOTP = '';
-  user.resetOTPExpiry = null;
-  user.loginAttempts = 0;
-  user.lockUntil = null;
-  await user.save();
+  await persistUserState(user, {
+    password: passwordHash,
+    passwordHash,
+    resetOTP: '',
+    resetOTPExpiry: null,
+    loginAttempts: 0,
+    lockUntil: null
+  });
   return { ok: true, user };
 }
 

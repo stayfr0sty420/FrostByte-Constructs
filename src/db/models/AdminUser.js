@@ -4,7 +4,12 @@ const AdminUserSchema = new mongoose.Schema(
   {
     name: { type: String, default: '', index: true },
     email: { type: String, required: true, unique: true, index: true },
-    password: { type: String, required: true },
+    password: {
+      type: String,
+      required() {
+        return !String(this.passwordHash || '').trim();
+      }
+    },
     // Legacy compatibility for older admin records.
     passwordHash: { type: String, default: '' },
     twoFASecret: { type: String, default: '' },
