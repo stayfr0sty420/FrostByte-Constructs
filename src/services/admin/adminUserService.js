@@ -13,10 +13,12 @@ function normalizeName(name) {
 }
 
 function getAllowedAdminEmails() {
-  return String(env.ADMIN_ALLOWED_EMAILS || '')
-    .split(',')
+  const values = [env.ADMIN_ALLOWED_EMAILS, env.ADMIN_BOOTSTRAP_EMAIL]
+    .flatMap((value) => String(value || '').split(','))
     .map((value) => normalizeEmail(value))
     .filter(Boolean);
+
+  return [...new Set(values)];
 }
 
 function isAllowedAdminEmail(email) {
