@@ -4,12 +4,14 @@ const { loadCommands } = require('./loadCommands');
 const { loadEvents } = require('./loadEvents');
 const { createState } = require('./state');
 const { applyBotBranding } = require('./util/branding');
+const { applyBotProfileNote } = require('./util/presence');
 
 async function createDiscordClient({ intents, partials, rootDir, withState = false }) {
   applyBotBranding();
   const client = new Client({ intents, partials });
   client.commands = new Collection();
   if (withState) client.state = createState();
+  client.once('clientReady', () => applyBotProfileNote(client));
 
   const commandsDir = path.join(rootDir, 'commands');
   const eventsDir = path.join(rootDir, 'events');
