@@ -8,6 +8,7 @@ const Transaction = require('../../db/models/Transaction');
 const Backup = require('../../db/models/Backup');
 const BackupSchedule = require('../../db/models/BackupSchedule');
 const IpLog = require('../../db/models/IpLog');
+const AdminLog = require('../../db/models/AdminLog');
 const VerificationAttempt = require('../../db/models/VerificationAttempt');
 const MessageLog = require('../../db/models/MessageLog');
 const Template = require('../../db/models/Template');
@@ -15,9 +16,11 @@ const VerificationSession = require('../../db/models/VerificationSession');
 
 const { requireAdmin, requireOwner } = require('../middleware/requireAdmin');
 const { requireGuild } = require('../middleware/requireGuild');
+const { getRequestIp } = require('../middleware/authMiddleware');
 const { env } = require('../../config/env');
 const { getOrCreateGuildConfig } = require('../../services/economy/guildConfigService');
 const { createAdminUser } = require('../../services/admin/adminUserService');
+const { createAdminLog } = require('../../services/admin/adminLogService');
 const {
   listRoles,
   listChannels,
@@ -35,6 +38,7 @@ const { ensureVoiceConnection, disconnectVoice } = require('../../jobs/voiceSche
 const { buildVerifyPanelEmbed, buildVerifyPanelRow } = require('../../bots/verification/util/verifyMessages');
 
 const router = express.Router();
+const ACCOUNT_AUDIT_STAGES = ['account-create', 'account-enable', 'account-disable', 'account-delete'];
 
 function presenceFromClients(discord, guildId) {
   return {
@@ -74,6 +78,18 @@ function allBotsPresent(presence) {
 
 function setFlash(req, flash) {
   req.session.flash = flash;
+}
+
+async function logAccountAudit(req, { status = 'success', stage = 'account-update', reason = '' } = {}) {
+  await createAdminLog({
+    adminId: req.adminUser?._id || null,
+    email: req.adminUser?.email || '',
+    ipAddress: getRequestIp(req),
+    userAgent: req.headers['user-agent'] || '',
+    status,
+    stage,
+    reason
+  }).catch(() => null);
 }
 
 function adminDisplayName(adminUser) {
@@ -716,27 +732,56 @@ router.post('/guilds/select', requireAdmin, async (req, res) => {
 
 // Accounts (owner only)
 router.get('/accounts', requireAdmin, requireOwner, async (req, res) => {
-  const users = await AdminUser.find({})
-    .select('name email role disabled createdAt lastLoginAt')
-    .sort({ createdAt: -1 })
-    .lean();
+  const [users, auditLogs] = await Promise.all([
+    AdminUser.find({})
+      .select('name email role disabled createdAt lastLoginAt')
+      .sort({ createdAt: -1 })
+      .lean(),
+    AdminLog.find({ stage: { $in: ACCOUNT_AUDIT_STAGES } })
+      .select('email status stage reason createdAt')
+      .sort({ createdAt: -1 })
+      .limit(12)
+      .lean()
+  ]);
   const flash = req.session.flash || null;
   delete req.session.flash;
-  return res.render('pages/admin/accounts', { title: 'Admin Accounts', users, flash, meId: String(req.adminUser._id) });
+  const stats = {
+    total: users.length,
+    active: users.filter((user) => !user.disabled).length,
+    disabled: users.filter((user) => user.disabled).length,
+    owners: users.filter((user) => user.role === 'owner').length
+  };
+  return res.render('pages/admin/accounts', {
+    title: 'Admin Accounts',
+    users,
+    auditLogs,
+    flash,
+    stats,
+    meId: String(req.adminUser._id)
+  });
 });
 
 router.post('/accounts', requireAdmin, requireOwner, async (req, res) => {
-  const name = String(req.body.name || '');
-  const email = String(req.body.email || '');
+  const name = String(req.body.name || '').trim();
+  const email = String(req.body.email || '').trim();
   const password = String(req.body.password || '');
   const role = String(req.body.role || 'admin') === 'owner' ? 'owner' : 'admin';
 
-  const created = await createAdminUser({ email, password, role, name });
+  const created = await createAdminUser({ email, password, role, name, enforceAllowlist: false });
   if (!created.ok) {
+    await logAccountAudit(req, {
+      status: 'failed',
+      stage: 'account-create',
+      reason: `Failed to create ${email || 'admin account'}: ${created.reason || 'Unknown error.'}`
+    });
     setFlash(req, { type: 'danger', message: created.reason || 'Failed to create user.' });
     return res.redirect('/admin/accounts');
   }
 
+  await logAccountAudit(req, {
+    stage: 'account-create',
+    reason: `Created ${created.user.email} (${created.user.role}).`
+  });
   setFlash(req, { type: 'success', message: `Created ${created.user.email} (${created.user.role}).` });
   return res.redirect('/admin/accounts');
 });
@@ -745,19 +790,81 @@ router.post('/accounts/disable/:id', requireAdmin, requireOwner, async (req, res
   const id = String(req.params.id || '');
   if (!id) return res.redirect('/admin/accounts');
   if (id === String(req.adminUser._id)) {
+    await logAccountAudit(req, {
+      status: 'failed',
+      stage: 'account-disable',
+      reason: 'Attempted to disable the current owner account.'
+    });
     setFlash(req, { type: 'warning', message: 'You cannot disable your own account.' });
     return res.redirect('/admin/accounts');
   }
+  const user = await AdminUser.findById(id).select('email role disabled').lean().catch(() => null);
+  if (!user) {
+    setFlash(req, { type: 'danger', message: 'Account not found.' });
+    return res.redirect('/admin/accounts');
+  }
+  if (user.disabled) {
+    setFlash(req, { type: 'info', message: 'Account is already disabled.' });
+    return res.redirect('/admin/accounts');
+  }
   await AdminUser.updateOne({ _id: id }, { $set: { disabled: true } });
-  setFlash(req, { type: 'info', message: 'Account disabled.' });
+  await logAccountAudit(req, {
+    stage: 'account-disable',
+    reason: `Disabled ${user.email} (${user.role}).`
+  });
+  setFlash(req, { type: 'info', message: `Disabled ${user.email}.` });
   return res.redirect('/admin/accounts');
 });
 
 router.post('/accounts/enable/:id', requireAdmin, requireOwner, async (req, res) => {
   const id = String(req.params.id || '');
   if (!id) return res.redirect('/admin/accounts');
+  const user = await AdminUser.findById(id).select('email role disabled').lean().catch(() => null);
+  if (!user) {
+    setFlash(req, { type: 'danger', message: 'Account not found.' });
+    return res.redirect('/admin/accounts');
+  }
+  if (!user.disabled) {
+    setFlash(req, { type: 'info', message: 'Account is already active.' });
+    return res.redirect('/admin/accounts');
+  }
   await AdminUser.updateOne({ _id: id }, { $set: { disabled: false } });
-  setFlash(req, { type: 'success', message: 'Account enabled.' });
+  await logAccountAudit(req, {
+    stage: 'account-enable',
+    reason: `Enabled ${user.email} (${user.role}).`
+  });
+  setFlash(req, { type: 'success', message: `Enabled ${user.email}.` });
+  return res.redirect('/admin/accounts');
+});
+
+router.post('/accounts/delete/:id', requireAdmin, requireOwner, async (req, res) => {
+  const id = String(req.params.id || '');
+  if (!id) return res.redirect('/admin/accounts');
+  if (id === String(req.adminUser._id)) {
+    await logAccountAudit(req, {
+      status: 'failed',
+      stage: 'account-delete',
+      reason: 'Attempted to delete the current owner account.'
+    });
+    setFlash(req, { type: 'warning', message: 'You cannot delete your own account.' });
+    return res.redirect('/admin/accounts');
+  }
+
+  const user = await AdminUser.findById(id).select('name email role disabled').lean().catch(() => null);
+  if (!user) {
+    setFlash(req, { type: 'danger', message: 'Account not found.' });
+    return res.redirect('/admin/accounts');
+  }
+
+  await AdminUser.deleteOne({ _id: id });
+  await logAccountAudit(req, {
+    stage: 'account-delete',
+    reason: `Deleted ${user.email} (${user.role}) from the admin database.`
+  });
+  setFlash(req, {
+    type: 'success',
+    message: `Deleted ${user.email}. This account can no longer log in.`
+  });
   return res.redirect('/admin/accounts');
 });
 

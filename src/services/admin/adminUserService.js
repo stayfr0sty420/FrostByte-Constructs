@@ -113,10 +113,10 @@ async function countAdmins() {
   return await AdminUser.countDocuments({});
 }
 
-async function createAdminUser({ email, password, role = 'admin', name = '' }) {
+async function createAdminUser({ email, password, role = 'admin', name = '', enforceAllowlist = true }) {
   const normalized = normalizeEmail(email);
   if (!normalized) return { ok: false, reason: 'Email is required.' };
-  if (!isAllowedAdminEmail(normalized)) {
+  if (enforceAllowlist && !isAllowedAdminEmail(normalized)) {
     return { ok: false, reason: 'This email is not allowed for admin access.' };
   }
   const pass = validatePassword(password);
@@ -136,25 +136,30 @@ async function createAdminUser({ email, password, role = 'admin', name = '' }) {
   return { ok: true, user };
 }
 
-async function findAdminByEmail(email) {
+async function findAdminByEmail(email, { includeDisabled = false } = {}) {
   const normalized = normalizeEmail(email);
   if (!normalized) return null;
-  if (!isAllowedAdminEmail(normalized)) return null;
-  const user = await AdminUser.findOne({ email: normalized, disabled: false });
+  const query = { email: normalized };
+  if (!includeDisabled) query.disabled = false;
+  const user = await AdminUser.findOne(query);
   if (!user) return null;
-  await clearExpiredLock(user);
+  if (!user.disabled) {
+    await clearExpiredLock(user);
+  }
   return user;
 }
 
 async function verifyAdminCredentials({ email, password }) {
   const normalized = normalizeEmail(email);
   if (!normalized) return { ok: false, reason: 'Email is required.' };
-  if (!isAllowedAdminEmail(normalized)) {
-    return { ok: false, reason: 'This email is not allowed for admin access.' };
-  }
 
   const user = await findAdminByEmail(normalized);
-  if (!user) return { ok: false, reason: 'Invalid email or password.' };
+  if (!user) {
+    if (!isAllowedAdminEmail(normalized)) {
+      return { ok: false, reason: 'This email is not allowed for admin access.' };
+    }
+    return { ok: false, reason: 'Invalid email or password.' };
+  }
 
   if (isLocked(user)) {
     return {

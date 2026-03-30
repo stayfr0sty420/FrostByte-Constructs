@@ -3,8 +3,10 @@ const { Client, Collection } = require('discord.js');
 const { loadCommands } = require('./loadCommands');
 const { loadEvents } = require('./loadEvents');
 const { createState } = require('./state');
+const { applyBotBranding } = require('./util/branding');
 
 async function createDiscordClient({ intents, partials, rootDir, withState = false }) {
+  applyBotBranding();
   const client = new Client({ intents, partials });
   client.commands = new Collection();
   if (withState) client.state = createState();
@@ -18,4 +20,3 @@ async function createDiscordClient({ intents, partials, rootDir, withState = fal
 }
 
 module.exports = { createDiscordClient };
-

@@ -1466,6 +1466,232 @@ code {
   color: #fff;
 }
 
+.accounts-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.accounts-kicker {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: rgba(248, 113, 113, 0.8);
+  margin-bottom: 0.45rem;
+}
+
+.accounts-subtitle,
+.accounts-panel-copy,
+.accounts-activity-actor,
+.accounts-last-login {
+  color: rgba(226, 232, 240, 0.72);
+}
+
+.accounts-alert {
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(80, 15, 20, 0.82);
+}
+
+.accounts-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.accounts-stat-card {
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  border-radius: calc(var(--app-radius) + 2px);
+  padding: 1rem 1.1rem;
+  background: rgba(12, 5, 8, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.accounts-stat-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: rgba(248, 113, 113, 0.76);
+}
+
+.accounts-stat-value {
+  font-size: clamp(1.7rem, 3vw, 2.3rem);
+  font-weight: 700;
+  line-height: 1;
+  margin-top: 0.45rem;
+  color: #fff5f5;
+}
+
+.accounts-form-note {
+  border: 1px solid rgba(239, 68, 68, 0.16);
+  border-radius: 14px;
+  padding: 0.75rem 0.85rem;
+  background: rgba(10, 4, 8, 0.65);
+  color: rgba(226, 232, 240, 0.74);
+  font-size: 0.92rem;
+}
+
+.accounts-table-wrap {
+  overflow: hidden;
+}
+
+.accounts-table thead th {
+  white-space: nowrap;
+}
+
+.accounts-table td {
+  vertical-align: middle;
+}
+
+.accounts-email {
+  word-break: break-word;
+}
+
+.accounts-actions-cell {
+  min-width: 210px;
+}
+
+.accounts-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.accounts-actions form {
+  margin: 0;
+}
+
+.accounts-activity-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.accounts-activity-item {
+  border: 1px solid rgba(239, 68, 68, 0.18);
+  border-radius: 16px;
+  padding: 0.9rem 1rem;
+  background: rgba(12, 5, 8, 0.66);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.accounts-activity-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.45rem;
+}
+
+.accounts-activity-time {
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.6);
+}
+
+.accounts-activity-message {
+  color: rgba(248, 250, 252, 0.92);
+}
+
+.accounts-activity-actor {
+  margin-top: 0.45rem;
+  font-size: 0.88rem;
+}
+
+.accounts-empty-state {
+  border: 1px dashed rgba(239, 68, 68, 0.24);
+  border-radius: 16px;
+  padding: 1rem;
+  background: rgba(10, 4, 8, 0.45);
+}
+
+@media (max-width: 1199px) {
+  .accounts-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 991px) {
+  .accounts-table thead {
+    display: none;
+  }
+
+  .accounts-table tbody tr {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+    padding: 0.85rem 0;
+  }
+
+  .accounts-table tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    text-align: right;
+    padding: 0.35rem 0.5rem;
+  }
+
+  .accounts-table tbody td::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.7rem;
+    color: rgba(229, 231, 235, 0.6);
+  }
+
+  .accounts-table tbody td[colspan] {
+    display: block;
+    text-align: left;
+  }
+
+  .accounts-table tbody td[colspan]::before {
+    content: none;
+  }
+
+  .accounts-actions-cell {
+    min-width: 0;
+    display: block !important;
+    text-align: left !important;
+    padding-top: 0.5rem !important;
+  }
+
+  .accounts-actions-cell::before {
+    content: none !important;
+  }
+
+  .accounts-actions {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 576px) {
+  .accounts-stat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .accounts-table tbody td {
+    align-items: flex-start;
+    flex-direction: column;
+    text-align: left;
+  }
+
+  .accounts-table tbody td::before {
+    margin-bottom: 0.15rem;
+  }
+
+  .accounts-actions {
+    width: 100%;
+    flex-direction: column;
+  }
+
+  .accounts-actions form,
+  .accounts-actions .btn {
+    width: 100%;
+  }
+}
+
 .whitelist-submit-btn {
   min-height: 42px;
   width: 100%;

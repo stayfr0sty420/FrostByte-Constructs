@@ -3,6 +3,7 @@ const MessageLog = require('../../db/models/MessageLog');
 const { getOrCreateGuildConfig } = require('../economy/guildConfigService');
 const { sendWebhook } = require('./webhookService');
 const { logger } = require('../../config/logger');
+const { brandPayload } = require('../../bots/shared/util/branding');
 
 const BOT_LABELS = {
   economy: 'RoBot',
@@ -329,22 +330,25 @@ async function sendLog({ discordClient, guildId, type, content, embeds = [], web
     .filter(Boolean)
     .slice(0, 10)
     .map((e) => (e instanceof EmbedBuilder ? e.toJSON() : e));
+  const brandedPayload = brandPayload({ content: content || undefined, embeds: safeEmbeds });
+  const brandedEmbeds = Array.isArray(brandedPayload?.embeds) ? brandedPayload.embeds : safeEmbeds;
+  const brandedContent = typeof brandedPayload?.content === 'string' ? brandedPayload.content : content;
 
   const botLabel = resolveBotLabel({ discordClient, webhookCategory, type });
-  const written = await writeMessageLog({ guildId, type, botLabel, safeEmbeds, content });
+  const written = await writeMessageLog({ guildId, type, botLabel, safeEmbeds: brandedEmbeds, content: brandedContent });
   if (!written) {
     await new Promise((r) => setTimeout(r, 120));
-    await writeMessageLog({ guildId, type, botLabel, safeEmbeds, content });
+    await writeMessageLog({ guildId, type, botLabel, safeEmbeds: brandedEmbeds, content: brandedContent });
   }
 
   const webhookUrl =
     webhookCategory && cfg.webhooks?.[webhookCategory] ? cfg.webhooks[webhookCategory] : '';
   const isCompact = COMPACT_AUDIT_TYPES.has(String(type || '').toLowerCase());
   const outgoingEmbeds =
-    isCompact && safeEmbeds.length
-      ? safeEmbeds.map((embed) => buildCompactAuditEmbed(type, embed)).filter(Boolean)
-      : safeEmbeds;
-  const outgoingContent = isCompact ? undefined : (content || undefined);
+    isCompact && brandedEmbeds.length
+      ? brandedEmbeds.map((embed) => buildCompactAuditEmbed(type, embed)).filter(Boolean)
+      : brandedEmbeds;
+  const outgoingContent = isCompact ? undefined : (brandedContent || undefined);
   if (webhookUrl) {
     await sendWebhook(webhookUrl, {
       username: botLabel || 'RoBot',

@@ -3,34 +3,71 @@
   <head>
     <%- include('../../partials/head', { title }) %>
   </head>
-  <body class="app admin-page">
+  <body class="app admin-page accounts-page">
     <%- include('../../partials/nav') %>
     <main class="container py-4">
-      <h1 class="h4 mb-3">Admin Accounts</h1>
+      <section class="accounts-hero mb-4">
+        <div>
+          <div class="accounts-kicker">Owner Controls</div>
+          <h1 class="h3 mb-2">Admin Accounts</h1>
+          <p class="accounts-subtitle mb-0">
+            Add, disable, or permanently delete dashboard admins. New accounts are saved in MongoDB, removed accounts lose access
+            immediately, and every account change is recorded in the audit log below.
+          </p>
+        </div>
+      </section>
 
       <% if (flash) { %>
-        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+        <div class="alert alert-<%= flash.type || 'info' %> accounts-alert"><%= flash.message %></div>
       <% } %>
 
-      <div class="row g-3">
-        <div class="col-12 col-lg-5">
-          <div class="card shadow-sm">
+      <section class="accounts-stat-grid mb-4">
+        <article class="accounts-stat-card">
+          <div class="accounts-stat-label">Total Accounts</div>
+          <div class="accounts-stat-value"><%= stats.total %></div>
+        </article>
+        <article class="accounts-stat-card">
+          <div class="accounts-stat-label">Active</div>
+          <div class="accounts-stat-value"><%= stats.active %></div>
+        </article>
+        <article class="accounts-stat-card">
+          <div class="accounts-stat-label">Disabled</div>
+          <div class="accounts-stat-value"><%= stats.disabled %></div>
+        </article>
+        <article class="accounts-stat-card">
+          <div class="accounts-stat-label">Owners</div>
+          <div class="accounts-stat-value"><%= stats.owners %></div>
+        </article>
+      </section>
+
+      <div class="row g-3 align-items-start">
+        <div class="col-12 col-xl-4">
+          <div class="card shadow-sm h-100">
             <div class="card-body">
-              <h2 class="h6">Add Account</h2>
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1">Add Account</h2>
+                  <p class="accounts-panel-copy mb-0">
+                    New admins will create their own Google Authenticator setup on first login.
+                  </p>
+                </div>
+                <span class="badge text-bg-secondary">MongoDB</span>
+              </div>
+
               <form method="post" action="/admin/accounts" class="row g-2">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                 <div class="col-12">
                   <label class="form-label">Name</label>
-                  <input class="form-control" type="text" name="name" required />
+                  <input class="form-control" type="text" name="name" placeholder="Admin name" required />
                 </div>
                 <div class="col-12">
                   <label class="form-label">Email</label>
-                  <input class="form-control" type="email" name="email" required />
+                  <input class="form-control" type="email" name="email" placeholder="admin@example.com" required />
                 </div>
                 <div class="col-12">
                   <label class="form-label">Password</label>
                   <input class="form-control" type="password" name="password" required />
-                  <div class="form-text">Minimum 10 characters. Stored as a secure hash.</div>
+                  <div class="form-text">Minimum 10 characters with uppercase, lowercase, and a number.</div>
                 </div>
                 <div class="col-12">
                   <label class="form-label">Role</label>
@@ -39,36 +76,60 @@
                     <option value="owner">owner</option>
                   </select>
                 </div>
-                <div class="col-12 d-flex">
-                  <button class="btn btn-primary ms-auto" type="submit">Create</button>
+                <div class="col-12">
+                  <div class="accounts-form-note">
+                    Deleted accounts are removed from the admin database and cannot log in again unless recreated.
+                  </div>
+                </div>
+                <div class="col-12 d-grid">
+                  <button class="btn btn-primary" type="submit">Create Account</button>
                 </div>
               </form>
             </div>
           </div>
         </div>
 
-        <div class="col-12 col-lg-7">
+        <div class="col-12 col-xl-8">
           <div class="card shadow-sm">
             <div class="card-body">
-              <h2 class="h6">Existing Accounts</h2>
-              <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1">Existing Accounts</h2>
+                  <p class="accounts-panel-copy mb-0">Disable for temporary access removal or delete to remove the account from MongoDB.</p>
+                </div>
+                <span class="badge text-bg-dark"><%= stats.active %> active now</span>
+              </div>
+
+              <div class="table-responsive accounts-table-wrap">
+                <table class="table table-sm align-middle mb-0 accounts-table">
                   <thead>
                     <tr>
                       <th>Name</th>
                       <th>Email</th>
                       <th>Role</th>
                       <th>Status</th>
+                      <th>Last Login</th>
                       <th class="text-end">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <% users.forEach(u => { %>
+                    <% if (!users.length) { %>
                       <tr>
-                        <td class="fw-semibold"><%= u.name || '—' %></td>
-                        <td class="fw-semibold"><%= u.email %></td>
-                        <td><span class="badge text-bg-secondary"><%= u.role %></span></td>
-                        <td>
+                        <td colspan="6" class="text-muted text-center py-4">No admin accounts found.</td>
+                      </tr>
+                    <% } %>
+                    <% users.forEach((u) => { %>
+                      <tr>
+                        <td data-label="Name">
+                          <div class="fw-semibold"><%= u.name || '—' %></div>
+                        </td>
+                        <td data-label="Email">
+                          <div class="fw-semibold accounts-email"><%= u.email %></div>
+                        </td>
+                        <td data-label="Role">
+                          <span class="badge text-bg-secondary"><%= u.role %></span>
+                        </td>
+                        <td data-label="Status">
                           <% if (u.disabled) { %>
                             <span class="badge text-bg-danger">disabled</span>
                           <% } else { %>
@@ -78,30 +139,48 @@
                             <span class="badge text-bg-info ms-1">you</span>
                           <% } %>
                         </td>
-                        <td class="text-end">
+                        <td data-label="Last Login">
+                          <span class="accounts-last-login"><%= u.lastLoginAt ? formatDate(u.lastLoginAt) : 'Never' %></span>
+                        </td>
+                        <td class="text-end accounts-actions-cell" data-label="Actions">
                           <% if (String(u._id) !== meId) { %>
-                            <% if (u.disabled) { %>
-                              <form method="post" action="/admin/accounts/enable/<%= u._id %>" class="d-inline">
-                                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                                <button class="btn btn-outline-success btn-sm" type="submit">Enable</button>
-                              </form>
-                            <% } else { %>
-                              <form method="post" action="/admin/accounts/disable/<%= u._id %>" class="d-inline">
+                            <div class="accounts-actions">
+                              <% if (u.disabled) { %>
+                                <form method="post" action="/admin/accounts/enable/<%= u._id %>">
+                                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                                  <button class="btn btn-outline-success btn-sm" type="submit">Enable</button>
+                                </form>
+                              <% } else { %>
+                                <form method="post" action="/admin/accounts/disable/<%= u._id %>">
+                                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                                  <button
+                                    class="btn btn-outline-warning btn-sm"
+                                    type="submit"
+                                    data-confirm="Disable this account?"
+                                    data-confirm-title="Disable account?"
+                                    data-confirm-ok="Disable"
+                                    data-confirm-cancel="Cancel"
+                                  >
+                                    Disable
+                                  </button>
+                                </form>
+                              <% } %>
+                              <form method="post" action="/admin/accounts/delete/<%= u._id %>">
                                 <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                                 <button
                                   class="btn btn-outline-danger btn-sm"
                                   type="submit"
-                                  data-confirm="Disable this account?"
-                                  data-confirm-title="Disable account?"
-                                  data-confirm-ok="Disable"
+                                  data-confirm="Delete this account from the database? This admin will lose login access immediately."
+                                  data-confirm-title="Delete account?"
+                                  data-confirm-ok="Delete"
                                   data-confirm-cancel="Cancel"
                                 >
-                                  Disable
+                                  Delete
                                 </button>
                               </form>
-                            <% } %>
+                            </div>
                           <% } else { %>
-                            <span class="text-muted small">—</span>
+                            <span class="text-muted small">Current account</span>
                           <% } %>
                         </td>
                       </tr>
@@ -113,6 +192,43 @@
           </div>
         </div>
       </div>
+
+      <section class="card shadow-sm mt-4">
+        <div class="card-body">
+          <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+            <div>
+              <h2 class="h5 mb-1">Recent Account Audit</h2>
+              <p class="accounts-panel-copy mb-0">Latest create, disable, enable, and delete actions stored in the admin logs collection.</p>
+            </div>
+            <span class="badge text-bg-dark"><%= auditLogs.length %> recent entries</span>
+          </div>
+
+          <% if (!auditLogs.length) { %>
+            <div class="accounts-empty-state text-muted">No account audit entries yet.</div>
+          <% } else { %>
+            <div class="accounts-activity-list">
+              <% auditLogs.forEach((log) => { %>
+                <%
+                  const stageLabel = String(log.stage || '')
+                    .replace(/^account-/, '')
+                    .split('-')
+                    .filter(Boolean)
+                    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                    .join(' ');
+                %>
+                <article class="accounts-activity-item">
+                  <div class="accounts-activity-meta">
+                    <span class="badge <%= log.status === 'failed' ? 'text-bg-danger' : 'text-bg-secondary' %>"><%= stageLabel || 'Account Update' %></span>
+                    <span class="accounts-activity-time"><%= formatDate(log.createdAt) || '' %></span>
+                  </div>
+                  <div class="accounts-activity-message"><%= log.reason || 'No details.' %></div>
+                  <div class="accounts-activity-actor">By <strong><%= log.email || 'system' %></strong></div>
+                </article>
+              <% }) %>
+            </div>
+          <% } %>
+        </div>
+      </section>
     </main>
     <%- include('../../partials/footer') %>
   </body>
