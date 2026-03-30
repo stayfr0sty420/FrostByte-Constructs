@@ -34,13 +34,8 @@
             This portal is reserved for approved admin emails only. Password login is protected with Google Authenticator,
             account lockouts, rate limiting, and audit logging.
           </p>
-          <div class="hero-meta text-muted small d-grid gap-2">
+          <div class="hero-meta text-muted small">
             <span>Use your assigned admin email and a strong password.</span>
-            <% if (allowedEmailsHint) { %>
-              <span>Allowed admin email(s): <code><%= allowedEmailsHint %></code></span>
-            <% } else { %>
-              <span>Add <code>ADMIN_ALLOWED_EMAILS</code> to your environment to restrict access even further.</span>
-            <% } %>
           </div>
         </section>
 

@@ -378,12 +378,19 @@ async function postForgotPassword(req, res) {
   const user = await findAdminByEmail(email);
   if (user && !user.disabled) {
     const otp = generateNumericOtp(6);
+    const issuedAt = new Date();
     const otpHash = await hashOtp(otp);
     const expiresAt = getOtpExpiryDate();
     await setPasswordResetOtp(user, otpHash, expiresAt);
 
     try {
-      await sendPasswordResetOtpEmail({ to: user.email, otp });
+      await sendPasswordResetOtpEmail({
+        to: user.email,
+        otp,
+        recipientName: user.name || '',
+        role: user.role || 'admin',
+        issuedAt
+      });
     } catch (error) {
       logger.error({ err: error, email: user.email }, 'Failed sending admin password reset OTP');
       return renderLogin(res, {
