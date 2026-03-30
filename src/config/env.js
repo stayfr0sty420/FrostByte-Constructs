@@ -48,6 +48,7 @@ const envSchema = z.object({
   EMAIL_USER: z.string().optional().default(''),
   EMAIL_PASS: z.string().optional().default(''),
   EMAIL_FROM: z.string().optional().default(''),
+  APP_TIMEZONE: z.string().optional().default('Asia/Manila'),
   ADMIN_TOTP_ISSUER: z.string().optional().default('Rodstarkian Suite'),
   ADMIN_LOGIN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   ADMIN_LOCK_MINUTES: z.coerce.number().int().positive().default(15),

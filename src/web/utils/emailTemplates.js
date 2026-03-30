@@ -5,6 +5,7 @@ const { OTP_TTL_MS } = require('./otpService');
 
 const BRAND_LOGO_CID = 'rodstark-mark@rdskbots';
 const DEFAULT_APP_URL = 'https://rdskbots.xyz/';
+const DEFAULT_TIMEZONE = 'Asia/Manila';
 
 function escapeHtml(value) {
   return String(value || '')
@@ -47,14 +48,32 @@ function formatRole(role) {
   return capitalizeWord(value);
 }
 
+function resolveAppTimezone() {
+  const configured = String(env.APP_TIMEZONE || '')
+    .trim()
+    .replace(/\s+/g, '');
+
+  const timezone = configured || DEFAULT_TIMEZONE;
+
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date());
+    return timezone;
+  } catch {
+    return DEFAULT_TIMEZONE;
+  }
+}
+
 function formatIssuedAt(date) {
   const issuedAt = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
+  const timezone = resolveAppTimezone();
   return new Intl.DateTimeFormat('en-US', {
     month: 'long',
     day: 'numeric',
     year: 'numeric',
     hour: 'numeric',
-    minute: '2-digit'
+    minute: '2-digit',
+    hour12: true,
+    timeZone: timezone
   }).format(issuedAt);
 }
 
