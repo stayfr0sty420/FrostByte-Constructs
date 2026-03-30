@@ -9,6 +9,7 @@ const {
   countAdmins,
   createAdminUser,
   findAdminByEmail,
+  findAdminByPasskeyCredential,
   verifyAdminCredentials,
   markLoginSuccess,
   enableTwoFactor,
@@ -19,10 +20,13 @@ const {
   resetLoginAttempts,
   getAllowedAdminEmails,
   consumeBackupCode,
-  generateAndStoreBackupCodes
+  generateAndStoreBackupCodes,
+  buildAuthenticatorForPasskey,
+  updatePasskeyUsage
 } = require('../../services/admin/adminUserService');
 const { isEmailConfigured, sendPasswordResetOtpEmail } = require('../utils/emailService');
 const { generateNumericOtp, getOtpExpiryDate, hashOtp, verifyOtp } = require('../utils/otpService');
+const { createPasskeyAuthenticationOptions, verifyPasskeyAuthentication } = require('../utils/passkeyService');
 const {
   getRequestIp,
   signAdminSessionToken,
@@ -100,7 +104,8 @@ function renderLogin(res, options = {}) {
     resetToken: options.resetToken || '',
     qrCodeDataUrl: options.qrCodeDataUrl || '',
     setupKey: options.setupKey || '',
-    allowedEmailsHint: getAllowedEmailsHint()
+    allowedEmailsHint: getAllowedEmailsHint(),
+    passkeyEnabled: true
   });
 }
 
@@ -128,7 +133,7 @@ async function destroySession(req) {
   });
 }
 
-async function finalizeAdminLogin(req, res, user, returnTo) {
+async function establishAdminSession(req, res, user) {
   const ipAddress = getRequestIp(req);
   await markLoginSuccess(user, ipAddress);
   await createAdminLog({
@@ -145,6 +150,10 @@ async function finalizeAdminLogin(req, res, user, returnTo) {
   const authToken = signAdminSessionToken(user);
   setAdminAuthCookie(res, authToken);
   req.session.adminUserId = String(user._id);
+}
+
+async function finalizeAdminLogin(req, res, user, returnTo) {
+  await establishAdminSession(req, res, user);
   return res.redirect(resolveReturnTo(returnTo));
 }
 
@@ -174,7 +183,7 @@ async function getLogin(req, res) {
   if (req.adminUser) return res.redirect('/admin');
   const mode = String(req.query.mode || 'credentials').trim();
   const returnTo = resolveReturnTo(req.query.returnTo || '/admin');
-  const viewMode = ['forgot-password', 'authenticator-start'].includes(mode) ? mode : 'credentials';
+  const viewMode = ['forgot-password', 'authenticator-start', 'passkey-start'].includes(mode) ? mode : 'credentials';
   const authFlash = req.session?.authFlash || null;
   if (req.session?.authFlash) delete req.session.authFlash;
   return renderLogin(res, {
@@ -331,6 +340,93 @@ async function postAuthenticatorLoginStart(req, res) {
     challengeToken,
     success: 'Enter your 6-digit authenticator code to continue.'
   });
+}
+
+async function postPasskeyOptions(req, res) {
+  const returnTo = resolveReturnTo(req.body.returnTo || '/admin');
+  const options = await createPasskeyAuthenticationOptions();
+
+  req.session.adminPasskeyAuth = {
+    challenge: options.challenge,
+    returnTo,
+    createdAt: new Date().toISOString()
+  };
+
+  return res.json({ ok: true, options });
+}
+
+async function postPasskeyVerify(req, res) {
+  const payload = req.session?.adminPasskeyAuth || null;
+  if (!payload?.challenge) {
+    return res.status(400).json({ ok: false, reason: 'Passkey session expired. Start again.' });
+  }
+
+  const response = req.body && typeof req.body === 'object' ? req.body.response || req.body : null;
+  const credentialId = String(response?.rawId || response?.id || '').trim();
+  if (!response || !credentialId) {
+    return res.status(400).json({ ok: false, reason: 'Invalid passkey response.' });
+  }
+
+  const user = await findAdminByPasskeyCredential(credentialId);
+  if (!user) {
+    delete req.session.adminPasskeyAuth;
+    return res.status(401).json({ ok: false, reason: 'No admin account matched that passkey.' });
+  }
+
+  if (user.lockUntil && user.lockUntil.getTime() > Date.now()) {
+    return res.status(423).json({
+      ok: false,
+      reason: 'Account temporarily locked due to too many failed attempts. Please try again later.'
+    });
+  }
+
+  const passkeys = Array.isArray(user.passkeys) ? user.passkeys : [];
+  const passkey = passkeys.find((entry) => String(entry?.credentialID || '').trim() === credentialId);
+  const authenticator = buildAuthenticatorForPasskey(passkey);
+  if (!authenticator) {
+    delete req.session.adminPasskeyAuth;
+    return res.status(401).json({ ok: false, reason: 'Stored passkey is invalid. Re-add it from My Account.' });
+  }
+
+  let verification;
+  try {
+    verification = await verifyPasskeyAuthentication({
+      response,
+      challenge: payload.challenge,
+      authenticator
+    });
+  } catch (_error) {
+    await incrementLoginAttempts(user);
+    await logFailure(req, {
+      email: user.email,
+      adminId: user._id,
+      stage: 'passkey',
+      reason: 'Invalid passkey assertion.'
+    });
+    return res.status(401).json({ ok: false, reason: 'Passkey verification failed.' });
+  }
+
+  if (!verification.verified) {
+    await incrementLoginAttempts(user);
+    await logFailure(req, {
+      email: user.email,
+      adminId: user._id,
+      stage: 'passkey',
+      reason: 'Passkey verification failed.'
+    });
+    return res.status(401).json({ ok: false, reason: 'Passkey verification failed.' });
+  }
+
+  await resetLoginAttempts(user);
+  await updatePasskeyUsage(user, credentialId, {
+    counter: verification.authenticationInfo.newCounter,
+    deviceType: verification.authenticationInfo.credentialDeviceType,
+    backedUp: verification.authenticationInfo.credentialBackedUp,
+    transports: passkey?.transports || []
+  });
+  delete req.session.adminPasskeyAuth;
+  await establishAdminSession(req, res, user);
+  return res.json({ ok: true, redirect: resolveReturnTo(payload.returnTo) });
 }
 
 async function post2FAVerify(req, res) {
@@ -678,6 +774,8 @@ module.exports = {
   getLogin,
   postLogin,
   postAuthenticatorLoginStart,
+  postPasskeyOptions,
+  postPasskeyVerify,
   post2FASetup,
   post2FAVerify,
   postBackupCodeVerify,

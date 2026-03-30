@@ -7,6 +7,12 @@ const DEFAULT_BCRYPT_ROUNDS = 12;
 const BACKUP_CODE_COUNT = 10;
 const BACKUP_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
+function toBase64Url(value) {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  return Buffer.from(value).toString('base64url');
+}
+
 function getAdminRoleLabel(role) {
   return String(role || '').trim().toLowerCase() === 'owner' ? 'Prime' : 'Administrator';
 }
@@ -28,6 +34,21 @@ function normalizeBackupCode(code) {
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '');
+}
+
+function normalizePasskeyName(value, fallback = 'Security Passkey') {
+  const name = String(value || '').trim();
+  if (!name) return fallback;
+  return name.slice(0, 60);
+}
+
+function normalizePasskeyCredentialId(value) {
+  return String(value || '').trim();
+}
+
+function normalizePasskeyTransports(transports) {
+  const values = Array.isArray(transports) ? transports : [];
+  return [...new Set(values.map((entry) => String(entry || '').trim()).filter(Boolean))].slice(0, 8);
 }
 
 function getEncryptionKey() {
@@ -152,6 +173,32 @@ function getBackupCodes(user) {
   });
 }
 
+function getPasskeys(user) {
+  const entries = Array.isArray(user?.passkeys) ? user.passkeys : [];
+  return entries.map((entry, index) => ({
+    id: `passkey-${index + 1}`,
+    credentialID: normalizePasskeyCredentialId(entry?.credentialID),
+    name: normalizePasskeyName(entry?.name, `Security Passkey ${index + 1}`),
+    transports: normalizePasskeyTransports(entry?.transports),
+    deviceType: String(entry?.deviceType || 'singleDevice'),
+    backedUp: Boolean(entry?.backedUp),
+    createdAt: entry?.createdAt || null,
+    lastUsedAt: entry?.lastUsedAt || null
+  }));
+}
+
+function buildAuthenticatorForPasskey(passkey) {
+  const credentialID = normalizePasskeyCredentialId(passkey?.credentialID);
+  const publicKey = String(passkey?.publicKey || '').trim();
+  if (!credentialID || !publicKey) return null;
+  return {
+    credentialID: Buffer.from(credentialID, 'base64url'),
+    credentialPublicKey: Buffer.from(publicKey, 'base64url'),
+    counter: Number(passkey?.counter || 0),
+    transports: normalizePasskeyTransports(passkey?.transports)
+  };
+}
+
 async function consumeBackupCode(user, code) {
   const normalized = normalizeBackupCode(code);
   if (!normalized || !user?._id) return { ok: false };
@@ -270,6 +317,21 @@ async function findAdminByEmail(email, { includeDisabled = false } = {}) {
   return user;
 }
 
+async function findAdminByPasskeyCredential(credentialId, { includeDisabled = false } = {}) {
+  const normalized = normalizePasskeyCredentialId(credentialId);
+  if (!normalized) return null;
+
+  const query = { 'passkeys.credentialID': normalized };
+  if (!includeDisabled) query.disabled = false;
+
+  const user = await AdminUser.findOne(query);
+  if (!user) return null;
+  if (!user.disabled) {
+    await clearExpiredLock(user);
+  }
+  return user;
+}
+
 async function verifyAdminCredentials({ email, password }) {
   const normalized = normalizeEmail(email);
   if (!normalized) return { ok: false, reason: 'Email is required.' };
@@ -335,6 +397,80 @@ async function disableTwoFactor(user) {
   });
 }
 
+async function addPasskeyToAdmin(user, {
+  credentialID,
+  publicKey,
+  counter = 0,
+  transports = [],
+  aaguid = '',
+  deviceType = 'singleDevice',
+  backedUp = false,
+  name = ''
+} = {}) {
+  const normalizedCredentialId = normalizePasskeyCredentialId(credentialID);
+  const normalizedPublicKey = String(publicKey || '').trim();
+  if (!user?._id || !normalizedCredentialId || !normalizedPublicKey) {
+    return { ok: false, reason: 'Invalid passkey payload.' };
+  }
+
+  const existing = Array.isArray(user.passkeys) ? [...user.passkeys] : [];
+  if (existing.some((entry) => normalizePasskeyCredentialId(entry?.credentialID) === normalizedCredentialId)) {
+    return { ok: false, reason: 'This passkey is already registered for your account.' };
+  }
+
+  existing.push({
+    credentialID: normalizedCredentialId,
+    publicKey: normalizedPublicKey,
+    counter: Math.max(0, Math.floor(Number(counter) || 0)),
+    transports: normalizePasskeyTransports(transports),
+    aaguid: String(aaguid || '').trim(),
+    deviceType: String(deviceType || 'singleDevice').trim() || 'singleDevice',
+    backedUp: Boolean(backedUp),
+    name: normalizePasskeyName(name, `Security Passkey ${existing.length + 1}`),
+    createdAt: new Date(),
+    lastUsedAt: null
+  });
+
+  await persistUserState(user, { passkeys: existing });
+  return { ok: true, user };
+}
+
+async function updatePasskeyUsage(user, credentialId, { counter, transports, deviceType, backedUp } = {}) {
+  const normalizedCredentialId = normalizePasskeyCredentialId(credentialId);
+  if (!user?._id || !normalizedCredentialId) return { ok: false, reason: 'Passkey not found.' };
+
+  const entries = Array.isArray(user.passkeys) ? [...user.passkeys] : [];
+  const index = entries.findIndex((entry) => normalizePasskeyCredentialId(entry?.credentialID) === normalizedCredentialId);
+  if (index === -1) return { ok: false, reason: 'Passkey not found.' };
+
+  const current = entries[index];
+  entries[index] = {
+    ...current,
+    counter: Number.isFinite(Number(counter)) ? Math.max(0, Math.floor(Number(counter))) : Number(current?.counter || 0),
+    transports: normalizePasskeyTransports(transports || current?.transports),
+    deviceType: String(deviceType || current?.deviceType || 'singleDevice').trim() || 'singleDevice',
+    backedUp: typeof backedUp === 'boolean' ? backedUp : Boolean(current?.backedUp),
+    lastUsedAt: new Date()
+  };
+
+  await persistUserState(user, { passkeys: entries });
+  return { ok: true, user };
+}
+
+async function removePasskeyFromAdmin(user, credentialId) {
+  const normalizedCredentialId = normalizePasskeyCredentialId(credentialId);
+  if (!user?._id || !normalizedCredentialId) return { ok: false, reason: 'Passkey not found.' };
+
+  const entries = Array.isArray(user.passkeys) ? [...user.passkeys] : [];
+  const filtered = entries.filter((entry) => normalizePasskeyCredentialId(entry?.credentialID) !== normalizedCredentialId);
+  if (filtered.length === entries.length) {
+    return { ok: false, reason: 'Passkey not found.' };
+  }
+
+  await persistUserState(user, { passkeys: filtered });
+  return { ok: true, user };
+}
+
 async function setPasswordResetOtp(user, otpHash, expiresAt) {
   return await persistUserState(user, {
     resetOTP: String(otpHash || '').trim(),
@@ -397,7 +533,13 @@ module.exports = {
   disableTwoFactor,
   generateAndStoreBackupCodes,
   getBackupCodes,
+  getPasskeys,
+  buildAuthenticatorForPasskey,
   consumeBackupCode,
+  findAdminByPasskeyCredential,
+  addPasskeyToAdmin,
+  updatePasskeyUsage,
+  removePasskeyFromAdmin,
   setPasswordResetOtp,
   clearPasswordResetOtp,
   updateAdminPassword,

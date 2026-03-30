@@ -39,7 +39,7 @@
           </div>
         </section>
 
-        <aside class="glass-card auth-card">
+        <aside class="glass-card auth-card" data-admin-passkey data-options-url="/admin/passkey/options" data-verify-url="/admin/passkey/verify" data-csrf="<%= csrfToken %>" data-return-to="<%= returnTo %>">
           <% if (viewMode === '2fa-setup-intro') { %>
             <h2 class="h5 mb-2">Set Up Google Authenticator</h2>
             <p class="text-muted small mb-3">Before admin access is granted, scan a QR code once to enable your 6-digit TOTP login.</p>
@@ -49,6 +49,9 @@
           <% } else if (viewMode === '2fa-verify') { %>
             <h2 class="h5 mb-2">Enter 2FA Code</h2>
             <p class="text-muted small mb-3">Use the 6-digit code from Google Authenticator to finish admin login.</p>
+          <% } else if (viewMode === 'passkey-start') { %>
+            <h2 class="h5 mb-2">Login with Passkey</h2>
+            <p class="text-muted small mb-3">Use a saved passkey on this device, or scan the browser-provided QR prompt from another device.</p>
           <% } else if (viewMode === 'forgot-password') { %>
             <h2 class="h5 mb-2">Forgot Password</h2>
             <p class="text-muted small mb-3">Request a 60-second password reset OTP for your approved admin email.</p>
@@ -75,6 +78,7 @@
           <% if (success) { %>
             <div class="alert alert-success"><%= success %></div>
           <% } %>
+          <div class="alert alert-info d-none" data-passkey-status></div>
 
           <% if (viewMode === '2fa-setup-intro') { %>
             <form method="post" action="/admin/2fa/setup" class="d-grid gap-3">
@@ -128,6 +132,12 @@
               </div>
               <button class="btn btn-outline-light w-100" type="submit">Verify Backup Code</button>
             </form>
+          <% } else if (viewMode === 'passkey-start') { %>
+            <div class="d-grid gap-3">
+              <button class="btn btn-primary w-100" type="button" data-passkey-login>Continue with Passkey / QR</button>
+              <div class="form-text text-start">Passkeys work on HTTPS or localhost and can open a QR flow automatically when your passkey is on another device.</div>
+              <a class="btn btn-ghost w-100" href="/admin/login">Back to Password Login</a>
+            </div>
           <% } else if (viewMode === 'authenticator-start') { %>
             <form method="post" action="/admin/authenticator" class="d-grid gap-3">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
@@ -205,6 +215,7 @@
               </div>
 
               <button class="btn btn-primary w-100" type="submit">Login</button>
+              <button class="btn btn-outline-light w-100" type="button" data-passkey-login>Login with Passkey / QR</button>
               <a class="btn btn-outline-light w-100" href="/admin/login?mode=authenticator-start">Login with Authenticator</a>
               <a class="btn btn-ghost w-100" href="/admin/login?mode=forgot-password">Forgot Password</a>
             </form>
@@ -213,5 +224,6 @@
       </div>
     </main>
     <%- include('../partials/footer') %>
+    <script src="/assets/js/admin-login.js"></script>
   </body>
 </html>

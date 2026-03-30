@@ -11,6 +11,13 @@ const BOT_LABELS = {
   verification: "God's Eye"
 };
 
+const DEFAULT_LOG_STYLES = {
+  economy: { color: 0xf59e0b, title: 'Economy Update' },
+  backup: { color: 0x22c55e, title: 'Backup Update' },
+  verification: { color: 0xe11d48, title: 'Verification Update' },
+  default: { color: 0x64748b, title: 'System Update' }
+};
+
 const COMPACT_AUDIT_TYPES = new Set([
   'message_delete',
   'message_edit',
@@ -195,35 +202,75 @@ function getTypeStyle(type) {
   const key = String(type || '').toLowerCase();
   const defaults = { color: 0x64748b, title: 'Audit Log' };
   const map = {
-    member_join: { color: 0x22c55e, title: 'Member Joined' },
-    member_leave: { color: 0xef4444, title: 'Member Left' },
-    member_ban: { color: 0xef4444, title: 'Member Banned' },
-    member_unban: { color: 0x3b82f6, title: 'Member Unbanned' },
-    member_timeout: { color: 0xf97316, title: 'Member Timeout Updated' },
-    member_role_add: { color: 0x3b82f6, title: 'Member Role Added' },
-    member_role_remove: { color: 0xf59e0b, title: 'Member Role Removed' },
-    nickname_change: { color: 0x3b82f6, title: 'Nickname Changed' },
-    moderator_command: { color: 0x8b5cf6, title: 'Moderator Command' },
-    message_delete: { color: 0xef4444, title: 'Message Deleted' },
-    image_delete: { color: 0xef4444, title: 'Image Deleted' },
-    message_edit: { color: 0x3b82f6, title: 'Message Edited' },
-    bulk_message_delete: { color: 0xf97316, title: 'Bulk Messages Deleted' },
-    invite_info: { color: 0x8b5cf6, title: 'Invite Updated' },
-    channel_create: { color: 0x22c55e, title: 'Channel Created' },
-    channel_update: { color: 0x3b82f6, title: 'Channel Updated' },
-    channel_delete: { color: 0xef4444, title: 'Channel Deleted' },
-    role_create: { color: 0x22c55e, title: 'Role Created' },
-    role_update: { color: 0x3b82f6, title: 'Role Updated' },
-    role_delete: { color: 0xef4444, title: 'Role Deleted' },
-    emoji_create: { color: 0x22c55e, title: 'Emoji Created' },
-    emoji_update: { color: 0x3b82f6, title: 'Emoji Updated' },
-    emoji_delete: { color: 0xef4444, title: 'Emoji Deleted' },
-    voice_join: { color: 0x22c55e, title: 'Voice Channel Joined' },
-    voice_leave: { color: 0xef4444, title: 'Voice Channel Left' },
-    voice_move: { color: 0x3b82f6, title: 'Voice Channel Switched' }
+    member_join: { color: 0x22c55e, title: '✅ Member Joined' },
+    member_leave: { color: 0xef4444, title: '📤 Member Left' },
+    member_ban: { color: 0xef4444, title: '⛔ Member Banned' },
+    member_unban: { color: 0x3b82f6, title: '🔓 Member Unbanned' },
+    member_timeout: { color: 0xf97316, title: '⏳ Member Timeout Updated' },
+    member_role_add: { color: 0x3b82f6, title: '➕ Member Role Added' },
+    member_role_remove: { color: 0xf59e0b, title: '➖ Member Role Removed' },
+    nickname_change: { color: 0x3b82f6, title: '✏️ Nickname Changed' },
+    moderator_command: { color: 0x8b5cf6, title: '🛠️ Moderator Command' },
+    message_delete: { color: 0xef4444, title: '🗑️ Message Deleted' },
+    image_delete: { color: 0xef4444, title: '🖼️ Image Deleted' },
+    message_edit: { color: 0x3b82f6, title: '✏️ Message Edited' },
+    bulk_message_delete: { color: 0xf97316, title: '🧹 Bulk Messages Deleted' },
+    invite_info: { color: 0x8b5cf6, title: '🔗 Invite Updated' },
+    channel_create: { color: 0x22c55e, title: '🧩 Channel Created' },
+    channel_update: { color: 0x3b82f6, title: '🧩 Channel Updated' },
+    channel_delete: { color: 0xef4444, title: '🧩 Channel Deleted' },
+    role_create: { color: 0x22c55e, title: '🎭 Role Created' },
+    role_update: { color: 0x3b82f6, title: '🎭 Role Updated' },
+    role_delete: { color: 0xef4444, title: '🎭 Role Deleted' },
+    emoji_create: { color: 0x22c55e, title: '✨ Emoji Created' },
+    emoji_update: { color: 0x3b82f6, title: '🪄 Emoji Updated' },
+    emoji_delete: { color: 0xef4444, title: '🧼 Emoji Deleted' },
+    voice_join: { color: 0x22c55e, title: '🎧 Voice Channel Joined' },
+    voice_leave: { color: 0xef4444, title: '🎧 Voice Channel Left' },
+    voice_move: { color: 0x3b82f6, title: '🎧 Voice Channel Switched' }
   };
 
   return map[key] || defaults;
+}
+
+function prettifyType(type) {
+  const text = String(type || '')
+    .trim()
+    .replace(/[-_]+/g, ' ');
+  if (!text) return 'System Update';
+  return text
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function resolveDefaultLogStyle({ webhookCategory = '', type = '' } = {}) {
+  const category = String(webhookCategory || '').trim().toLowerCase();
+  if (category && DEFAULT_LOG_STYLES[category]) return DEFAULT_LOG_STYLES[category];
+
+  const typeKey = String(type || '').trim().toLowerCase();
+  if (typeKey && DEFAULT_LOG_STYLES[typeKey]) return DEFAULT_LOG_STYLES[typeKey];
+  return DEFAULT_LOG_STYLES.default;
+}
+
+function buildDefaultLogEmbed({ discordClient, webhookCategory, type, content, botLabel }) {
+  const description = compactText(content || '', 1900);
+  if (!description) return null;
+
+  const style = resolveDefaultLogStyle({ webhookCategory, type });
+  const avatarURL = discordClient?.user?.displayAvatarURL?.({ extension: 'png', size: 128 }) || undefined;
+  const embed = new EmbedBuilder()
+    .setColor(style.color)
+    .setTitle(style.title || prettifyType(type))
+    .setDescription(description)
+    .setTimestamp();
+
+  if (botLabel) {
+    embed.setAuthor(avatarURL ? { name: botLabel, iconURL: avatarURL } : { name: botLabel });
+  }
+
+  return embed.toJSON();
 }
 
 function detailLine(label, value, max = 700) {
@@ -388,29 +435,36 @@ function buildCompactAuditEmbed(type, embed) {
   return compact.toJSON();
 }
 
-async function sendLog({ discordClient, guildId, type, content, embeds = [], webhookCategory = '', channelIdOverride = '' }) {
+async function sendLog({ discordClient, guildId, type, content, embeds = [], webhookCategory = '', channelIdOverride = '', skipBotBranding = false }) {
   const cfg = await getOrCreateGuildConfig(guildId);
   if (!toggleForType(cfg, type)) return { ok: true, skipped: true };
 
   const isCompact = COMPACT_AUDIT_TYPES.has(String(type || '').toLowerCase());
+  const botLabel = resolveBotLabel({ discordClient, webhookCategory, type });
+  // Log destinations should stay clean and match the Wick/Dyno-style embed-only presentation.
+  const shouldSkipBranding = true;
   const safeEmbeds = embeds
     .filter(Boolean)
     .slice(0, 10)
     .map((e) => (e instanceof EmbedBuilder ? e.toJSON() : e));
   const brandedPayload = brandPayload(
-    isCompact
+    shouldSkipBranding
       ? { content: content || undefined, embeds: safeEmbeds, skipBotBranding: true }
       : { content: content || undefined, embeds: safeEmbeds }
   );
   const brandedEmbeds = Array.isArray(brandedPayload?.embeds) ? brandedPayload.embeds : safeEmbeds;
   const brandedContent = typeof brandedPayload?.content === 'string' ? brandedPayload.content : content;
+  const sourceEmbeds = brandedEmbeds.length
+    ? brandedEmbeds
+    : (brandedContent
+        ? [buildDefaultLogEmbed({ discordClient, webhookCategory, type, content: brandedContent, botLabel })].filter(Boolean)
+        : []);
 
   const outgoingEmbeds =
-    isCompact && brandedEmbeds.length
-      ? brandedEmbeds.map((embed) => buildCompactAuditEmbed(type, embed)).filter(Boolean)
-      : brandedEmbeds;
-  const outgoingContent = isCompact ? undefined : (brandedContent || undefined);
-  const botLabel = resolveBotLabel({ discordClient, webhookCategory, type });
+    isCompact && sourceEmbeds.length
+      ? sourceEmbeds.map((embed) => buildCompactAuditEmbed(type, embed)).filter(Boolean)
+      : sourceEmbeds;
+  const outgoingContent = undefined;
   const written = await writeMessageLog({ guildId, type, botLabel, safeEmbeds: outgoingEmbeds, content: outgoingContent });
   if (!written) {
     await new Promise((r) => setTimeout(r, 120));
@@ -419,7 +473,7 @@ async function sendLog({ discordClient, guildId, type, content, embeds = [], web
 
   const webhookUrl =
     webhookCategory && cfg.webhooks?.[webhookCategory] ? cfg.webhooks[webhookCategory] : '';
-  const sendPayload = isCompact
+  const sendPayload = shouldSkipBranding
     ? { content: outgoingContent, embeds: outgoingEmbeds, skipBotBranding: true }
     : { content: outgoingContent, embeds: outgoingEmbeds };
 

@@ -173,48 +173,143 @@
               <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
                 <div>
                   <h2 class="h5 mb-1">Backup Codes</h2>
-                  <div class="text-muted small">Keep these one-time recovery codes somewhere safe. A used code cannot be used again.</div>
+                  <div class="text-muted small">Keep these one-time recovery codes somewhere safe. You need a fresh authenticator code before they can be viewed.</div>
                 </div>
                 <% if (accountUser.is2FAEnabled) { %>
-                  <span class="badge text-bg-secondary"><%= backupCodes.filter((entry) => !entry.isUsed).length %> unused</span>
+                  <span class="badge text-bg-secondary"><%= (accountUser.backupCodes || []).filter((entry) => !entry.usedAt).length %> unused</span>
                 <% } %>
               </div>
 
               <% if (!accountUser.is2FAEnabled) { %>
                 <div class="text-muted small">Enable authenticator first to generate backup codes.</div>
               <% } else { %>
-                <div class="row g-3 mb-3">
-                  <% backupCodes.forEach((entry) => { %>
-                    <div class="col-12 col-sm-6 col-xl-4">
-                      <div class="border rounded-4 p-3 h-100 bg-dark-subtle">
-                        <div class="fw-semibold"><code><%= entry.code || 'Unavailable' %></code></div>
-                        <div class="text-muted small mt-2">
-                          <% if (entry.isUsed) { %>
-                            Used on <%= formatDate(entry.usedAt) || '—' %>
-                          <% } else { %>
-                            Unused
-                          <% } %>
+                <% if (!backupCodesVisible) { %>
+                  <div class="border rounded-4 p-3 bg-dark-subtle mb-3">
+                    <div class="fw-semibold mb-1">Protected Recovery Codes</div>
+                    <div class="text-muted small mb-3">Enter your current 6-digit authenticator code to reveal the 10 backup codes for this account.</div>
+                    <form method="post" action="/admin/account/backup-codes/view" class="row g-3">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                      <div class="col-12 col-md-7">
+                        <label class="form-label">Authenticator Code</label>
+                        <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
+                      </div>
+                      <div class="col-12 col-md-5 d-grid align-self-end">
+                        <button class="btn btn-outline-light" type="submit">View Backup Codes</button>
+                      </div>
+                    </form>
+                  </div>
+                <% } else { %>
+                  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                    <div class="text-muted small">Backup codes are temporarily visible for this session.</div>
+                    <form method="post" action="/admin/account/backup-codes/hide">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                      <button class="btn btn-outline-secondary btn-sm" type="submit">Hide Codes</button>
+                    </form>
+                  </div>
+                  <div class="row g-3 mb-3">
+                    <% backupCodes.forEach((entry) => { %>
+                      <div class="col-12 col-sm-6 col-xl-4">
+                        <div class="border rounded-4 p-3 h-100 bg-dark-subtle">
+                          <div class="fw-semibold"><code><%= entry.code || 'Unavailable' %></code></div>
+                          <div class="text-muted small mt-2">
+                            <% if (entry.isUsed) { %>
+                              Used on <%= formatDate(entry.usedAt) || '—' %>
+                            <% } else { %>
+                              Unused
+                            <% } %>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  <% }) %>
-                </div>
+                    <% }) %>
+                  </div>
+                <% } %>
 
                 <form method="post" action="/admin/account/backup-codes/regenerate" class="row g-3">
                   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                  <div class="col-12 col-md-4">
+                  <div class="col-12 col-md-8">
                     <label class="form-label">Authenticator Code</label>
-                    <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" />
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <label class="form-label">Or Backup Code</label>
-                    <input class="form-control" type="text" name="backupCode" placeholder="ABCD-EFGH" />
+                    <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
                   </div>
                   <div class="col-12 col-md-4 d-grid align-self-end">
                     <button class="btn btn-outline-light" type="submit">Generate New Backup Codes</button>
                   </div>
                 </form>
               <% } %>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="card shadow-sm">
+            <div class="card-body" data-account-passkeys data-options-url="/admin/account/passkeys/options" data-register-url="/admin/account/passkeys/register" data-csrf="<%= csrfToken %>">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1">Security Passkeys</h2>
+                  <div class="text-muted small">Add a passkey for faster sign-in. Your browser may show a QR code automatically if the passkey is on another device.</div>
+                </div>
+                <span class="badge text-bg-secondary"><%= (passkeys || []).length %> added</span>
+              </div>
+
+              <div class="row g-3 mb-3">
+                <div class="col-12 col-lg-7">
+                  <label class="form-label">Passkey Name</label>
+                  <input class="form-control" type="text" name="passkeyName" data-passkey-name placeholder="MacBook Passkey" maxlength="60" />
+                  <div class="form-text">Optional label so you know which passkey belongs to which device.</div>
+                </div>
+                <div class="col-12 col-lg-5 d-grid align-self-end">
+                  <button class="btn btn-primary" type="button" data-passkey-register>Add Security Passkey</button>
+                </div>
+              </div>
+
+              <div class="alert alert-info d-none" data-passkey-status></div>
+
+              <div class="row g-3">
+                <% if (!(passkeys || []).length) { %>
+                  <div class="col-12">
+                    <div class="border rounded-4 p-3 bg-dark-subtle text-muted small">No passkeys added yet.</div>
+                  </div>
+                <% } %>
+                <% (passkeys || []).forEach((passkey, index) => { %>
+                  <div class="col-12 col-xl-6">
+                    <div class="border rounded-4 p-3 h-100 bg-dark-subtle">
+                      <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                        <div class="fw-semibold"><%= passkey.name || `Security Passkey ${index + 1}` %></div>
+                        <span class="badge text-bg-<%= passkey.backedUp ? 'success' : 'secondary' %>"><%= passkey.backedUp ? 'synced' : 'device-bound' %></span>
+                      </div>
+                      <div class="text-muted small mb-3">
+                        Added <%= formatDate(passkey.createdAt) || '—' %>
+                        <% if (passkey.lastUsedAt) { %>
+                          · last used <%= formatDate(passkey.lastUsedAt) %>
+                        <% } %>
+                      </div>
+                      <div class="text-muted small mb-3">
+                        Type: <%= passkey.deviceType === 'multiDevice' ? 'Multi-device' : 'Single-device' %>
+                        <% if ((passkey.transports || []).length) { %>
+                          · <%= passkey.transports.join(', ') %>
+                        <% } %>
+                      </div>
+                      <form method="post" action="/admin/account/passkeys/remove" class="row g-3">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                        <input type="hidden" name="credentialId" value="<%= passkey.credentialID %>" />
+                        <% if (accountUser.is2FAEnabled) { %>
+                          <div class="col-12">
+                            <label class="form-label">Authenticator Code</label>
+                            <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
+                          </div>
+                        <% } else { %>
+                          <div class="col-12">
+                            <label class="form-label">Current Password</label>
+                            <input class="form-control" type="password" name="password" required />
+                          </div>
+                        <% } %>
+                        <div class="col-12 d-grid">
+                          <button class="btn btn-outline-danger" type="submit" data-confirm="Remove this security passkey from your account?" data-confirm-title="Remove passkey?" data-confirm-ok="Remove" data-confirm-cancel="Cancel">Remove Passkey</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                <% }) %>
+              </div>
             </div>
           </div>
         </div>
@@ -292,5 +387,6 @@
       </div>
     </main>
     <%- include('../../partials/footer') %>
+    <script src="/assets/js/account-security.js"></script>
   </body>
 </html>

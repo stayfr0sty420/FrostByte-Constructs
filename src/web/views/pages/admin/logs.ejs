@@ -9,113 +9,201 @@
       <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
         <div>
           <h1 class="h4 m-0">Logs</h1>
-          <div class="text-muted small">Latest activity from verification, backups, economy, and moderation.</div>
+          <div class="text-muted small">Filter by bot, member, action, and date range. Expand a row only when you need the full details.</div>
         </div>
         <a href="/admin/dashboard" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
       </div>
 
-      <div class="card shadow-sm">
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="card shadow-sm mb-3">
         <div class="card-body">
-          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-            <div class="input-group input-group-sm log-search">
-              <span class="input-group-text">Search</span>
-              <input class="form-control" type="search" placeholder="Search logs..." data-log-search />
+          <form method="get" action="/admin/logs" class="row g-3 align-items-end">
+            <div class="col-12 col-lg-2">
+              <label class="form-label">Bot</label>
+              <select class="form-select" name="bot">
+                <option value="">All bots</option>
+                <% (botOptions || []).forEach((option) => { %>
+                  <option value="<%= option %>" <%= filters.bot === option ? 'selected' : '' %>><%= option %></option>
+                <% }) %>
+              </select>
             </div>
-            <div class="text-muted small" data-log-count></div>
-          </div>
-
-          <div class="log-list">
-            <div class="log-empty text-muted small" data-log-empty style="<%= logs.length ? 'display:none;' : '' %>">No logs yet.</div>
-            <% logs.forEach(l => { %>
-              <%
-                const embeds = Array.isArray(l.data?.embeds) ? l.data.embeds : [];
-                const storedBot = String(l.bot || l.data?.bot || '').trim();
-                const typeKey = String(l.type || '').toLowerCase();
-                const fallbackBot = typeKey.includes('economy')
-                  ? 'RoBot'
-                  : typeKey.includes('backup')
-                    ? 'Rodstarkian Vault'
-                    : typeKey.includes('verification') || typeKey.includes('member') || typeKey.includes('message') || typeKey.includes('role') || typeKey.includes('channel') || typeKey.includes('voice')
-                      ? "God's Eye"
-                      : '';
-                const botLabel = storedBot || fallbackBot;
-                const embedText = embeds
-                  .map((e) => {
-                    const fields = Array.isArray(e.fields) ? e.fields : [];
-                    const fieldText = fields.map((f) => `${f.name || ''} ${f.value || ''}`).join(' ');
-                    return `${e.title || ''} ${e.description || ''} ${fieldText}`;
-                  })
-                  .join(' ');
-                const typeLabel = String(l.type || '').split('_').join(' ');
-                const jsonSearch = JSON.stringify(l.data || {}).slice(0, 2000);
-                const rawSearch = `${botLabel} ${l.type || ''} ${l.data?.content || ''} ${embedText} ${jsonSearch}`;
-                const searchText = String(rawSearch || '').toLowerCase();
-
-                const summaryLines = [];
-                const allowedFields = new Set(['user', 'status', 'risk', 'ip', 'location', 'note', 'result', 'action', 'type']);
-                embeds.forEach((e) => {
-                  if (e?.title) summaryLines.push(String(e.title));
-                  if (e?.description) summaryLines.push(String(e.description));
-                  const fields = Array.isArray(e.fields) ? e.fields : [];
-                  fields.forEach((f) => {
-                    const fieldName = String(f?.name || '').trim();
-                    if (!allowedFields.has(fieldName.toLowerCase())) return;
-                    const val = String(f?.value || '').trim();
-                    if (!val) return;
-                    summaryLines.push(`${fieldName}: ${val}`);
-                  });
-                });
-                const clippedLines = summaryLines.filter(Boolean).slice(0, 6);
-              %>
-              <article class="log-card log-card-compact" data-log-row data-search="<%= searchText %>">
-                <header class="log-card-header">
-                  <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <% if (botLabel) { %>
-                      <span class="badge text-bg-secondary log-bot"><%= botLabel %></span>
-                    <% } %>
-                    <div class="log-type"><%= typeLabel || l.type %></div>
-                  </div>
-                  <div class="log-meta">
-                    <div class="log-time"><%= formatDate(l.createdAt) || '' %></div>
-                    <form method="post" action="/admin/logs/delete/<%= l._id %>" class="d-inline">
-                      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                      <button
-                        class="btn btn-outline-danger btn-sm icon-btn"
-                        type="submit"
-                        title="Delete log"
-                        aria-label="Delete log"
-                        data-confirm="Delete this log entry?">
-                        🗑️
-                      </button>
-                    </form>
-                  </div>
-                </header>
-                <div class="log-card-body">
-                  <% if (l.data?.content) { %>
-                    <div class="log-content"><%= l.data.content %></div>
-                  <% } %>
-                  <% if (clippedLines.length) { %>
-                    <div class="log-summary">
-                      <% clippedLines.forEach((line) => { %>
-                        <% const trimmed = String(line || '').trim(); %>
-                        <% const lowered = trimmed.toLowerCase(); %>
-                        <% const isLink = lowered.startsWith('http://') || lowered.startsWith('https://'); %>
-                        <% if (isLink) { %>
-                          <div><a class="link-danger" href="<%= trimmed %>" target="_blank" rel="noreferrer"><%= trimmed %></a></div>
-                        <% } else { %>
-                          <div><%= line %></div>
-                        <% } %>
-                      <% }) %>
-                    </div>
-                  <% } %>
-                  <% if (!l.data?.content && !clippedLines.length) { %>
-                    <div class="text-muted small">No details.</div>
-                  <% } %>
-                </div>
-              </article>
-            <% }) %>
-          </div>
+            <div class="col-12 col-lg-2">
+              <label class="form-label">Action</label>
+              <select class="form-select" name="type">
+                <option value="">All actions</option>
+                <% (typeOptions || []).forEach((option) => { %>
+                  <option value="<%= option %>" <%= filters.type === option ? 'selected' : '' %>><%= option.split('_').join(' ') %></option>
+                <% }) %>
+              </select>
+            </div>
+            <div class="col-12 col-lg-2">
+              <label class="form-label">User</label>
+              <input class="form-control" type="search" name="user" value="<%= filters.user || '' %>" placeholder="User / ID" />
+            </div>
+            <div class="col-12 col-lg-2">
+              <label class="form-label">Text Search</label>
+              <input class="form-control" type="search" name="q" value="<%= filters.q || '' %>" placeholder="Reason, channel, note..." />
+            </div>
+            <div class="col-6 col-lg-2">
+              <label class="form-label">From</label>
+              <input class="form-control" type="date" name="from" value="<%= filters.from || '' %>" />
+            </div>
+            <div class="col-6 col-lg-2">
+              <label class="form-label">To</label>
+              <input class="form-control" type="date" name="to" value="<%= filters.to || '' %>" />
+            </div>
+            <div class="col-12 d-flex flex-wrap gap-2 justify-content-between align-items-center">
+              <div class="text-muted small"><%= logs.length %> matching log<%= logs.length === 1 ? '' : 's' %></div>
+              <div class="d-flex flex-wrap gap-2">
+                <a class="btn btn-outline-secondary btn-sm" href="/admin/logs">Clear</a>
+                <button class="btn btn-primary btn-sm" type="submit">Apply Filters</button>
+              </div>
+            </div>
+          </form>
         </div>
+      </div>
+
+      <div class="log-list">
+        <% if (!logs.length) { %>
+          <div class="log-empty text-muted small">No logs matched the current filters.</div>
+        <% } %>
+
+        <% logs.forEach((log) => { %>
+          <%
+            const embeds = Array.isArray(log.data?.embeds) ? log.data.embeds : [];
+            const storedBot = String(log.bot || log.data?.bot || '').trim();
+            const typeKey = String(log.type || '').toLowerCase();
+            const fallbackBot = typeKey.includes('economy')
+              ? 'RoBot'
+              : typeKey.includes('backup')
+                ? 'Rodstarkian Vault'
+                : typeKey.includes('verification') || typeKey.includes('member') || typeKey.includes('message') || typeKey.includes('role') || typeKey.includes('channel') || typeKey.includes('voice')
+                  ? "God's Eye"
+                  : '';
+            const botLabel = storedBot || fallbackBot || 'System';
+            const typeLabel = String(log.type || '').split('_').join(' ');
+            const firstEmbed = embeds[0] || null;
+            const firstFields = Array.isArray(firstEmbed?.fields) ? firstEmbed.fields.slice(0, 3) : [];
+            const summaryTitle = String(firstEmbed?.title || typeLabel || 'Log Entry').trim();
+            const summaryDescription = String(firstEmbed?.description || log.data?.content || '').trim();
+          %>
+          <article class="log-card log-card-compact">
+            <header class="log-card-header">
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="badge text-bg-secondary log-bot"><%= botLabel %></span>
+                <div class="log-type"><%= typeLabel || log.type %></div>
+              </div>
+              <div class="log-meta">
+                <div class="log-time"><%= formatDate(log.createdAt) || '' %></div>
+                <form method="post" action="/admin/logs/delete/<%= log._id %>" class="d-inline">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <button
+                    class="btn btn-outline-danger btn-sm icon-btn"
+                    type="submit"
+                    title="Delete log"
+                    aria-label="Delete log"
+                    data-confirm="Delete this log entry?"
+                    data-confirm-title="Delete log?"
+                    data-confirm-ok="Delete"
+                    data-confirm-cancel="Cancel">
+                    🗑️
+                  </button>
+                </form>
+              </div>
+            </header>
+
+            <div class="log-summary-stack">
+              <div class="log-summary-title"><%= summaryTitle %></div>
+              <% if (summaryDescription) { %>
+                <div class="log-summary"><%= summaryDescription %></div>
+              <% } %>
+              <% if (firstFields.length) { %>
+                <div class="log-summary-grid">
+                  <% firstFields.forEach((field) => { %>
+                    <div class="log-summary-chip">
+                      <span class="log-summary-chip__label"><%= field.name %></span>
+                      <span class="log-summary-chip__value"><%= field.value %></span>
+                    </div>
+                  <% }) %>
+                </div>
+              <% } %>
+            </div>
+
+            <details class="log-expander">
+              <summary>View details</summary>
+              <div class="log-card-body mt-3">
+                <% if (log.data?.content) { %>
+                  <div class="log-content"><%= log.data.content %></div>
+                <% } %>
+
+                <% if (embeds.length) { %>
+                  <div class="log-embed-stack">
+                    <% embeds.forEach((embed) => { %>
+                      <%
+                        const embedColor = Number(embed.color || 0xef4444).toString(16).padStart(6, '0');
+                        const fields = Array.isArray(embed.fields) ? embed.fields : [];
+                      %>
+                      <section class="log-embed" style="--embed-color:#<%= embedColor %>">
+                        <div class="log-embed-head">
+                          <div>
+                            <% if (embed.author && embed.author.name) { %>
+                              <div class="log-embed-author"><%= embed.author.name %></div>
+                            <% } %>
+                            <% if (embed.title) { %>
+                              <div class="log-embed-title"><%= embed.title %></div>
+                            <% } %>
+                          </div>
+                          <% if (embed.thumbnail && embed.thumbnail.url) { %>
+                            <img src="<%= embed.thumbnail.url %>" alt="Embed thumbnail" class="log-embed-thumb" loading="lazy" />
+                          <% } %>
+                        </div>
+
+                        <% if (embed.description) { %>
+                          <div class="log-embed-desc"><%= embed.description %></div>
+                        <% } %>
+
+                        <% if (fields.length) { %>
+                          <dl class="log-embed-fields">
+                            <% fields.forEach((field) => { %>
+                              <div class="log-embed-field">
+                                <dt><%= field.name %></dt>
+                                <dd><%= field.value %></dd>
+                              </div>
+                            <% }) %>
+                          </dl>
+                        <% } %>
+
+                        <% if (embed.image && embed.image.url) { %>
+                          <div class="log-embed-image-wrap">
+                            <img src="<%= embed.image.url %>" alt="Embed image" class="log-embed-image" loading="lazy" />
+                          </div>
+                        <% } %>
+
+                        <% if ((embed.footer && embed.footer.text) || embed.timestamp) { %>
+                          <div class="log-embed-footer">
+                            <% if (embed.footer && embed.footer.text) { %>
+                              <span><%= embed.footer.text %></span>
+                            <% } %>
+                            <% if (embed.timestamp) { %>
+                              <span><%= formatDate(embed.timestamp) || '' %></span>
+                            <% } %>
+                          </div>
+                        <% } %>
+                      </section>
+                    <% }) %>
+                  </div>
+                <% } %>
+
+                <% if (!log.data?.content && !embeds.length) { %>
+                  <div class="text-muted small">No additional details were stored for this entry.</div>
+                <% } %>
+              </div>
+            </details>
+          </article>
+        <% }) %>
       </div>
     </main>
     <%- include('../../partials/footer') %>

@@ -3,65 +3,145 @@
   <head>
     <%- include('../partials/head', { title }) %>
   </head>
-  <body class="app">
+  <body class="app verify-page">
     <%- include('../partials/nav') %>
-    <main class="container py-5">
-      <div class="row justify-content-center">
-        <div class="col-12 col-lg-7">
-          <div class="card shadow-sm">
-            <div class="card-body p-4">
-              <h1 class="h4 mb-3">Verification Result</h1>
-              <% if (discordUser && discordUser.id) { %>
-                <div class="alert alert-info">
-                  ✅ Discord authorized: <strong><%= discordUser.username %></strong>
-                  <% if (discordUser.email) { %>
-                    <span class="text-white-50">(<%= discordUser.email %>)</span>
-                  <% } %>
-                </div>
-              <% } %>
-              <% if (result.ok) { %>
-                <% if (result.status === 'approved') { %>
-                  <div class="alert alert-success">✅ Successful Verification! You can return to Discord.</div>
-                  <% if (result.roleResult && result.roleResult.ok) { %>
-                    <div class="text-muted small">Role applied successfully.</div>
-                  <% } else if (result.roleResult && !result.roleResult.ok) { %>
-                    <div class="alert alert-warning mt-2">
-                      ⚠️ Verified, but role could not be applied: <%= result.roleResult.reason || 'unknown' %>
-                      <div class="text-white-50 small mt-1">Ask an admin to fix role permissions/hierarchy and try again.</div>
-                    </div>
-                  <% } %>
-                <% } else if (result.status === 'pending') { %>
-                  <div class="alert alert-warning">🕒 Pending review by an admin.</div>
-                <% } else { %>
-                  <div class="alert alert-danger">⛔ Verification denied.</div>
-                <% } %>
-                <div class="text-muted">Risk score: <%= result.riskScore %></div>
-              <% } else { %>
-                <div class="alert alert-danger"><%= result.reason %></div>
-              <% } %>
-              <div class="text-muted small mt-2">If you need to retry, run <code>/verify</code> again in Discord to get a new link.</div>
-              <div class="d-flex flex-wrap gap-2 mt-3">
-                <% if (typeof guildId !== 'undefined' && guildId) { %>
-                  <a class="btn btn-primary" href="https://discord.com/channels/<%= guildId %>" target="_blank" rel="noreferrer">Back to Discord</a>
-                <% } %>
-                <a class="btn btn-outline-light" href="/auth/discord/success">Open Dashboard</a>
-                <form method="post" action="/auth/logout" class="d-inline">
-                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                  <button class="btn btn-outline-danger" type="submit">Logout</button>
-                </form>
-              </div>
-              <% if (result.ok && result.status === 'approved') { %>
-                <script>
-                  setTimeout(() => {
-                    window.location.href = '/auth/discord/success';
-                  }, 2500);
-                </script>
-              <% } %>
+    <main class="container py-4 py-lg-5">
+      <%
+        const status = result && result.ok ? String(result.status || 'approved').toLowerCase() : 'failed';
+        const badgeText = status === 'approved' ? 'Approved' : (status === 'pending' ? 'Pending Review' : 'Denied');
+        const badgeClass = status === 'approved' ? 'text-bg-success' : (status === 'pending' ? 'text-bg-warning' : 'text-bg-danger');
+        const avatarUrl = discordUser && discordUser.id && discordUser.avatar
+          ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.${String(discordUser.avatar).startsWith('a_') ? 'gif' : 'png'}?size=256`
+          : '';
+      %>
+      <div class="verify-shell">
+        <section class="verify-showcase">
+          <div class="verify-showcase-copy">
+            <div class="verify-badge">
+              <img src="/assets/images/branding/website/gods-eye-website.png" alt="God's Eye badge" loading="lazy" />
+              <span>God's Eye • Watchpoint</span>
+            </div>
+            <h1 class="verify-title">Verification Result</h1>
+            <p class="verify-lead">
+              Your profiling request for <strong><%= guildName || guildId || 'this server' %></strong> has been processed. Review the status card for the final outcome.
+            </p>
+            <div class="verify-pill-row">
+              <span class="verify-pill">Secure Verification</span>
+              <span class="verify-pill">Role Delivery</span>
+              <span class="verify-pill">Audit Tracked</span>
             </div>
           </div>
-        </div>
+          <div class="verify-showcase-art">
+            <div class="verify-art-card verify-art-card--core">
+              <img src="<%= avatarUrl || '/assets/images/branding/website/gods-eye-website.png' %>" alt="Verification account avatar" loading="lazy" />
+            </div>
+            <div class="verify-art-card verify-art-card--sigil">
+              <img src="/assets/images/branding/website/gods-eye-website.png" alt="God's Eye sigil" loading="lazy" />
+            </div>
+          </div>
+          <div class="verify-banner-shell">
+            <img src="/assets/images/verification/watchpoint-banner2.gif" alt="Verification banner" class="verify-banner" loading="lazy" />
+          </div>
+        </section>
+
+        <section class="card shadow-sm verify-card">
+          <div class="card-body p-4 p-lg-5">
+            <div class="verify-card-head">
+              <div>
+                <p class="verify-card-eyebrow">Verification Status</p>
+                <h2 class="h4 mb-2">Rodstarkian Suite Access Review</h2>
+              </div>
+              <div class="d-flex align-items-center gap-3">
+                <span class="badge <%= badgeClass %> px-3 py-2"><%= badgeText %></span>
+                <% if (avatarUrl) { %>
+                  <img src="<%= avatarUrl %>" alt="Discord avatar" class="verify-card-avatar" loading="lazy" />
+                <% } else { %>
+                  <img src="/assets/images/branding/website/gods-eye-website.png" alt="God's Eye mark" class="verify-card-mark" loading="lazy" />
+                <% } %>
+              </div>
+            </div>
+
+            <% if (discordUser && discordUser.id) { %>
+              <div class="verify-result-profile mb-4">
+                <div class="verify-result-profile__name"><%= discordUser.username %></div>
+                <div class="verify-result-profile__meta">
+                  <span><%= discordUser.id %></span>
+                  <% if (discordUser.email) { %>
+                    <span>•</span>
+                    <span><%= discordUser.email %></span>
+                  <% } %>
+                </div>
+              </div>
+            <% } %>
+
+            <% if (result.ok) { %>
+              <div class="verify-result-card verify-result-card--<%= status %> mb-4">
+                <div class="verify-result-card__title">
+                  <%= status === 'approved' ? 'Verification complete.' : (status === 'pending' ? 'Verification submitted.' : 'Verification denied.') %>
+                </div>
+                <div class="verify-result-card__copy">
+                  <% if (status === 'approved') { %>
+                    You can return to Discord now. If role sync is enabled correctly, access should already be unlocked.
+                  <% } else if (status === 'pending') { %>
+                    An admin needs to review this request before server access can be granted.
+                  <% } else { %>
+                    This verification attempt was denied. Run <code>/verify</code> again in Discord if you need to retry later.
+                  <% } %>
+                </div>
+              </div>
+
+              <div class="row g-3 mb-4">
+                <div class="col-12 col-md-4">
+                  <div class="verify-result-stat">
+                    <div class="verify-result-stat__label">Risk Score</div>
+                    <div class="verify-result-stat__value"><%= typeof result.riskScore === 'number' ? result.riskScore : '—' %></div>
+                  </div>
+                </div>
+                <div class="col-12 col-md-8">
+                  <div class="verify-result-stat">
+                    <div class="verify-result-stat__label">Role Sync</div>
+                    <div class="verify-result-stat__copy">
+                      <% if (result.roleResult && result.roleResult.ok) { %>
+                        Verified role applied successfully.
+                      <% } else if (result.roleResult && !result.roleResult.ok) { %>
+                        Verified, but role sync failed: <%= result.roleResult.reason || 'unknown' %>
+                      <% } else if (status === 'pending') { %>
+                        Waiting for manual admin review.
+                      <% } else { %>
+                        No role changes were applied.
+                      <% } %>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            <% } else { %>
+              <div class="verify-result-card verify-result-card--failed mb-4">
+                <div class="verify-result-card__title">Verification could not continue.</div>
+                <div class="verify-result-card__copy"><%= result.reason %></div>
+              </div>
+            <% } %>
+
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <% if (typeof guildId !== 'undefined' && guildId) { %>
+                <a class="btn btn-primary verify-submit-btn" href="https://discord.com/channels/<%= guildId %>" target="_blank" rel="noreferrer">Back to Discord</a>
+              <% } %>
+              <a class="btn btn-outline-light" href="/auth/discord/success">Open Bot Hub</a>
+              <form method="post" action="/auth/logout" class="d-inline">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <button class="btn btn-outline-danger" type="submit">Logout</button>
+              </form>
+            </div>
+          </div>
+        </section>
       </div>
     </main>
+    <% if (result.ok && result.status === 'approved') { %>
+      <script>
+        setTimeout(() => {
+          window.location.href = '/auth/discord/success';
+        }, 2500);
+      </script>
+    <% } %>
     <%- include('../partials/footer') %>
   </body>
 </html>

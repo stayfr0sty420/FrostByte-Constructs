@@ -421,7 +421,8 @@ router.get('/:guildId/complete', requireAuth, async (req, res) => {
     return res.render('pages/verify_result', {
       title: 'Verification Result',
       result: { ok: false, reason: 'Discord account mismatch. Please run /verify again and use the correct account.' },
-      guildId
+      guildId,
+      guildName: resolveGuildName(req.app, guildId) || guildId
     });
   }
 
@@ -430,7 +431,8 @@ router.get('/:guildId/complete', requireAuth, async (req, res) => {
     return res.render('pages/verify_result', {
       title: 'Verification Result',
       result: { ok: false, reason: 'Verification session expired. Please run /verify again.' },
-      guildId
+      guildId,
+      guildName: resolveGuildName(req.app, guildId) || guildId
     });
   }
 
@@ -451,7 +453,8 @@ router.get('/:guildId/complete', requireAuth, async (req, res) => {
     return res.render('pages/verify_result', {
       title: 'Verification Result',
       result: { ok: false, reason: 'This verification link was already used. Please run /verify again.' },
-      guildId
+      guildId,
+      guildName: resolveGuildName(req.app, guildId) || guildId
     });
   }
 
@@ -490,7 +493,12 @@ router.get('/:guildId/complete', requireAuth, async (req, res) => {
     { $set: { status: 'completed', completedAt: new Date() } }
   ).catch(() => null);
 
-  return res.render('pages/verify_result', { title: 'Verification Result', result, guildId });
+  return res.render('pages/verify_result', {
+    title: 'Verification Result',
+    result,
+    guildId,
+    guildName: resolveGuildName(req.app, guildId) || guildId
+  });
 });
 
 module.exports = { router };

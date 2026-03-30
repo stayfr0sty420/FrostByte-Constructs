@@ -206,6 +206,14 @@ function safeText(value, max = 200) {
   return `${s.slice(0, max - 1)}…`;
 }
 
+function getDiscordAvatarUrl(user) {
+  const userId = String(user?.id || '').trim();
+  const avatar = String(user?.avatar || '').trim();
+  if (!userId || !avatar) return '';
+  const ext = avatar.startsWith('a_') ? 'gif' : 'png';
+  return `https://cdn.discordapp.com/avatars/${encodeURIComponent(userId)}/${encodeURIComponent(avatar)}.${ext}?size=256`;
+}
+
 async function applyVerifiedRolesWithRetry(roleClients, guildId, userId) {
   const delays = [0, 350, 900];
   let lastResult = { ok: false, reason: 'Role apply failed.' };
@@ -232,13 +240,11 @@ async function applyVerifiedRolesWithRetry(roleClients, guildId, userId) {
 function buildVerificationEmbed({ title, guildId, user, attempt, ip, userAgent, geo, riskScore, status, note = '' }) {
   const username = user?.username || user?.globalName || attempt?.username || '(unknown)';
   const userId = user?.id || attempt?.discordId || '';
-  const email = user?.email || attempt?.email || '';
   const attemptId = attempt?.verificationId || '';
   const observedIp = attempt?.observedIp || '';
   const publicIp = attempt?.publicIp || '';
   const ipGeo = attempt?.ipGeo || null;
-  const riskDecisionValue = attempt?.riskDecision || '';
-  const autoApproved = Boolean(attempt?.autoApproved);
+  const avatarUrl = getDiscordAvatarUrl(user);
 
   const color = (() => {
     const s = String(status || '').toLowerCase();
@@ -255,15 +261,27 @@ function buildVerificationEmbed({ title, guildId, user, attempt, ip, userAgent, 
   const embed = new EmbedBuilder()
     .setTitle(title)
     .setColor(color)
+    .setDescription(
+      status === 'approved'
+        ? 'Verification completed successfully and the member can now access the server.'
+        : status === 'pending'
+          ? 'Verification was submitted and is waiting for a manual admin review.'
+          : 'Verification was denied and access was not granted.'
+    )
     .addFields(
       { name: 'User', value: userLabel || '(unknown)', inline: false },
       { name: 'Status', value: statusLabel, inline: true },
-      { name: 'Risk', value: typeof riskScore === 'number' ? String(riskScore) : '(n/a)', inline: true },
-      { name: 'IP', value: ipLabel ? `\`${ipLabel}\`` : '(none)', inline: true },
+      { name: 'Risk Score', value: typeof riskScore === 'number' ? String(riskScore) : '(n/a)', inline: true },
+      { name: 'IP Address', value: ipLabel ? `\`${ipLabel}\`` : '(none)', inline: true },
       { name: 'Location', value: locationText || '(none)', inline: false }
     )
+    .setFooter({ text: attemptId ? `Verification ID: ${attemptId}` : 'Verification Result' })
     .setTimestamp();
 
+  if (avatarUrl) {
+    embed.setAuthor({ name: safeText(username, 80), iconURL: avatarUrl });
+    embed.setThumbnail(avatarUrl);
+  }
   if (note) embed.addFields({ name: 'Note', value: safeText(note, 500) || '(none)', inline: false });
   return embed;
 }
@@ -428,10 +446,8 @@ async function submitVerification({
       guildId,
       type: 'verification',
       webhookCategory: 'verification',
-      content: roleResult.ok
-        ? `✅ Verified: ${userLabel} • risk ${risk}`
-        : `⚠️ Verification role failed: ${userLabel} • ${roleResult.reason || 'unknown'}`,
-      embeds: [embed]
+      embeds: [embed],
+      skipBotBranding: true
     });
     return { ok: true, status, riskScore: risk, attemptId: attempt.verificationId, roleResult };
   }
@@ -453,11 +469,8 @@ async function submitVerification({
     guildId,
     type: 'verification',
     webhookCategory: 'verification',
-    content:
-      status === 'pending'
-        ? `🕒 Pending verification: ${(user.username || user.globalName || user.id)} (${user.id}) • risk ${risk}`
-        : `⛔ Denied: ${(user.username || user.globalName || user.id)} (${user.id}) • risk ${risk}`,
-    embeds: [embed]
+    embeds: [embed],
+    skipBotBranding: true
   });
 
   return { ok: true, status, riskScore: risk, attemptId: attempt.verificationId };
@@ -486,9 +499,11 @@ async function reviewVerification({ discordClient, roleClients, guildId, verific
       ok: false,
       reason: String(err?.message || err || 'Role apply failed')
     }));
+    const discordUser = discordClient?.users ? await discordClient.users.fetch(attempt.discordId).catch(() => null) : null;
     const embed = buildVerificationEmbed({
       title: 'Verification Reviewed',
       guildId,
+      user: discordUser,
       attempt,
       ip: attempt.ip,
       userAgent: attempt.userAgent,
@@ -502,17 +517,17 @@ async function reviewVerification({ discordClient, roleClients, guildId, verific
       guildId,
       type: 'verification',
       webhookCategory: 'verification',
-      content: roleResult.ok
-        ? `✅ Approved: ${(attempt.username || attempt.discordId)} (${attempt.discordId}) by ${reviewerLabel}`
-        : `⚠️ Approval role failed: ${(attempt.username || attempt.discordId)} (${attempt.discordId}) • ${roleResult.reason || 'unknown'}`,
-      embeds: [embed]
+      embeds: [embed],
+      skipBotBranding: true
     });
     return { ok: true, attempt, roleResult };
   }
 
+  const discordUser = discordClient?.users ? await discordClient.users.fetch(attempt.discordId).catch(() => null) : null;
   const denyEmbed = buildVerificationEmbed({
     title: 'Verification Reviewed',
     guildId,
+    user: discordUser,
     attempt,
     ip: attempt.ip,
     userAgent: attempt.userAgent,
@@ -527,8 +542,8 @@ async function reviewVerification({ discordClient, roleClients, guildId, verific
     guildId,
     type: 'verification',
     webhookCategory: 'verification',
-    content: `⛔ Denied: ${(attempt.username || attempt.discordId)} (${attempt.discordId}) by ${reviewerLabel}`,
-    embeds: [denyEmbed]
+    embeds: [denyEmbed],
+    skipBotBranding: true
   });
   return { ok: true, attempt };
 }

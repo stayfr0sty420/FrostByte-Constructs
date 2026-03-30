@@ -70,9 +70,6 @@
               </ul>
             </li>
           <% } %>
-
-          <li class="nav-item"><a class="nav-link" href="/admin/account">My Account</a></li>
-
           <% if (safeAdminUser) { %>
             <li class="nav-item"><a class="nav-link" href="/admin/accounts">Accounts</a></li>
           <% } %>
@@ -84,6 +81,9 @@
         <% if (safeAdminUser) { %>
           <li class="nav-item">
             <a class="nav-link" href="/admin/help">Help</a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" href="/admin/account">My Account</a>
           </li>
         <% } %>
         <% if (safeAdminUser) { %>

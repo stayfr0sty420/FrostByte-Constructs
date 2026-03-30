@@ -9,7 +9,8 @@ const GuildConfigSchema = new mongoose.Schema(
     approval: {
       status: { type: String, default: 'pending', enum: ['pending', 'approved', 'rejected'], index: true },
       reviewedBy: { type: String, default: '' },
-      reviewedAt: { type: Date, default: null }
+      reviewedAt: { type: Date, default: null },
+      notificationChannelId: { type: String, default: '' }
     },
 
     botApprovals: {

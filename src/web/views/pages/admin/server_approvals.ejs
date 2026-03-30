@@ -31,6 +31,29 @@
         <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
       <% } %>
 
+      <div class="card shadow-sm mb-3">
+        <div class="card-body">
+          <form method="post" action="/admin/servers/<%= guildId %>/approvals/channel" class="row g-3 align-items-end">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <div class="col-12 col-lg-8">
+              <label class="form-label">Approval Notification Channel</label>
+              <select class="form-select" name="notificationChannelId">
+                <option value="">Use system/rules fallback</option>
+                <% (channels || []).forEach((channel) => { %>
+                  <option value="<%= channel.id %>" <%= approvalNotificationChannelId === channel.id ? 'selected' : '' %>>
+                    #<%= channel.name %>
+                  </option>
+                <% }) %>
+              </select>
+              <div class="form-text">Approved and rejected bot notices will be posted here, using the admin display name instead of the admin email.</div>
+            </div>
+            <div class="col-12 col-lg-4 d-grid">
+              <button class="btn btn-outline-light" type="submit">Save Notification Channel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
       <div class="card shadow-sm">
         <div class="card-body p-0">
           <div class="table-responsive">

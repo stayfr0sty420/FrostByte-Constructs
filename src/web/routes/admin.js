@@ -30,10 +30,14 @@ const {
   generateAndStoreBackupCodes,
   getBackupCodes,
   consumeBackupCode,
+  getPasskeys,
   getAdminRoleLabel,
   verifyPassword,
   getStoredPasswordHash,
-  normalizeRole
+  normalizeRole,
+  addPasskeyToAdmin,
+  removePasskeyFromAdmin,
+  buildAuthenticatorForPasskey
 } = require('../../services/admin/adminUserService');
 const { createAdminLog } = require('../../services/admin/adminLogService');
 const {
@@ -51,6 +55,7 @@ const { sendLog } = require('../../services/discord/loggingService');
 const { getEconomyAccountGuildId, getEconomyAccountScope } = require('../../services/economy/accountScope');
 const { ensureVoiceConnection, disconnectVoice } = require('../../jobs/voiceScheduler');
 const { buildVerifyPanelEmbed, buildVerifyPanelRow } = require('../../bots/verification/util/verifyMessages');
+const { createPasskeyRegistrationOptions, verifyPasskeyRegistration } = require('../utils/passkeyService');
 
 const router = express.Router();
 const ACCOUNT_AUDIT_STAGES = ['account-create', 'account-enable', 'account-disable', 'account-delete', 'account-update'];
@@ -134,6 +139,29 @@ function clearPendingAccount2FASetup(req) {
   if (req.session?.account2FASetup) delete req.session.account2FASetup;
 }
 
+function getBackupCodeRevealSession(req, userId) {
+  const reveal = req.session?.accountBackupCodeReveal || null;
+  if (!reveal) return null;
+  if (String(reveal.userId || '') !== String(userId || '')) return null;
+  const expiresAt = reveal.expiresAt ? new Date(reveal.expiresAt) : null;
+  if (!expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt.getTime() <= Date.now()) {
+    delete req.session.accountBackupCodeReveal;
+    return null;
+  }
+  return reveal;
+}
+
+function setBackupCodeRevealSession(req, userId, minutes = 5) {
+  req.session.accountBackupCodeReveal = {
+    userId: String(userId || ''),
+    expiresAt: new Date(Date.now() + minutes * 60 * 1000).toISOString()
+  };
+}
+
+function clearBackupCodeRevealSession(req) {
+  if (req.session?.accountBackupCodeReveal) delete req.session.accountBackupCodeReveal;
+}
+
 async function resolveMyAccountViewState(req, user) {
   const pendingSetup = getPendingAccount2FASetup(req, user?._id);
   let qrCodeDataUrl = '';
@@ -153,11 +181,13 @@ async function resolveMyAccountViewState(req, user) {
   return {
     qrCodeDataUrl,
     manualSetupKey,
-    backupCodes: getBackupCodes(user)
+    backupCodesVisible: Boolean(getBackupCodeRevealSession(req, user?._id)),
+    backupCodes: getBackupCodeRevealSession(req, user?._id) ? getBackupCodes(user) : [],
+    passkeys: getPasskeys(user)
   };
 }
 
-async function verifySecurityChallenge({ user, password = '', code = '', backupCode = '' }) {
+async function verifySecurityChallenge({ user, password = '', code = '', backupCode = '', allowBackupCode = true }) {
   if (user?.is2FAEnabled && user?.twoFASecret) {
     const token = String(code || '').trim();
     if (token) {
@@ -171,12 +201,17 @@ async function verifySecurityChallenge({ user, password = '', code = '', backupC
     }
 
     const backup = String(backupCode || '').trim();
-    if (backup) {
+    if (allowBackupCode && backup) {
       const result = await consumeBackupCode(user, backup);
       if (result.ok) return { ok: true, method: 'backup' };
     }
 
-    return { ok: false, reason: 'Enter a valid authenticator code or unused backup code.' };
+    return {
+      ok: false,
+      reason: allowBackupCode
+        ? 'Enter a valid authenticator code or unused backup code.'
+        : 'Enter a valid authenticator code.'
+    };
   }
 
   const validPassword = await verifyPassword(password, getStoredPasswordHash(user));
@@ -298,6 +333,19 @@ function escapeRegex(input) {
   return String(input || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function serializeLogForSearch(log) {
+  const embeds = Array.isArray(log?.data?.embeds) ? log.data.embeds : [];
+  const embedText = embeds
+    .map((embed) => {
+      const fields = Array.isArray(embed?.fields) ? embed.fields : [];
+      const fieldText = fields.map((field) => `${field?.name || ''} ${field?.value || ''}`).join(' ');
+      return `${embed?.title || ''} ${embed?.description || ''} ${fieldText}`;
+    })
+    .join(' ');
+
+  return String(`${log?.bot || ''} ${log?.type || ''} ${log?.data?.content || ''} ${embedText} ${JSON.stringify(log?.data || {}) || ''}`).toLowerCase();
+}
+
 function listCommands(client) {
   const values = client?.commands?.values ? Array.from(client.commands.values()) : [];
   return values
@@ -349,6 +397,18 @@ async function fetchGuildFromClients(discord, guildId) {
   return null;
 }
 
+async function listTextChannelsFromClients(discord, guildId) {
+  const guild = await fetchGuildFromClients(discord, guildId);
+  if (!guild) return [];
+  const channels = await guild.channels.fetch().catch(() => null);
+  return channels
+    ? channels
+        .filter((channel) => channel && channel.isTextBased?.() && !channel.isDMBased?.())
+        .map((channel) => ({ id: channel.id, name: channel.name || channel.id }))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
+    : [];
+}
+
 function guildIconUrl(discord, guildId, fallback = '') {
   const guild = guildFromClients(discord, guildId);
   return guild?.iconURL?.({ size: 64, extension: 'png' }) || String(fallback || '').trim() || '';
@@ -398,7 +458,49 @@ function displayBotStatus({ approvalStatus, present }) {
   return 'pending';
 }
 
-async function sendApprovalNotice({ req, guildId, botName, status, actionLabel }) {
+function shouldAutoCleanupGuild(botApprovals, presence = {}) {
+  return BOT_DEFS.every((def) => {
+    const approvalStatus = String(botApprovals?.[def.key]?.status || 'pending');
+    const displayStatus = displayBotStatus({ approvalStatus, present: Boolean(presence?.[def.key]) });
+    return displayStatus === 'absent' || displayStatus === 'rejected';
+  });
+}
+
+async function purgeGuildData({ discord, guildId }) {
+  const schedules = await BackupSchedule.find({ guildId }).select('scheduleId').lean();
+  await Promise.all(schedules.map((schedule) => removeSchedule({ scheduleId: schedule.scheduleId })));
+
+  const backups = await Backup.find({ guildId }).select('backupId').lean();
+  for (const backup of backups) {
+    // eslint-disable-next-line no-await-in-loop
+    await deleteBackup({ guildId, backupId: backup.backupId }).catch(() => null);
+  }
+
+  await Promise.all([
+    GuildConfig.deleteOne({ guildId }),
+    User.deleteMany({ guildId }),
+    Transaction.deleteMany({ guildId }),
+    ShopListing.deleteMany({ guildId }),
+    IpLog.deleteMany({ guildId }),
+    MessageLog.deleteMany({ guildId }),
+    VerificationAttempt.deleteMany({ guildId }),
+    VerificationSession.deleteMany({ guildId }),
+    Template.deleteMany({ guildId })
+  ]);
+
+  const leaveResults = await Promise.all([
+    leaveGuildIfPresent(discord?.economy, guildId),
+    leaveGuildIfPresent(discord?.backup, guildId),
+    leaveGuildIfPresent(discord?.verification, guildId)
+  ]);
+
+  return {
+    ok: true,
+    removedBots: leaveResults.filter(Boolean).length
+  };
+}
+
+async function sendApprovalNotice({ req, guildId, botName, status, actionLabel, cfg }) {
   const discordClient = req.app.locals.discord?.verification;
   if (!discordClient) return;
   const reviewer = adminDisplayName(req.adminUser);
@@ -407,7 +509,9 @@ async function sendApprovalNotice({ req, guildId, botName, status, actionLabel }
   if (!guild) return;
 
   const channels = await guild.channels.fetch().catch(() => null);
+  const preferredChannelId = String(cfg?.approval?.notificationChannelId || '').trim();
   const targetChannel =
+    (preferredChannelId ? channels?.get(preferredChannelId) : null) ||
     (guild.systemChannelId ? channels?.get(guild.systemChannelId) : null) ||
     (guild.rulesChannelId ? channels?.get(guild.rulesChannelId) : null) ||
     channels
@@ -432,19 +536,12 @@ async function sendApprovalNotice({ req, guildId, botName, status, actionLabel }
     )
     .addFields(
       { name: 'Sanctioned By', value: reviewer, inline: true },
-      { name: 'Action', value: actionLabel || status, inline: true }
+      { name: 'Action', value: actionLabel || status, inline: true },
+      { name: 'Channel', value: targetChannel ? `<#${targetChannel.id}>` : 'Unavailable', inline: true }
     )
     .setTimestamp();
 
-  await sendLog({
-    discordClient,
-    guildId,
-    type: 'verification',
-    webhookCategory: 'verification',
-    embeds: [embed]
-  }).catch(() => null);
-
-  await targetChannel.send({ embeds: [embed] }).catch(() => null);
+  await targetChannel.send({ embeds: [embed], skipBotBranding: true }).catch(() => null);
 }
 
 // Home
@@ -480,7 +577,7 @@ router.get('/help', requireAdmin, async (req, res) => {
 
 router.get('/account', requireAdmin, async (req, res) => {
   const user = await AdminUser.findById(req.adminUser._id)
-    .select('name email role disabled lastLoginAt lastLoginDate lastLoginIP createdAt is2FAEnabled twoFASecret backupCodes')
+    .select('name email role disabled lastLoginAt lastLoginDate lastLoginIP createdAt is2FAEnabled twoFASecret backupCodes passkeys')
     .catch(() => null);
   if (!user) {
     clearAdminAuthCookie(res);
@@ -499,7 +596,9 @@ router.get('/account', requireAdmin, async (req, res) => {
     flash,
     qrCodeDataUrl: viewState.qrCodeDataUrl,
     manualSetupKey: viewState.manualSetupKey,
-    backupCodes: viewState.backupCodes
+    backupCodes: viewState.backupCodes,
+    backupCodesVisible: viewState.backupCodesVisible,
+    passkeys: viewState.passkeys
   });
 });
 
@@ -667,7 +766,8 @@ router.post('/account/backup-codes/regenerate', requireAdmin, async (req, res) =
     user,
     password: req.body.password,
     code: req.body.code,
-    backupCode: req.body.backupCode
+    backupCode: req.body.backupCode,
+    allowBackupCode: false
   });
   if (!challenge.ok) {
     setFlash(req, { type: 'danger', message: challenge.reason || 'Unable to verify account security challenge.' });
@@ -680,6 +780,148 @@ router.post('/account/backup-codes/regenerate', requireAdmin, async (req, res) =
     reason: `Regenerated backup codes for ${user.email}.`
   });
   setFlash(req, { type: 'success', message: 'Generated a brand new set of backup codes.' });
+  return res.redirect('/admin/account');
+});
+
+router.post('/account/backup-codes/view', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id).catch(() => null);
+  if (!user) {
+    setAuthFlash(req, { type: 'error', message: 'Admin account not found. Please log in again.' });
+    return res.redirect('/admin/login');
+  }
+  if (!user.is2FAEnabled || !user.twoFASecret) {
+    setFlash(req, { type: 'warning', message: 'Enable authenticator first before using backup codes.' });
+    return res.redirect('/admin/account');
+  }
+
+  const challenge = await verifySecurityChallenge({
+    user,
+    code: req.body.code,
+    allowBackupCode: false
+  });
+  if (!challenge.ok) {
+    setFlash(req, { type: 'danger', message: challenge.reason || 'Unable to verify authenticator challenge.' });
+    return res.redirect('/admin/account');
+  }
+
+  setBackupCodeRevealSession(req, user._id, 5);
+  setFlash(req, { type: 'success', message: 'Backup codes are visible for the next 5 minutes.' });
+  return res.redirect('/admin/account');
+});
+
+router.post('/account/backup-codes/hide', requireAdmin, async (req, res) => {
+  clearBackupCodeRevealSession(req);
+  setFlash(req, { type: 'info', message: 'Backup codes hidden again.' });
+  return res.redirect('/admin/account');
+});
+
+router.post('/account/passkeys/options', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id).select('name email passkeys').catch(() => null);
+  if (!user) {
+    return res.status(404).json({ ok: false, reason: 'Admin account not found.' });
+  }
+
+  const options = await createPasskeyRegistrationOptions({ user, passkeys: user.passkeys || [] });
+  req.session.accountPasskeyRegistration = {
+    userId: String(user._id),
+    challenge: options.challenge,
+    createdAt: new Date().toISOString()
+  };
+
+  return res.json({ ok: true, options });
+});
+
+router.post('/account/passkeys/register', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id).select('name email passkeys').catch(() => null);
+  const payload = req.session?.accountPasskeyRegistration || null;
+  if (!user) {
+    return res.status(404).json({ ok: false, reason: 'Admin account not found.' });
+  }
+  if (!payload?.challenge || String(payload.userId || '') !== String(user._id || '')) {
+    return res.status(400).json({ ok: false, reason: 'Passkey setup expired. Start again.' });
+  }
+
+  const response = req.body && typeof req.body === 'object' ? req.body.response || req.body : null;
+  if (!response?.rawId) {
+    return res.status(400).json({ ok: false, reason: 'Invalid passkey registration response.' });
+  }
+
+  let verification;
+  try {
+    verification = await verifyPasskeyRegistration({
+      response,
+      challenge: payload.challenge
+    });
+  } catch (_error) {
+    return res.status(400).json({ ok: false, reason: 'Passkey registration could not be verified.' });
+  }
+
+  if (!verification.verified || !verification.registrationInfo) {
+    return res.status(400).json({ ok: false, reason: 'Passkey registration could not be verified.' });
+  }
+
+  const info = verification.registrationInfo;
+  const result = await addPasskeyToAdmin(user, {
+    credentialID: Buffer.from(info.credentialID).toString('base64url'),
+    publicKey: Buffer.from(info.credentialPublicKey).toString('base64url'),
+    counter: info.counter,
+    transports: Array.isArray(response?.response?.transports) ? response.response.transports : [],
+    aaguid: String(info.aaguid || ''),
+    deviceType: info.credentialDeviceType,
+    backedUp: info.credentialBackedUp,
+    name: req.body.passkeyName
+  });
+  delete req.session.accountPasskeyRegistration;
+
+  if (!result.ok) {
+    return res.status(400).json({ ok: false, reason: result.reason || 'Unable to save passkey.' });
+  }
+
+  await logAccountAudit(req, {
+    stage: 'account-update',
+    reason: `Added passkey login for ${user.email}.`
+  });
+  return res.json({ ok: true, message: 'Security passkey added.' });
+});
+
+router.post('/account/passkeys/remove', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id).select('email is2FAEnabled twoFASecret backupCodes passkeys password passwordHash').catch(() => null);
+  if (!user) {
+    setAuthFlash(req, { type: 'error', message: 'Admin account not found. Please log in again.' });
+    return res.redirect('/admin/login');
+  }
+
+  const credentialId = String(req.body.credentialId || '').trim();
+  const authenticator = Array.isArray(user.passkeys)
+    ? user.passkeys.find((entry) => String(entry?.credentialID || '').trim() === credentialId)
+    : null;
+  if (!credentialId || !buildAuthenticatorForPasskey(authenticator)) {
+    setFlash(req, { type: 'warning', message: 'Passkey not found.' });
+    return res.redirect('/admin/account');
+  }
+
+  const challenge = await verifySecurityChallenge({
+    user,
+    password: req.body.password,
+    code: req.body.code,
+    allowBackupCode: false
+  });
+  if (!challenge.ok) {
+    setFlash(req, { type: 'danger', message: challenge.reason || 'Unable to verify account security challenge.' });
+    return res.redirect('/admin/account');
+  }
+
+  const removed = await removePasskeyFromAdmin(user, credentialId);
+  if (!removed.ok) {
+    setFlash(req, { type: 'danger', message: removed.reason || 'Unable to remove passkey.' });
+    return res.redirect('/admin/account');
+  }
+
+  await logAccountAudit(req, {
+    stage: 'account-update',
+    reason: `Removed passkey login for ${user.email}.`
+  });
+  setFlash(req, { type: 'success', message: 'Security passkey removed.' });
   return res.redirect('/admin/account');
 });
 
@@ -763,8 +1005,27 @@ router.get('/servers', requireAdmin, async (req, res) => {
     .limit(500)
     .lean();
   const discord = req.app.locals.discord;
+  const activeGuildId = String(req.session.activeGuildId || '').trim();
 
-  const servers = configs
+  const staleGuildIds = [];
+  for (const cfg of configs) {
+    const guildId = String(cfg.guildId || '').trim();
+    if (!guildId) continue;
+    const presence = { ...(cfg.bots || {}), ...(await resolvePresenceFromClients(discord, guildId)) };
+    const botApprovals = buildBotApprovals(cfg);
+    if (!shouldAutoCleanupGuild(botApprovals, presence)) continue;
+    staleGuildIds.push(guildId);
+    // eslint-disable-next-line no-await-in-loop
+    await purgeGuildData({ discord, guildId });
+  }
+
+  if (staleGuildIds.includes(activeGuildId)) {
+    delete req.session.activeGuildId;
+  }
+
+  const filteredConfigs = configs.filter((cfg) => !staleGuildIds.includes(String(cfg.guildId || '').trim()));
+
+  const servers = filteredConfigs
     .map((cfg) => {
       const guildId = cfg.guildId;
       const presence = {
@@ -833,6 +1094,13 @@ router.get('/servers/:guildId/approvals', requireAdmin, async (req, res) => {
   const discord = req.app.locals.discord;
   const presence = { ...(cfg.bots || {}), ...(await resolvePresenceFromClients(discord, guildId)) };
   const botApprovals = buildBotApprovals(cfg);
+  if (shouldAutoCleanupGuild(botApprovals, presence)) {
+    await purgeGuildData({ discord, guildId });
+    if (req.session.activeGuildId === guildId) delete req.session.activeGuildId;
+    setFlash(req, { type: 'info', message: `All bot approvals became absent/rejected, so ${guildId} was removed.` });
+    return res.redirect('/admin/servers');
+  }
+  const channels = await listTextChannelsFromClients(discord, guildId);
   const bots = BOT_DEFS.map((def) => {
     const present = Boolean(presence?.[def.key]);
     const approvalStatus = botApprovals[def.key]?.status || 'pending';
@@ -862,8 +1130,30 @@ router.get('/servers/:guildId/approvals', requireAdmin, async (req, res) => {
     guildName: name,
       guildIcon: guildIconUrl(discord, guildId, cfg.guildIcon),
     bots,
+    channels,
+    approvalNotificationChannelId: String(cfg.approval?.notificationChannelId || '').trim(),
     flash
   });
+});
+
+router.post('/servers/:guildId/approvals/channel', requireAdmin, async (req, res) => {
+  const guildId = String(req.params.guildId || '').trim();
+  if (!guildId) return res.redirect('/admin/servers');
+
+  const cfg = await GuildConfig.findOne({ guildId }).catch(() => null);
+  if (!cfg) {
+    setFlash(req, { type: 'warning', message: 'Server not found in database yet.' });
+    return res.redirect('/admin/servers');
+  }
+
+  const channelId = String(req.body.notificationChannelId || '').trim();
+  cfg.approval.notificationChannelId = channelId;
+  await cfg.save();
+  setFlash(req, {
+    type: 'success',
+    message: channelId ? 'Approval notification channel updated.' : 'Approval notification channel cleared.'
+  });
+  return res.redirect(`/admin/servers/${guildId}/approvals`);
 });
 
 router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (req, res) => {
@@ -918,16 +1208,32 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
   const def = BOT_DEFS.find((b) => b.key === botKey);
   const discordClient = def ? req.app.locals.discord?.[def.clientKey] : null;
   const statusLabel = status === 'approved' ? 'approved' : 'rejected';
+  const refreshedConfig = await GuildConfig.findOne({ guildId }).select('approval botApprovals bots').lean();
   await sendApprovalNotice({
     req,
     guildId,
     botName: def?.name || botKey,
     status: statusLabel,
-    actionLabel: action === 'delete' ? 'Delete + Reject' : statusLabel
+    actionLabel: action === 'delete' ? 'Delete + Reject' : statusLabel,
+    cfg: refreshedConfig
   });
 
   if (action === 'delete' && discordClient) {
     await leaveGuildIfPresent(discordClient, guildId);
+  }
+
+  const cleanupPresence = { ...(refreshedConfig?.bots || {}), ...(await resolvePresenceFromClients(discord, guildId)) };
+  const cleanupApprovals = buildBotApprovals(refreshedConfig || cfg);
+  if (shouldAutoCleanupGuild(cleanupApprovals, cleanupPresence)) {
+    const cleanup = await purgeGuildData({ discord, guildId });
+    if (req.session.activeGuildId === guildId) delete req.session.activeGuildId;
+    setFlash(req, {
+      type: 'info',
+      message: cleanup.removedBots
+        ? `All bot approvals became absent/rejected, so ${guildId} was removed and ${cleanup.removedBots} bot(s) left the server.`
+        : `All bot approvals became absent/rejected, so ${guildId} was removed.`
+    });
+    return res.redirect('/admin/servers');
   }
 
   setFlash(req, {
@@ -1029,6 +1335,19 @@ router.post('/servers/reject/:guildId', requireAdmin, async (req, res) => {
       }
     }
   );
+  const refreshedConfig = await GuildConfig.findOne({ guildId }).select('approval botApprovals bots').lean();
+  const cleanupApprovals = buildBotApprovals(refreshedConfig);
+  if (shouldAutoCleanupGuild(cleanupApprovals, presence)) {
+    const cleanup = await purgeGuildData({ discord, guildId });
+    if (req.session.activeGuildId === guildId) delete req.session.activeGuildId;
+    setFlash(req, {
+      type: 'info',
+      message: cleanup.removedBots
+        ? `Rejected server ${guildId}, removed its record, and disconnected ${cleanup.removedBots} bot(s).`
+        : `Rejected server ${guildId} and removed its record.`
+    });
+    return res.redirect('/admin/servers');
+  }
   if (req.session.activeGuildId === guildId) delete req.session.activeGuildId;
   setFlash(req, { type: 'info', message: `Rejected server ${guildId}.` });
   return res.redirect('/admin/servers');
@@ -1038,33 +1357,9 @@ router.post('/servers/delete/:guildId', requireAdmin, async (req, res) => {
   const guildId = String(req.params.guildId || '');
   if (!guildId) return res.redirect('/admin/servers');
 
-  const schedules = await BackupSchedule.find({ guildId }).select('scheduleId').lean();
-  await Promise.all(schedules.map((s) => removeSchedule({ scheduleId: s.scheduleId })));
-
-  const backups = await Backup.find({ guildId }).select('backupId').lean();
-  for (const backup of backups) {
-    await deleteBackup({ guildId, backupId: backup.backupId }).catch(() => null);
-  }
-
-  await Promise.all([
-    GuildConfig.deleteOne({ guildId }),
-    User.deleteMany({ guildId }),
-    Transaction.deleteMany({ guildId }),
-    ShopListing.deleteMany({ guildId }),
-    IpLog.deleteMany({ guildId }),
-    MessageLog.deleteMany({ guildId }),
-    VerificationAttempt.deleteMany({ guildId }),
-    VerificationSession.deleteMany({ guildId }),
-    Template.deleteMany({ guildId })
-  ]);
-
   const discord = req.app.locals.discord || {};
-  const leaveResults = await Promise.all([
-    leaveGuildIfPresent(discord.economy, guildId),
-    leaveGuildIfPresent(discord.backup, guildId),
-    leaveGuildIfPresent(discord.verification, guildId)
-  ]);
-  const leftCount = leaveResults.filter(Boolean).length;
+  const cleanup = await purgeGuildData({ discord, guildId });
+  const leftCount = cleanup.removedBots || 0;
 
   if (req.session.activeGuildId === guildId) delete req.session.activeGuildId;
   setFlash(req, {
@@ -1458,6 +1753,7 @@ router.post('/economy/users/whitelist/add', requireAdmin, requireGuild, async (r
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
   const label = username ? `${username} (${discordId})` : discordId;
+  const actor = adminDisplayName(req.adminUser);
   if (!isSnowflake(discordId)) {
     setFlash(req, { type: 'warning', message: 'Valid Discord ID is required.' });
     return res.redirect('/admin/economy/users');
@@ -1475,7 +1771,7 @@ router.post('/economy/users/whitelist/add', requireAdmin, requireGuild, async (r
     guildId,
     type: 'economy',
     webhookCategory: 'economy',
-    content: `✅ Credit grant whitelist: added ${label} • ${req.adminUser.email}`
+    content: `**Credit Grant Whitelist Updated**\n**Action:** Added\n**User:** ${label}\n**By:** ${actor}`
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Whitelisted ${label} for credit grants.` });
@@ -1487,6 +1783,7 @@ router.post('/economy/users/whitelist/remove', requireAdmin, requireGuild, async
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
   const label = username ? `${username} (${discordId})` : discordId;
+  const actor = adminDisplayName(req.adminUser);
   if (!isSnowflake(discordId)) {
     setFlash(req, { type: 'warning', message: 'Valid Discord ID is required.' });
     return res.redirect('/admin/economy/users');
@@ -1503,7 +1800,7 @@ router.post('/economy/users/whitelist/remove', requireAdmin, requireGuild, async
     guildId,
     type: 'economy',
     webhookCategory: 'economy',
-    content: `🗑️ Credit grant whitelist: removed ${label} • ${req.adminUser.email}`
+    content: `**Credit Grant Whitelist Updated**\n**Action:** Removed\n**User:** ${label}\n**By:** ${actor}`
   }).catch(() => null);
 
   setFlash(req, { type: 'info', message: `Removed ${label} from credit grants whitelist.` });
@@ -1516,6 +1813,7 @@ router.post('/economy/users/grant', requireAdmin, requireGuild, async (req, res)
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
   const label = username ? `${username} (${discordId})` : discordId;
+  const actor = adminDisplayName(req.adminUser);
   const amount = Math.floor(Number(req.body.amount) || 0);
   const safeAmount = Math.min(1_000_000_000, Math.max(0, amount));
 
@@ -1549,9 +1847,9 @@ router.post('/economy/users/grant', requireAdmin, requireGuild, async (req, res)
     guildId,
     type: 'economy',
     webhookCategory: 'economy',
-    content: `🎁 Admin grant: +${safeAmount.toLocaleString('en-US')} Rodstarkian Credits to ${label} → wallet **${Number(
+    content: `**Rodstarkian Credits Granted**\n**Member:** ${label}\n**Amount:** +${safeAmount.toLocaleString('en-US')}\n**Wallet:** ${Number(
       user.balance ?? 0
-    ).toLocaleString('en-US')}** • ${req.adminUser.email}`
+    ).toLocaleString('en-US')}\n**By:** ${actor}`
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Granted ${safeAmount.toLocaleString('en-US')} Rodstarkian Credits to ${label}.` });
@@ -1564,6 +1862,7 @@ router.post('/economy/users/deduct', requireAdmin, requireGuild, async (req, res
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
   const label = username ? `${username} (${discordId})` : discordId;
+  const actor = adminDisplayName(req.adminUser);
   const amount = Math.floor(Number(req.body.amount) || 0);
   const safeAmount = Math.min(1_000_000_000, Math.max(0, amount));
 
@@ -1601,9 +1900,9 @@ router.post('/economy/users/deduct', requireAdmin, requireGuild, async (req, res
     guildId,
     type: 'economy',
     webhookCategory: 'economy',
-    content: `🧾 Admin deduct: -${safeAmount.toLocaleString('en-US')} Rodstarkian Credits from ${label} → wallet **${Number(
+    content: `**Rodstarkian Credits Deducted**\n**Member:** ${label}\n**Amount:** -${safeAmount.toLocaleString('en-US')}\n**Wallet:** ${Number(
       user.balance ?? 0
-    ).toLocaleString('en-US')}** • ${req.adminUser.email}`
+    ).toLocaleString('en-US')}\n**By:** ${actor}`
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Deducted ${safeAmount.toLocaleString('en-US')} Rodstarkian Credits from ${label}.` });
@@ -1616,6 +1915,7 @@ router.post('/economy/users/gift', requireAdmin, requireGuild, async (req, res) 
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
   const label = username ? `${username} (${discordId})` : discordId;
+  const actor = adminDisplayName(req.adminUser);
   const amount = Math.floor(Number(req.body.amount) || 0);
   const safeAmount = Math.min(1_000_000_000, Math.max(0, amount));
 
@@ -1649,9 +1949,9 @@ router.post('/economy/users/gift', requireAdmin, requireGuild, async (req, res) 
     guildId,
     type: 'economy',
     webhookCategory: 'economy',
-    content: `🎁 Admin gift: +${safeAmount.toLocaleString('en-US')} Rodstarkian Credits to ${label} → wallet **${Number(
+    content: `**Rodstarkian Credits Provided**\n**Member:** ${label}\n**Amount:** +${safeAmount.toLocaleString('en-US')}\n**Wallet:** ${Number(
       user.balance ?? 0
-    ).toLocaleString('en-US')}** • ${req.adminUser.email}`
+    ).toLocaleString('en-US')}\n**By:** ${actor}`
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Gifted ${safeAmount.toLocaleString('en-US')} Rodstarkian Credits to ${label}.` });
@@ -1664,6 +1964,7 @@ router.post('/economy/users/exp', requireAdmin, requireGuild, async (req, res) =
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
   const label = username ? `${username} (${discordId})` : discordId;
+  const actor = adminDisplayName(req.adminUser);
   const amount = Math.floor(Number(req.body.amount) || 0);
   const safeAmount = Math.min(1_000_000_000, Math.max(0, amount));
 
@@ -1697,7 +1998,7 @@ router.post('/economy/users/exp', requireAdmin, requireGuild, async (req, res) =
     guildId,
     type: 'economy',
     webhookCategory: 'economy',
-    content: `⚡ Admin EXP grant: +${safeAmount.toLocaleString('en-US')} EXP to ${label} • ${req.adminUser.email}`
+    content: `**Experience Granted**\n**Member:** ${label}\n**Amount:** +${safeAmount.toLocaleString('en-US')} EXP\n**By:** ${actor}`
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Granted ${safeAmount.toLocaleString('en-US')} EXP to ${label}.` });
@@ -1707,6 +2008,7 @@ router.post('/economy/users/exp', requireAdmin, requireGuild, async (req, res) =
 router.post('/economy/users/gift-all', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
   const accountGuildId = getEconomyAccountGuildId(guildId);
+  const actor = adminDisplayName(req.adminUser);
   const amount = Math.floor(Number(req.body.amount) || 0);
   const safeAmount = Math.min(1_000_000_000, Math.max(0, amount));
   if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
@@ -1727,9 +2029,9 @@ router.post('/economy/users/gift-all', requireAdmin, requireGuild, async (req, r
     guildId,
     type: 'economy',
     webhookCategory: 'economy',
-    content: `🎉 Admin gift-all: +${safeAmount.toLocaleString('en-US')} Rodstarkian Credits to **${Number(modified || 0).toLocaleString(
+    content: `**Bulk Rodstarkian Credits Provided**\n**Members Affected:** ${Number(modified || 0).toLocaleString(
       'en-US'
-    )}** users • ${req.adminUser.email}`
+    )}\n**Amount Per Member:** +${safeAmount.toLocaleString('en-US')}\n**By:** ${actor}`
   }).catch(() => null);
 
   setFlash(req, {
@@ -1742,6 +2044,7 @@ router.post('/economy/users/gift-all', requireAdmin, requireGuild, async (req, r
 router.post('/economy/users/exp-all', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
   const accountGuildId = getEconomyAccountGuildId(guildId);
+  const actor = adminDisplayName(req.adminUser);
   const amount = Math.floor(Number(req.body.amount) || 0);
   const safeAmount = Math.min(1_000_000_000, Math.max(0, amount));
   if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
@@ -1762,7 +2065,9 @@ router.post('/economy/users/exp-all', requireAdmin, requireGuild, async (req, re
     guildId,
     type: 'economy',
     webhookCategory: 'economy',
-    content: `⚡ Admin exp-all: +${safeAmount.toLocaleString('en-US')} EXP to **${Number(modified || 0).toLocaleString('en-US')}** users • ${req.adminUser.email}`
+    content: `**Bulk Experience Granted**\n**Members Affected:** ${Number(modified || 0).toLocaleString(
+      'en-US'
+    )}\n**Amount Per Member:** +${safeAmount.toLocaleString('en-US')} EXP\n**By:** ${actor}`
   }).catch(() => null);
 
   setFlash(req, {
@@ -2001,7 +2306,7 @@ router.post('/verification/settings', requireAdmin, requireGuild, async (req, re
   cfg.verification.tempRoleId = String(req.body.tempRoleId || '');
   cfg.verification.verifiedRoleId = String(req.body.verifiedRoleId || '');
   cfg.verification.logChannelId = String(req.body.logChannelId || '');
-  cfg.verification.panelEnabled = Boolean(req.body.panelEnabled);
+  cfg.verification.panelEnabled = Boolean(req.body.panelEnabled || panelPostRequested);
   cfg.verification.panelChannelId = String(req.body.panelChannelId || '');
 
   const questionPayload = req.body.questions || req.body['questions[]'];
@@ -2195,7 +2500,7 @@ router.post('/verification/approve/:id', requireAdmin, requireGuild, async (req,
     guildId,
     verificationId: req.params.id,
     action: 'approve',
-    reviewerId: req.adminUser.email
+    reviewerId: adminDisplayName(req.adminUser)
   });
   return res.redirect('/admin/verification/pending');
 });
@@ -2208,15 +2513,59 @@ router.post('/verification/deny/:id', requireAdmin, requireGuild, async (req, re
     guildId,
     verificationId: req.params.id,
     action: 'deny',
-    reviewerId: req.adminUser.email
+    reviewerId: adminDisplayName(req.adminUser)
   });
   return res.redirect('/admin/verification/pending');
 });
 
 router.get('/logs', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
-  const logs = await MessageLog.find({ guildId }).sort({ createdAt: -1 }).limit(200);
-  return res.render('pages/admin/logs', { title: 'Logs', logs });
+  const bot = String(req.query.bot || '').trim();
+  const type = String(req.query.type || '').trim();
+  const userQuery = String(req.query.user || '').trim();
+  const q = String(req.query.q || '').trim();
+  const from = String(req.query.from || '').trim();
+  const to = String(req.query.to || '').trim();
+
+  const filter = { guildId };
+  if (bot) filter.bot = bot;
+  if (type) filter.type = type;
+
+  const createdAt = {};
+  if (from) {
+    const start = new Date(`${from}T00:00:00.000Z`);
+    if (!Number.isNaN(start.getTime())) createdAt.$gte = start;
+  }
+  if (to) {
+    const end = new Date(`${to}T23:59:59.999Z`);
+    if (!Number.isNaN(end.getTime())) createdAt.$lte = end;
+  }
+  if (Object.keys(createdAt).length) filter.createdAt = createdAt;
+
+  const [allBots, allTypes, rawLogs] = await Promise.all([
+    MessageLog.distinct('bot', { guildId }),
+    MessageLog.distinct('type', { guildId }),
+    MessageLog.find(filter).sort({ createdAt: -1 }).limit(400).lean()
+  ]);
+
+  const filteredLogs = rawLogs.filter((log) => {
+    const haystack = serializeLogForSearch(log);
+    if (userQuery && !haystack.includes(userQuery.toLowerCase())) return false;
+    if (q && !haystack.includes(q.toLowerCase())) return false;
+    return true;
+  });
+
+  const flash = req.session.flash || null;
+  delete req.session.flash;
+
+  return res.render('pages/admin/logs', {
+    title: 'Logs',
+    logs: filteredLogs,
+    filters: { bot, type, user: userQuery, q, from, to },
+    botOptions: allBots.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+    typeOptions: allTypes.filter(Boolean).sort((a, b) => String(a).localeCompare(String(b))),
+    flash
+  });
 });
 
 router.post('/logs/delete/:id', requireAdmin, requireGuild, async (req, res) => {
