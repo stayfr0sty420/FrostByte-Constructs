@@ -1,7 +1,7 @@
 'use strict';
 
 const { sendLog } = require('../../../services/discord/loggingService');
-const { baseEmbed, addField, formatUser } = require('../util/logHelpers');
+const { baseEmbed, addField, formatUser, setUserIdentity } = require('../util/logHelpers');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
 
 async function execute(client, ban) {
@@ -15,6 +15,7 @@ async function execute(client, ban) {
   const embed = baseEmbed('Member Banned');
   addField(embed, 'User', formatUser(user));
   if (reason) addField(embed, 'Reason', reason);
+  setUserIdentity(embed, user);
 
   await sendLog({
     discordClient: client,

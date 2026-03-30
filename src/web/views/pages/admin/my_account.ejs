@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+          <h1 class="h4 m-0">My Account</h1>
+          <div class="text-muted small">Manage your admin profile, password, authenticator, and recovery access.</div>
+        </div>
+        <a href="/admin/dashboard" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
+      </div>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="row g-3">
+        <div class="col-12 col-xl-5">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Account Overview</h2>
+              <dl class="row mb-0">
+                <dt class="col-5 text-muted">Name</dt>
+                <dd class="col-7"><%= accountUser.name || '—' %></dd>
+                <dt class="col-5 text-muted">Email</dt>
+                <dd class="col-7"><%= accountUser.email %></dd>
+                <dt class="col-5 text-muted">Role</dt>
+                <dd class="col-7"><span class="badge text-bg-secondary"><%= formatAdminRole(accountUser.role) %></span></dd>
+                <dt class="col-5 text-muted">Authenticator</dt>
+                <dd class="col-7">
+                  <% if (accountUser.is2FAEnabled) { %>
+                    <span class="badge text-bg-success">Enabled</span>
+                  <% } else { %>
+                    <span class="badge text-bg-warning">Disabled</span>
+                  <% } %>
+                </dd>
+                <dt class="col-5 text-muted">Created</dt>
+                <dd class="col-7"><%= formatDate(accountUser.createdAt) || '—' %></dd>
+                <dt class="col-5 text-muted">Last Login</dt>
+                <dd class="col-7"><%= formatDate(accountUser.lastLoginAt || accountUser.lastLoginDate) || 'Never' %></dd>
+                <dt class="col-5 text-muted">Last IP</dt>
+                <dd class="col-7"><%= accountUser.lastLoginIP || '—' %></dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-7">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Profile</h2>
+              <form method="post" action="/admin/account/profile" class="row g-3">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <div class="col-12">
+                  <label class="form-label">Display Name</label>
+                  <input class="form-control" type="text" name="name" value="<%= accountUser.name || '' %>" placeholder="Account display name" />
+                </div>
+                <div class="col-12 d-grid d-sm-flex justify-content-sm-end">
+                  <button class="btn btn-primary" type="submit">Save Profile</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Change Password</h2>
+              <form method="post" action="/admin/account/password" class="row g-3">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <div class="col-12">
+                  <label class="form-label">Current Password</label>
+                  <input class="form-control" type="password" name="currentPassword" required />
+                </div>
+                <div class="col-12">
+                  <label class="form-label">New Password</label>
+                  <input class="form-control" type="password" name="password" required />
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Confirm New Password</label>
+                  <input class="form-control" type="password" name="confirmPassword" required />
+                </div>
+                <div class="col-12 d-grid d-sm-flex justify-content-sm-end">
+                  <button class="btn btn-primary" type="submit">Update Password</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1">Authenticator</h2>
+                  <div class="text-muted small">Enable or disable your 6-digit authenticator, and keep backup codes ready.</div>
+                </div>
+                <% if (accountUser.is2FAEnabled) { %>
+                  <span class="badge text-bg-success">Enabled</span>
+                <% } else { %>
+                  <span class="badge text-bg-warning">Disabled</span>
+                <% } %>
+              </div>
+
+              <% if (!accountUser.is2FAEnabled) { %>
+                <% if (qrCodeDataUrl && manualSetupKey) { %>
+                  <div class="text-center mb-3">
+                    <img src="<%= qrCodeDataUrl %>" alt="Authenticator QR code" class="img-fluid rounded-4 border border-danger-subtle bg-white p-3" style="max-width: 240px;" />
+                  </div>
+                  <div class="alert alert-dark border border-danger-subtle">
+                    <div class="fw-semibold mb-1">Manual Setup Key</div>
+                    <code><%= manualSetupKey %></code>
+                  </div>
+                  <form method="post" action="/admin/account/2fa/enable" class="row g-3">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <div class="col-12">
+                      <label class="form-label">6-Digit Authenticator Code</label>
+                      <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
+                    </div>
+                    <div class="col-12 d-grid gap-2">
+                      <button class="btn btn-primary" type="submit">Enable Authenticator</button>
+                    </div>
+                  </form>
+                  <form method="post" action="/admin/account/2fa/cancel" class="mt-2">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <button class="btn btn-outline-light w-100" type="submit">Cancel Setup</button>
+                  </form>
+                <% } else { %>
+                  <p class="text-muted small">Start setup to scan a QR code or use the manual setup key in Google Authenticator.</p>
+                  <form method="post" action="/admin/account/2fa/start">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <button class="btn btn-primary w-100" type="submit">Set Up Authenticator</button>
+                  </form>
+                <% } %>
+              <% } else { %>
+                <div class="row g-3">
+                  <div class="col-12">
+                    <div class="alert alert-dark border border-success-subtle mb-0">
+                      Authenticator is active for this account. Use either your current 6-digit code or an unused backup code for sensitive actions.
+                    </div>
+                  </div>
+                  <div class="col-12">
+                    <form method="post" action="/admin/account/2fa/disable" class="row g-3">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                      <div class="col-12">
+                        <label class="form-label">Authenticator Code</label>
+                        <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" />
+                      </div>
+                      <div class="col-12">
+                        <label class="form-label">Or Backup Code</label>
+                        <input class="form-control" type="text" name="backupCode" placeholder="ABCD-EFGH" />
+                      </div>
+                      <div class="col-12 d-grid">
+                        <button class="btn btn-outline-warning" type="submit">Disable Authenticator</button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              <% } %>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1">Backup Codes</h2>
+                  <div class="text-muted small">Keep these one-time recovery codes somewhere safe. A used code cannot be used again.</div>
+                </div>
+                <% if (accountUser.is2FAEnabled) { %>
+                  <span class="badge text-bg-secondary"><%= backupCodes.filter((entry) => !entry.isUsed).length %> unused</span>
+                <% } %>
+              </div>
+
+              <% if (!accountUser.is2FAEnabled) { %>
+                <div class="text-muted small">Enable authenticator first to generate backup codes.</div>
+              <% } else { %>
+                <div class="row g-3 mb-3">
+                  <% backupCodes.forEach((entry) => { %>
+                    <div class="col-12 col-sm-6 col-xl-4">
+                      <div class="border rounded-4 p-3 h-100 bg-dark-subtle">
+                        <div class="fw-semibold"><code><%= entry.code || 'Unavailable' %></code></div>
+                        <div class="text-muted small mt-2">
+                          <% if (entry.isUsed) { %>
+                            Used on <%= formatDate(entry.usedAt) || '—' %>
+                          <% } else { %>
+                            Unused
+                          <% } %>
+                        </div>
+                      </div>
+                    </div>
+                  <% }) %>
+                </div>
+
+                <form method="post" action="/admin/account/backup-codes/regenerate" class="row g-3">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <div class="col-12 col-md-4">
+                    <label class="form-label">Authenticator Code</label>
+                    <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" />
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <label class="form-label">Or Backup Code</label>
+                    <input class="form-control" type="text" name="backupCode" placeholder="ABCD-EFGH" />
+                  </div>
+                  <div class="col-12 col-md-4 d-grid align-self-end">
+                    <button class="btn btn-outline-light" type="submit">Generate New Backup Codes</button>
+                  </div>
+                </form>
+              <% } %>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="card shadow-sm border-danger">
+            <div class="card-body">
+              <h2 class="h5 mb-1 text-danger">Danger Zone</h2>
+              <div class="text-muted small mb-3">Prime accounts cannot disable or delete themselves. Other accounts must confirm the security challenge first.</div>
+
+              <% if (accountUser.role === 'owner') { %>
+                <div class="alert alert-dark border border-danger-subtle mb-0">Prime accounts are protected from self-disable and self-delete actions.</div>
+              <% } else { %>
+                <div class="row g-3">
+                  <div class="col-12 col-xl-6">
+                    <div class="border rounded-4 p-3 h-100">
+                      <div class="fw-semibold mb-2">Disable Account</div>
+                      <div class="text-muted small mb-3">Disabling signs you out immediately and blocks future logins until a Prime account re-enables you.</div>
+                      <form method="post" action="/admin/account/disable" class="row g-3">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                        <% if (accountUser.is2FAEnabled) { %>
+                          <div class="col-12">
+                            <label class="form-label">Authenticator Code</label>
+                            <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" />
+                          </div>
+                          <div class="col-12">
+                            <label class="form-label">Or Backup Code</label>
+                            <input class="form-control" type="text" name="backupCode" placeholder="ABCD-EFGH" />
+                          </div>
+                        <% } else { %>
+                          <div class="col-12">
+                            <label class="form-label">Current Password</label>
+                            <input class="form-control" type="password" name="password" required />
+                          </div>
+                        <% } %>
+                        <div class="col-12 d-grid">
+                          <button class="btn btn-outline-warning" type="submit" data-confirm="Disable your own account and sign out now?" data-confirm-title="Disable account?" data-confirm-ok="Disable" data-confirm-cancel="Cancel">Disable My Account</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+
+                  <div class="col-12 col-xl-6">
+                    <div class="border rounded-4 p-3 h-100">
+                      <div class="fw-semibold mb-2 text-danger">Delete Account</div>
+                      <div class="text-muted small mb-3">Deleting removes this admin from MongoDB permanently and signs you out immediately.</div>
+                      <form method="post" action="/admin/account/delete" class="row g-3">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                        <% if (accountUser.is2FAEnabled) { %>
+                          <div class="col-12">
+                            <label class="form-label">Authenticator Code</label>
+                            <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" />
+                          </div>
+                          <div class="col-12">
+                            <label class="form-label">Or Backup Code</label>
+                            <input class="form-control" type="text" name="backupCode" placeholder="ABCD-EFGH" />
+                          </div>
+                        <% } else { %>
+                          <div class="col-12">
+                            <label class="form-label">Current Password</label>
+                            <input class="form-control" type="password" name="password" required />
+                          </div>
+                        <% } %>
+                        <div class="col-12 d-grid">
+                          <button class="btn btn-outline-danger" type="submit" data-confirm="Delete your account from the database and sign out?" data-confirm-title="Delete account?" data-confirm-ok="Delete" data-confirm-cancel="Cancel">Delete My Account</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              <% } %>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

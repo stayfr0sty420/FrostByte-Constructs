@@ -43,6 +43,40 @@ function formatDate(value) {
   return date.toISOString();
 }
 
+function getUserAvatarUrl(user, size = 128) {
+  if (!user) return '';
+  if (typeof user.displayAvatarURL === 'function') {
+    return user.displayAvatarURL({ extension: 'png', size });
+  }
+  if (typeof user.avatarURL === 'function') {
+    return user.avatarURL({ extension: 'png', size });
+  }
+  return '';
+}
+
+function setUserIdentity(embed, user, { thumbnail = true } = {}) {
+  if (!embed || !user) return embed;
+  const label = user.tag || user.username || user.globalName || user.id || 'Unknown User';
+  const avatarUrl = getUserAvatarUrl(user);
+  if (label) {
+    embed.setAuthor(avatarUrl ? { name: label, iconURL: avatarUrl } : { name: label });
+  }
+  if (thumbnail && avatarUrl) {
+    embed.setThumbnail(avatarUrl);
+  }
+  return embed;
+}
+
+function setEmojiIdentity(embed, emoji) {
+  if (!embed || !emoji) return embed;
+  const imageUrl =
+    (typeof emoji.imageURL === 'function' && emoji.imageURL({ extension: 'png', size: 256 })) ||
+    emoji.url ||
+    '';
+  if (imageUrl) embed.setThumbnail(imageUrl);
+  return embed;
+}
+
 function baseEmbed(title, description = '') {
   const embed = new EmbedBuilder().setColor(LOG_COLOR).setTitle(title).setTimestamp(new Date());
   if (description) embed.setDescription(truncate(description, 2048));
@@ -64,6 +98,9 @@ module.exports = {
   formatChannel,
   formatRole,
   formatDate,
+  getUserAvatarUrl,
+  setUserIdentity,
+  setEmojiIdentity,
   baseEmbed,
   addField
 };

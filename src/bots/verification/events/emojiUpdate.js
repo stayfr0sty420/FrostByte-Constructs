@@ -2,7 +2,7 @@
 
 const { sendLog } = require('../../../services/discord/loggingService');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
-const { baseEmbed, addField } = require('../util/logHelpers');
+const { baseEmbed, addField, setEmojiIdentity } = require('../util/logHelpers');
 
 async function execute(client, oldEmoji, newEmoji) {
   const guildId = newEmoji?.guild?.id || oldEmoji?.guild?.id;
@@ -17,6 +17,7 @@ async function execute(client, oldEmoji, newEmoji) {
   addField(embed, 'Before', oldEmoji.name || 'unknown', true);
   addField(embed, 'After', newEmoji.name || 'unknown', true);
   addField(embed, 'Emoji ID', newEmoji.id, true);
+  setEmojiIdentity(embed, newEmoji);
 
   await sendLog({
     discordClient: client,

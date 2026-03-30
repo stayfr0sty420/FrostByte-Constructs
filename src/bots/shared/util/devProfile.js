@@ -30,12 +30,9 @@ function buildDevProfileEmbed(botName) {
         '📁 **Architect Dossier**',
         `Subject: **${DEV_DISPLAY_NAME}**`,
         'Designation: **Lead Architect**',
-        'Expertise: **Systems Engineering**',
-        '',
-        `▶ [Visit Profile](${DEV_PROFILE_URL})`
+        'Expertise: **Systems Engineering**'
       ].join('\n')
-    )
-    .setFooter({ text: 'Rodstarkian Bot Ecosystem • Developer Profile' });
+    );
 
   const authorIconUrl = getAssetUrl(GODS_EYE_AUTHOR_ICON_PATH);
   const thumbnailUrl = getAssetUrl(DEV_THUMBNAIL_PATH);

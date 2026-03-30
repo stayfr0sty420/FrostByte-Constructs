@@ -49,7 +49,6 @@
               <ul class="dropdown-menu dropdown-menu-dark">
                 <li><a class="dropdown-item" href="/admin/verification/settings">Verification</a></li>
                 <li><a class="dropdown-item" href="/admin/verification/iplogs">IP Logs</a></li>
-                <li><a class="dropdown-item" href="/admin/verification/pending">Pending Reviews</a></li>
               </ul>
             </li>
 
@@ -59,8 +58,6 @@
               </a>
               <ul class="dropdown-menu dropdown-menu-dark">
                 <li><a class="dropdown-item" href="/admin/economy/users">Users</a></li>
-                <li><a class="dropdown-item" href="/admin/economy/items">Items</a></li>
-                <li><a class="dropdown-item" href="/admin/economy/shop">Shop</a></li>
               </ul>
             </li>
 
@@ -74,7 +71,9 @@
             </li>
           <% } %>
 
-          <% if (safeAdminUser && safeAdminUser.role === 'owner') { %>
+          <li class="nav-item"><a class="nav-link" href="/admin/account">My Account</a></li>
+
+          <% if (safeAdminUser) { %>
             <li class="nav-item"><a class="nav-link" href="/admin/accounts">Accounts</a></li>
           <% } %>
 
@@ -90,7 +89,7 @@
         <% if (safeAdminUser) { %>
         <li class="nav-item">
           <span class="user-pill me-3">
-            <span class="user-name">Admin</span>
+            <span class="user-name"><%= formatAdminRole(safeAdminUser.role) %></span>
             <span class="user-email"><%= safeAdminUser.email %></span>
           </span>
         </li>

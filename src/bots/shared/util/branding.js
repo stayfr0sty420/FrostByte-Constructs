@@ -52,6 +52,10 @@ function brandPayload(payload) {
   if (payload == null) return payload;
   if (typeof payload === 'string') return appendBotNote(payload);
   if (typeof payload !== 'object') return payload;
+  if (payload.skipBotBranding) {
+    const { skipBotBranding, ...cleanPayload } = payload;
+    return cleanPayload;
+  }
 
   const branded = { ...payload };
   const hasEmbeds = Array.isArray(branded.embeds) && branded.embeds.length > 0;

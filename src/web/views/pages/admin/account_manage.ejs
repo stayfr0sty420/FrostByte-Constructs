@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+          <h1 class="h4 m-0">Manage Account</h1>
+          <div class="text-muted small"><%= user.email %></div>
+        </div>
+        <a href="/admin/accounts" class="btn btn-outline-secondary btn-sm">Back to Accounts</a>
+      </div>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="row g-3">
+        <div class="col-12 col-xl-7">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Profile & Role</h2>
+              <form method="post" action="/admin/accounts/<%= user._id %>" class="row g-3">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <div class="col-12">
+                  <label class="form-label">Name</label>
+                  <input class="form-control" type="text" name="name" value="<%= user.name || '' %>" required />
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Email</label>
+                  <input class="form-control" type="email" value="<%= user.email %>" disabled />
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Role</label>
+                  <select class="form-select" name="role" <%= String(user._id) === meId ? 'disabled' : '' %>>
+                    <option value="admin" <%= user.role === 'admin' ? 'selected' : '' %>>Administrator</option>
+                    <option value="owner" <%= user.role === 'owner' ? 'selected' : '' %>>Prime</option>
+                  </select>
+                  <% if (String(user._id) === meId) { %>
+                    <div class="form-text">You cannot change your own role.</div>
+                    <input type="hidden" name="role" value="<%= user.role %>" />
+                  <% } %>
+                </div>
+                <div class="col-12 d-grid d-sm-flex justify-content-sm-end">
+                  <button class="btn btn-primary" type="submit">Save Changes</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-5">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Status</h2>
+              <dl class="row mb-0">
+                <dt class="col-5 text-muted">Role</dt>
+                <dd class="col-7"><span class="badge text-bg-secondary"><%= formatAdminRole(user.role) %></span></dd>
+                <dt class="col-5 text-muted">Status</dt>
+                <dd class="col-7">
+                  <% if (user.disabled) { %>
+                    <span class="badge text-bg-danger">Disabled</span>
+                  <% } else { %>
+                    <span class="badge text-bg-success">Active</span>
+                  <% } %>
+                </dd>
+                <dt class="col-5 text-muted">2FA</dt>
+                <dd class="col-7"><%= user.is2FAEnabled ? 'Enabled' : 'Disabled' %></dd>
+                <dt class="col-5 text-muted">Created</dt>
+                <dd class="col-7"><%= formatDate(user.createdAt) || '—' %></dd>
+                <dt class="col-5 text-muted">Last Login</dt>
+                <dd class="col-7"><%= formatDate(user.lastLoginAt) || 'Never' %></dd>
+                <dt class="col-5 text-muted">Last IP</dt>
+                <dd class="col-7"><%= user.lastLoginIP || '—' %></dd>
+              </dl>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

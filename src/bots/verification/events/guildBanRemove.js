@@ -2,7 +2,7 @@
 
 const { sendLog } = require('../../../services/discord/loggingService');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
-const { baseEmbed, addField, formatUser } = require('../util/logHelpers');
+const { baseEmbed, addField, formatUser, setUserIdentity } = require('../util/logHelpers');
 
 async function execute(client, ban) {
   const guildId = ban?.guild?.id;
@@ -13,6 +13,7 @@ async function execute(client, ban) {
   const user = ban.user || null;
   const embed = baseEmbed('Member Unbanned');
   addField(embed, 'User', formatUser(user));
+  setUserIdentity(embed, user);
 
   await sendLog({
     discordClient: client,

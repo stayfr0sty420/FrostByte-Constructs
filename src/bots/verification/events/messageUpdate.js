@@ -1,7 +1,7 @@
 'use strict';
 
 const { sendLog } = require('../../../services/discord/loggingService');
-const { baseEmbed, addField, formatUser, formatChannel, truncate } = require('../util/logHelpers');
+const { baseEmbed, addField, formatUser, formatChannel, truncate, setUserIdentity } = require('../util/logHelpers');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
 
 async function execute(client, oldMessage, newMessage) {
@@ -22,6 +22,7 @@ async function execute(client, oldMessage, newMessage) {
   addField(embed, 'Channel', formatChannel(channel), true);
   addField(embed, 'Before', before || '(empty)', false, 1000);
   addField(embed, 'After', after || '(empty)', false, 1000);
+  setUserIdentity(embed, author);
 
   await sendLog({
     discordClient: client,

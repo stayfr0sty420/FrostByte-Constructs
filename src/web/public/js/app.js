@@ -147,17 +147,29 @@
     update();
   }
 
+  function initFlashAutoHide() {
+    const alerts = document.querySelectorAll('.alert:not([data-alert-persist])');
+    alerts.forEach((alert) => {
+      window.setTimeout(() => {
+        alert.classList.add('alert-fade-out');
+        window.setTimeout(() => alert.remove(), 300);
+      }, 4500);
+    });
+  }
+
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
       initBotSwitcher();
       initConfirmModal();
       initImageFallbacks();
       initLogSearch();
+      initFlashAutoHide();
     });
   } else {
     initBotSwitcher();
     initConfirmModal();
     initImageFallbacks();
     initLogSearch();
+    initFlashAutoHide();
   }
 })();

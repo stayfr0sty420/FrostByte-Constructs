@@ -107,10 +107,13 @@ async function createWebApp({ economyClient, backupClient, verificationClient })
     if (!value) return '';
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return '';
-    const datePart = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    const timePart = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const timeZone = String(env.APP_TIMEZONE || 'Asia/Manila').trim() || 'Asia/Manila';
+    const datePart = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone });
+    const timePart = date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone });
     return `${datePart} ${timePart}`;
   };
+
+  const formatAdminRole = (value) => (String(value || '').trim().toLowerCase() === 'owner' ? 'Prime' : 'Administrator');
 
   app.use((req, res, next) => {
     res.locals.discordUser = req.user || null;
@@ -127,6 +130,7 @@ async function createWebApp({ economyClient, backupClient, verificationClient })
     res.locals.activeGuildIcon = guild?.iconURL?.({ size: 64, extension: 'png' }) || '';
     res.locals.publicBaseUrl = env.PUBLIC_BASE_URL || '';
     res.locals.formatDate = formatDate;
+    res.locals.formatAdminRole = formatAdminRole;
     next();
   });
 

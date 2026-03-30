@@ -52,9 +52,15 @@
           <% } else if (viewMode === 'forgot-password') { %>
             <h2 class="h5 mb-2">Forgot Password</h2>
             <p class="text-muted small mb-3">Request a 60-second password reset OTP for your approved admin email.</p>
+          <% } else if (viewMode === 'authenticator-start') { %>
+            <h2 class="h5 mb-2">Login with Authenticator</h2>
+            <p class="text-muted small mb-3">Enter your admin email, then use your current authenticator code or a backup code.</p>
           <% } else if (viewMode === 'verify-reset-otp') { %>
             <h2 class="h5 mb-2">Verify Reset OTP</h2>
             <p class="text-muted small mb-3">Enter the 6-digit code sent to your admin email.</p>
+          <% } else if (viewMode === '2fa-backup') { %>
+            <h2 class="h5 mb-2">Use Backup Code</h2>
+            <p class="text-muted small mb-3">Enter one of your unused backup codes to finish admin login.</p>
           <% } else if (viewMode === 'reset-password') { %>
             <h2 class="h5 mb-2">Reset Password</h2>
             <p class="text-muted small mb-3">Set a new strong password to regain admin access.</p>
@@ -94,6 +100,10 @@
                 <label class="form-label">6-Digit Authenticator Code</label>
                 <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
               </div>
+              <div class="form-text text-start">
+                Manual Setup Key:
+                <strong><%= setupKey %></strong>
+              </div>
               <button class="btn btn-primary w-100" type="submit">Enable 2FA & Login</button>
             </form>
           <% } else if (viewMode === '2fa-verify') { %>
@@ -107,6 +117,39 @@
               </div>
               <button class="btn btn-primary w-100" type="submit">Verify & Login</button>
               <a class="btn btn-ghost w-100" href="/admin/login?mode=forgot-password">Forgot Password</a>
+            </form>
+            <form method="post" action="/admin/2fa/backup" class="d-grid gap-3 mt-3">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="authToken" value="<%= challengeToken %>" />
+              <input type="hidden" name="email" value="<%= email %>" />
+              <div>
+                <label class="form-label">Or Use Backup Code</label>
+                <input class="form-control" type="text" name="backupCode" placeholder="ABCD-EFGH" required />
+              </div>
+              <button class="btn btn-outline-light w-100" type="submit">Verify Backup Code</button>
+            </form>
+          <% } else if (viewMode === 'authenticator-start') { %>
+            <form method="post" action="/admin/authenticator" class="d-grid gap-3">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="returnTo" value="<%= returnTo %>" />
+              <div>
+                <label class="form-label">Admin Email</label>
+                <input class="form-control" type="email" name="email" value="<%= email %>" placeholder="admin@example.com" required />
+              </div>
+              <button class="btn btn-primary w-100" type="submit">Continue with Authenticator</button>
+              <a class="btn btn-ghost w-100" href="/admin/login">Back to Password Login</a>
+            </form>
+          <% } else if (viewMode === '2fa-backup') { %>
+            <form method="post" action="/admin/2fa/backup" class="d-grid gap-3">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <input type="hidden" name="authToken" value="<%= challengeToken %>" />
+              <div class="form-text text-start">Admin email: <strong><%= email %></strong></div>
+              <div>
+                <label class="form-label">Backup Code</label>
+                <input class="form-control" type="text" name="backupCode" placeholder="ABCD-EFGH" required />
+              </div>
+              <button class="btn btn-primary w-100" type="submit">Verify Backup Code</button>
+              <a class="btn btn-ghost w-100" href="/admin/login">Start Over</a>
             </form>
           <% } else if (viewMode === 'forgot-password') { %>
             <form method="post" action="/admin/forgot-password" class="d-grid gap-3">
@@ -162,6 +205,7 @@
               </div>
 
               <button class="btn btn-primary w-100" type="submit">Login</button>
+              <a class="btn btn-outline-light w-100" href="/admin/login?mode=authenticator-start">Login with Authenticator</a>
               <a class="btn btn-ghost w-100" href="/admin/login?mode=forgot-password">Forgot Password</a>
             </form>
           <% } %>

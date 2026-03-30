@@ -191,6 +191,47 @@ function pickFirstImageUrl(embed, fields) {
   return urls.find((url) => /\.(png|jpe?g|gif|webp|bmp|tiff?)(\?|$)/i.test(url)) || '';
 }
 
+function getTypeStyle(type) {
+  const key = String(type || '').toLowerCase();
+  const defaults = { color: 0x64748b, title: 'Audit Log' };
+  const map = {
+    member_join: { color: 0x22c55e, title: 'Member Joined' },
+    member_leave: { color: 0xef4444, title: 'Member Left' },
+    member_ban: { color: 0xef4444, title: 'Member Banned' },
+    member_unban: { color: 0x3b82f6, title: 'Member Unbanned' },
+    member_timeout: { color: 0xf97316, title: 'Member Timeout Updated' },
+    member_role_add: { color: 0x3b82f6, title: 'Member Role Added' },
+    member_role_remove: { color: 0xf59e0b, title: 'Member Role Removed' },
+    nickname_change: { color: 0x3b82f6, title: 'Nickname Changed' },
+    moderator_command: { color: 0x8b5cf6, title: 'Moderator Command' },
+    message_delete: { color: 0xef4444, title: 'Message Deleted' },
+    image_delete: { color: 0xef4444, title: 'Image Deleted' },
+    message_edit: { color: 0x3b82f6, title: 'Message Edited' },
+    bulk_message_delete: { color: 0xf97316, title: 'Bulk Messages Deleted' },
+    invite_info: { color: 0x8b5cf6, title: 'Invite Updated' },
+    channel_create: { color: 0x22c55e, title: 'Channel Created' },
+    channel_update: { color: 0x3b82f6, title: 'Channel Updated' },
+    channel_delete: { color: 0xef4444, title: 'Channel Deleted' },
+    role_create: { color: 0x22c55e, title: 'Role Created' },
+    role_update: { color: 0x3b82f6, title: 'Role Updated' },
+    role_delete: { color: 0xef4444, title: 'Role Deleted' },
+    emoji_create: { color: 0x22c55e, title: 'Emoji Created' },
+    emoji_update: { color: 0x3b82f6, title: 'Emoji Updated' },
+    emoji_delete: { color: 0xef4444, title: 'Emoji Deleted' },
+    voice_join: { color: 0x22c55e, title: 'Voice Channel Joined' },
+    voice_leave: { color: 0xef4444, title: 'Voice Channel Left' },
+    voice_move: { color: 0x3b82f6, title: 'Voice Channel Switched' }
+  };
+
+  return map[key] || defaults;
+}
+
+function detailLine(label, value, max = 700) {
+  const text = compactText(value || '', max);
+  if (!text) return '';
+  return `**${label}:** ${text}`;
+}
+
 function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
   const user = fields.user || '';
   const channel = fields.channel || '';
@@ -204,7 +245,6 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
   const options = fields.options || '';
   const emoji = fields.emoji || '';
   const content = fields.content || '';
-  const attachments = fields.attachments || '';
   const count = fields.count || '';
   const code = fields.code || '';
   const reason = fields.reason || '';
@@ -215,63 +255,85 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
 
   switch (type) {
     case 'voice_join':
-      return compactText(`${user} joined voice channel ${channel}`);
+      return compactText([`${user || 'Unknown member'} joined a voice channel.`, detailLine('Channel', channel)].filter(Boolean).join('\n'), 1400);
     case 'voice_leave':
-      return compactText(`${user} left voice channel ${channel}`);
+      return compactText([`${user || 'Unknown member'} left a voice channel.`, detailLine('Channel', channel)].filter(Boolean).join('\n'), 1400);
     case 'voice_move':
-      return compactText(`${user} switched voice channels ${from} → ${to}`);
-    case 'channel_create':
-      return compactText(`Channel Created: ${channel}`);
-    case 'channel_delete':
-      return compactText(`Channel Deleted: ${channel}`);
-    case 'channel_update':
-      return compactText(`${channel} was changed:\n${changes}`, 900);
-    case 'role_create':
-      return compactText(`Role Created: ${fields.role || ''}\nColor: ${fields.color || 'Default'} • Mentionable: ${fields.mentionable || 'No'}`, 900);
-    case 'role_delete':
-      return compactText(`Role Deleted: ${fields.role || ''}\nColor: ${fields.color || 'Default'}`, 900);
-    case 'role_update':
-      return compactText(`${fields.role || 'Role'} was changed:\n${changes}`, 900);
-    case 'emoji_create':
-      return compactText(`New emoji has been made: ${emoji || fields.name || '(unknown)'}`);
-    case 'emoji_update':
-      return compactText(`Emoji renamed: ${before || '(unknown)'} → ${after || '(unknown)'}`);
-    case 'emoji_delete':
-      return compactText(`Emoji Deleted: ${emoji || fields.name || '(unknown)'}`);
-    case 'member_join':
-      return compactText(`${user}\nAccount Age: ${accountCreated || '(unknown)'}`, 900);
-    case 'member_leave':
-      return compactText(`${user} left the server`);
-    case 'member_role_add':
-      return compactText(`${user}\nRole added: ${roles}`, 900);
-    case 'member_role_remove':
-      return compactText(`${user}\nRole removed: ${roles}`, 900);
-    case 'member_timeout':
-      return compactText(`${user}\n${until ? `Timed out until ${until}` : `Timeout removed${previous ? ` (previously ${previous})` : ''}`}`, 900);
-    case 'member_ban':
-      return compactText(`${user}${reason ? `\nReason: ${reason}` : ''}`, 900);
-    case 'member_unban':
-      return compactText(`${user} was unbanned`);
-    case 'nickname_change':
-      return compactText(`${user}\nNickname changed: ${before || '(none)'} → ${after || '(none)'}`, 900);
-    case 'moderator_command':
-      return compactText(`${user} used ${command || 'a command'} in ${channel}${options ? `\n${options}` : ''}`, 900);
-    case 'invite_info':
-      return compactText(`Invite: ${code || '(unknown)'}\nChannel: ${channel}${fields.inviter ? `\nInviter: ${fields.inviter}` : ''}`, 900);
-    case 'image_delete':
       return compactText(
-        `${user} deleted a message in ${channel}\n${content || '(no content)'}${attachmentLinks ? `\n${attachmentLinks}` : ''}`,
+        [`${user || 'Unknown member'} switched voice channels.`, detailLine('From', from), detailLine('To', to)]
+          .filter(Boolean)
+          .join('\n'),
         1400
       );
+    case 'channel_create':
+      return compactText(detailLine('Channel', channel), 900);
+    case 'channel_delete':
+      return compactText(detailLine('Channel', channel), 900);
+    case 'channel_update':
+      return compactText([detailLine('Channel', channel), detailLine('Changes', changes, 1000)].filter(Boolean).join('\n'), 1200);
+    case 'role_create':
+      return compactText(
+        [detailLine('Role', fields.role || ''), detailLine('Color', fields.color || 'Default', 240), detailLine('Mentionable', fields.mentionable || 'No', 240)]
+          .filter(Boolean)
+          .join('\n'),
+        1200
+      );
+    case 'role_delete':
+      return compactText([detailLine('Role', fields.role || ''), detailLine('Color', fields.color || 'Default', 240)].filter(Boolean).join('\n'), 900);
+    case 'role_update':
+      return compactText([detailLine('Role', fields.role || 'Role'), detailLine('Changes', changes, 1000)].filter(Boolean).join('\n'), 1200);
+    case 'emoji_create':
+      return compactText([detailLine('Emoji', emoji || fields.name || '(unknown)'), detailLine('Name', fields.name || '')].filter(Boolean).join('\n'), 900);
+    case 'emoji_update':
+      return compactText([detailLine('Before', before || '(unknown)'), detailLine('After', after || '(unknown)')].filter(Boolean).join('\n'), 900);
+    case 'emoji_delete':
+      return compactText([detailLine('Emoji', emoji || fields.name || '(unknown)'), detailLine('Name', fields.name || '')].filter(Boolean).join('\n'), 900);
+    case 'member_join':
+      return compactText(
+        [`${user || 'Unknown member'} joined the server.`, detailLine('Account Age', accountCreated || '(unknown)'), detailLine('Bot Account', fields.bot || '')]
+          .filter(Boolean)
+          .join('\n'),
+        1200
+      );
+    case 'member_leave':
+      return compactText(`${user || 'Unknown member'} left the server.`);
+    case 'member_role_add':
+      return compactText([`${user || 'Unknown member'} received new role access.`, detailLine('Roles', roles, 1000)].filter(Boolean).join('\n'), 1200);
+    case 'member_role_remove':
+      return compactText([`${user || 'Unknown member'} lost role access.`, detailLine('Roles', roles, 1000)].filter(Boolean).join('\n'), 1200);
+    case 'member_timeout':
+      return compactText(
+        [`${user || 'Unknown member'} had timeout status updated.`, until ? detailLine('Until', until) : detailLine('Previous Timeout', previous || 'Removed')]
+          .filter(Boolean)
+          .join('\n'),
+        1200
+      );
+    case 'member_ban':
+      return compactText([`${user || 'Unknown member'} was banned from the server.`, detailLine('Reason', reason || 'No reason provided.')].filter(Boolean).join('\n'), 1200);
+    case 'member_unban':
+      return compactText(`${user || 'Unknown member'} was unbanned.`);
+    case 'nickname_change':
+      return compactText([`${user || 'Unknown member'} changed nickname.`, detailLine('Before', before || '(none)'), detailLine('After', after || '(none)')].filter(Boolean).join('\n'), 1200);
+    case 'moderator_command':
+      return compactText([`${user || 'Unknown moderator'} used ${command || 'a command'}.`, detailLine('Channel', channel), detailLine('Options', options, 1000)].filter(Boolean).join('\n'), 1200);
+    case 'invite_info':
+      return compactText([detailLine('Invite Code', code || '(unknown)'), detailLine('Channel', channel), detailLine('Inviter', fields.inviter || '')].filter(Boolean).join('\n'), 1200);
+    case 'image_delete':
     case 'message_delete':
       return compactText(
-        `${user} deleted a message in ${channel}\n${content || '(no content)'}${attachmentLinks ? `\n${attachmentLinks}` : ''}`,
-        1400
+        [
+          `Message sent by ${user || 'Unknown member'} was deleted in ${channel || 'unknown channel'}.`,
+          detailLine('Content', content || '(no content)', 1000),
+          attachmentLinks ? `**Attachments:**\n${attachmentLinks}` : ''
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        1500
       );
     case 'message_edit':
-      return compactText(`${user} edited a message in ${channel}\nBefore: ${before || '(empty)'}\nAfter: ${after || '(empty)'}`, 900);
+      return compactText([`Message by ${user || 'Unknown member'} was edited in ${channel || 'unknown channel'}.`, detailLine('Before', before || '(empty)', 1000), detailLine('After', after || '(empty)', 1000)].filter(Boolean).join('\n'), 1500);
     case 'bulk_message_delete':
-      return compactText(`Bulk message delete in ${channel}\nCount: ${count || '0'}`, 900);
+      return compactText([`Multiple messages were deleted in ${channel || 'unknown channel'}.`, detailLine('Count', count || '0')].filter(Boolean).join('\n'), 900);
     default:
       return compactText(
         fallbackDescription ||
@@ -288,19 +350,23 @@ function buildCompactAuditEmbed(type, embed) {
   const normalized = normalizeEmbedObject(embed);
   if (!normalized) return null;
 
+  const style = getTypeStyle(type);
   const fields = extractFieldMap(normalized);
   const description = buildCompactAuditDescription(type, fields, normalized.description || '');
   const entityId = extractAuditId(normalized, fields);
-  const title = compactText(normalized.title || 'Audit Log', 120) || 'Audit Log';
+  const titleSource = style.title !== 'Audit Log' ? style.title : (normalized.title || style.title);
+  const title = compactText(titleSource || 'Audit Log', 120) || 'Audit Log';
   const ts = normalized.timestamp ? new Date(normalized.timestamp) : new Date();
   const footerBits = [];
   const authorId = String(fields['author id'] || '').replace(/[^\d]/g, '');
   const avatarUrl = normalized.author?.icon_url || normalized.author?.iconURL || '';
   const displayName = compactText(normalized.author?.name || fields['display name'] || '', 120);
   const imageUrl = pickFirstImageUrl(normalized, fields);
+  const isEmojiAudit = String(type || '').toLowerCase().startsWith('emoji_');
+  const thumbnailUrl = normalized.thumbnail?.url || avatarUrl || (isEmojiAudit ? imageUrl : '');
 
   if (type === 'image_delete' || type === 'message_delete') {
-    if (authorId) footerBits.push(`Author: ${authorId}`);
+    if (authorId) footerBits.push(`Author ID: ${authorId}`);
     if (entityId) footerBits.push(`Message ID: ${entityId}`);
   } else if (entityId) {
     footerBits.push(`ID: ${entityId}`);
@@ -308,7 +374,7 @@ function buildCompactAuditEmbed(type, embed) {
   const footerText = footerBits.join(type === 'image_delete' || type === 'message_delete' ? ' | ' : ' • ');
 
   const compact = new EmbedBuilder()
-    .setColor(Number(normalized.color || 0xef4444))
+    .setColor(Number(style.color || normalized.color || 0x64748b))
     .setTitle(title)
     .setDescription(description || 'No details available.')
     .setTimestamp(Number.isNaN(ts.getTime()) ? new Date() : ts);
@@ -317,8 +383,8 @@ function buildCompactAuditEmbed(type, embed) {
   if (displayName) {
     compact.setAuthor(avatarUrl ? { name: displayName, iconURL: avatarUrl } : { name: displayName });
   }
-  if (normalized.thumbnail?.url) compact.setThumbnail(normalized.thumbnail.url);
-  if (imageUrl) compact.setImage(imageUrl);
+  if (thumbnailUrl) compact.setThumbnail(thumbnailUrl);
+  if (imageUrl && !isEmojiAudit) compact.setImage(imageUrl);
   return compact.toJSON();
 }
 
@@ -326,34 +392,42 @@ async function sendLog({ discordClient, guildId, type, content, embeds = [], web
   const cfg = await getOrCreateGuildConfig(guildId);
   if (!toggleForType(cfg, type)) return { ok: true, skipped: true };
 
+  const isCompact = COMPACT_AUDIT_TYPES.has(String(type || '').toLowerCase());
   const safeEmbeds = embeds
     .filter(Boolean)
     .slice(0, 10)
     .map((e) => (e instanceof EmbedBuilder ? e.toJSON() : e));
-  const brandedPayload = brandPayload({ content: content || undefined, embeds: safeEmbeds });
+  const brandedPayload = brandPayload(
+    isCompact
+      ? { content: content || undefined, embeds: safeEmbeds, skipBotBranding: true }
+      : { content: content || undefined, embeds: safeEmbeds }
+  );
   const brandedEmbeds = Array.isArray(brandedPayload?.embeds) ? brandedPayload.embeds : safeEmbeds;
   const brandedContent = typeof brandedPayload?.content === 'string' ? brandedPayload.content : content;
 
-  const botLabel = resolveBotLabel({ discordClient, webhookCategory, type });
-  const written = await writeMessageLog({ guildId, type, botLabel, safeEmbeds: brandedEmbeds, content: brandedContent });
-  if (!written) {
-    await new Promise((r) => setTimeout(r, 120));
-    await writeMessageLog({ guildId, type, botLabel, safeEmbeds: brandedEmbeds, content: brandedContent });
-  }
-
-  const webhookUrl =
-    webhookCategory && cfg.webhooks?.[webhookCategory] ? cfg.webhooks[webhookCategory] : '';
-  const isCompact = COMPACT_AUDIT_TYPES.has(String(type || '').toLowerCase());
   const outgoingEmbeds =
     isCompact && brandedEmbeds.length
       ? brandedEmbeds.map((embed) => buildCompactAuditEmbed(type, embed)).filter(Boolean)
       : brandedEmbeds;
   const outgoingContent = isCompact ? undefined : (brandedContent || undefined);
+  const botLabel = resolveBotLabel({ discordClient, webhookCategory, type });
+  const written = await writeMessageLog({ guildId, type, botLabel, safeEmbeds: outgoingEmbeds, content: outgoingContent });
+  if (!written) {
+    await new Promise((r) => setTimeout(r, 120));
+    await writeMessageLog({ guildId, type, botLabel, safeEmbeds: outgoingEmbeds, content: outgoingContent });
+  }
+
+  const webhookUrl =
+    webhookCategory && cfg.webhooks?.[webhookCategory] ? cfg.webhooks[webhookCategory] : '';
+  const sendPayload = isCompact
+    ? { content: outgoingContent, embeds: outgoingEmbeds, skipBotBranding: true }
+    : { content: outgoingContent, embeds: outgoingEmbeds };
+
   if (webhookUrl) {
     await sendWebhook(webhookUrl, {
       username: botLabel || 'RoBot',
-      content: outgoingContent,
-      embeds: outgoingEmbeds
+      avatarURL: discordClient?.user?.displayAvatarURL?.({ extension: 'png', size: 128 }) || undefined,
+      ...sendPayload
     });
   }
 
@@ -403,7 +477,7 @@ async function sendLog({ discordClient, guildId, type, content, embeds = [], web
     const guild = await discordClient.guilds.fetch(guildId).catch(() => null);
     const channel = guild ? await guild.channels.fetch(channelId).catch(() => null) : null;
     if (channel?.isTextBased()) {
-      await channel.send({ content: outgoingContent, embeds: outgoingEmbeds }).catch(() => null);
+      await channel.send(sendPayload).catch(() => null);
     }
   }
 

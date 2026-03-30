@@ -35,7 +35,7 @@
           <div class="accounts-stat-value"><%= stats.disabled %></div>
         </article>
         <article class="accounts-stat-card">
-          <div class="accounts-stat-label">Owners</div>
+          <div class="accounts-stat-label">Prime Accounts</div>
           <div class="accounts-stat-value"><%= stats.owners %></div>
         </article>
       </section>
@@ -72,9 +72,14 @@
                 <div class="col-12">
                   <label class="form-label">Role</label>
                   <select class="form-select" name="role">
-                    <option value="admin" selected>admin</option>
-                    <option value="owner">owner</option>
+                    <option value="admin" selected>Administrator</option>
+                    <% if (isOwner) { %>
+                      <option value="owner">Prime</option>
+                    <% } %>
                   </select>
+                  <% if (!isOwner) { %>
+                    <div class="form-text">Administrators can add only Administrator accounts.</div>
+                  <% } %>
                 </div>
                 <div class="col-12">
                   <div class="accounts-form-note">
@@ -127,7 +132,7 @@
                           <div class="fw-semibold accounts-email"><%= u.email %></div>
                         </td>
                         <td data-label="Role">
-                          <span class="badge text-bg-secondary"><%= u.role %></span>
+                          <span class="badge text-bg-secondary"><%= formatAdminRole(u.role) %></span>
                         </td>
                         <td data-label="Status">
                           <% if (u.disabled) { %>
@@ -143,8 +148,9 @@
                           <span class="accounts-last-login"><%= u.lastLoginAt ? formatDate(u.lastLoginAt) : 'Never' %></span>
                         </td>
                         <td class="text-end accounts-actions-cell" data-label="Actions">
-                          <% if (String(u._id) !== meId) { %>
+                          <% if (isOwner && String(u._id) !== meId) { %>
                             <div class="accounts-actions">
+                              <a class="btn btn-outline-light btn-sm" href="/admin/accounts/<%= u._id %>">Manage</a>
                               <% if (u.disabled) { %>
                                 <form method="post" action="/admin/accounts/enable/<%= u._id %>">
                                   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
@@ -179,8 +185,10 @@
                                 </button>
                               </form>
                             </div>
-                          <% } else { %>
+                          <% } else if (isOwner) { %>
                             <span class="text-muted small">Current account</span>
+                          <% } else { %>
+                            <span class="text-muted small">Prime only</span>
                           <% } %>
                         </td>
                       </tr>

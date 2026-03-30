@@ -1,4 +1,6 @@
 const express = require('express');
+const QRCode = require('qrcode');
+const speakeasy = require('speakeasy');
 const AdminUser = require('../../db/models/AdminUser');
 const GuildConfig = require('../../db/models/GuildConfig');
 const User = require('../../db/models/User');
@@ -16,10 +18,23 @@ const VerificationSession = require('../../db/models/VerificationSession');
 
 const { requireAdmin, requireOwner } = require('../middleware/requireAdmin');
 const { requireGuild } = require('../middleware/requireGuild');
-const { getRequestIp } = require('../middleware/authMiddleware');
+const { clearAdminAuthCookie, getRequestIp } = require('../middleware/authMiddleware');
 const { env } = require('../../config/env');
 const { getOrCreateGuildConfig } = require('../../services/economy/guildConfigService');
-const { createAdminUser } = require('../../services/admin/adminUserService');
+const {
+  createAdminUser,
+  updateAdminAccount,
+  updateAdminPassword,
+  enableTwoFactor,
+  disableTwoFactor,
+  generateAndStoreBackupCodes,
+  getBackupCodes,
+  consumeBackupCode,
+  getAdminRoleLabel,
+  verifyPassword,
+  getStoredPasswordHash,
+  normalizeRole
+} = require('../../services/admin/adminUserService');
 const { createAdminLog } = require('../../services/admin/adminLogService');
 const {
   listRoles,
@@ -38,7 +53,7 @@ const { ensureVoiceConnection, disconnectVoice } = require('../../jobs/voiceSche
 const { buildVerifyPanelEmbed, buildVerifyPanelRow } = require('../../bots/verification/util/verifyMessages');
 
 const router = express.Router();
-const ACCOUNT_AUDIT_STAGES = ['account-create', 'account-enable', 'account-disable', 'account-delete'];
+const ACCOUNT_AUDIT_STAGES = ['account-create', 'account-enable', 'account-disable', 'account-delete', 'account-update'];
 
 function presenceFromClients(discord, guildId) {
   return {
@@ -97,6 +112,76 @@ function adminDisplayName(adminUser) {
   if (name) return name;
   const email = String(adminUser?.email || '').trim();
   return email || 'admin';
+}
+
+function roleLabel(role) {
+  return getAdminRoleLabel(role);
+}
+
+function setAuthFlash(req, flash) {
+  req.session.authFlash = flash;
+}
+
+function getPendingAccount2FASetup(req, userId) {
+  const setup = req.session?.account2FASetup || null;
+  if (!setup) return null;
+  if (String(setup.userId || '') !== String(userId || '')) return null;
+  if (!setup.secret || !setup.generatedAt) return null;
+  return setup;
+}
+
+function clearPendingAccount2FASetup(req) {
+  if (req.session?.account2FASetup) delete req.session.account2FASetup;
+}
+
+async function resolveMyAccountViewState(req, user) {
+  const pendingSetup = getPendingAccount2FASetup(req, user?._id);
+  let qrCodeDataUrl = '';
+  let manualSetupKey = '';
+  if (pendingSetup?.secret) {
+    const issuer = String(env.ADMIN_TOTP_ISSUER || 'Rodstarkian Suite').trim() || 'Rodstarkian Suite';
+    const otpauth = speakeasy.otpauthURL({
+      secret: pendingSetup.secret,
+      label: `${issuer} (${user.email})`,
+      issuer,
+      encoding: 'base32'
+    });
+    qrCodeDataUrl = await QRCode.toDataURL(otpauth);
+    manualSetupKey = pendingSetup.secret;
+  }
+
+  return {
+    qrCodeDataUrl,
+    manualSetupKey,
+    backupCodes: getBackupCodes(user)
+  };
+}
+
+async function verifySecurityChallenge({ user, password = '', code = '', backupCode = '' }) {
+  if (user?.is2FAEnabled && user?.twoFASecret) {
+    const token = String(code || '').trim();
+    if (token) {
+      const verified = speakeasy.totp.verify({
+        secret: String(user.twoFASecret || ''),
+        encoding: 'base32',
+        token,
+        window: 1
+      });
+      if (verified) return { ok: true, method: 'totp' };
+    }
+
+    const backup = String(backupCode || '').trim();
+    if (backup) {
+      const result = await consumeBackupCode(user, backup);
+      if (result.ok) return { ok: true, method: 'backup' };
+    }
+
+    return { ok: false, reason: 'Enter a valid authenticator code or unused backup code.' };
+  }
+
+  const validPassword = await verifyPassword(password, getStoredPasswordHash(user));
+  if (!validPassword) return { ok: false, reason: 'Current password is incorrect.' };
+  return { ok: true, method: 'password' };
 }
 
 function isSnowflake(id) {
@@ -391,6 +476,283 @@ router.get('/help', requireAdmin, async (req, res) => {
     invites,
     commands
   });
+});
+
+router.get('/account', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id)
+    .select('name email role disabled lastLoginAt lastLoginDate lastLoginIP createdAt is2FAEnabled twoFASecret backupCodes')
+    .catch(() => null);
+  if (!user) {
+    clearAdminAuthCookie(res);
+    req.session.adminUserId = null;
+    setAuthFlash(req, { type: 'error', message: 'Admin account not found. Please log in again.' });
+    return res.redirect('/admin/login');
+  }
+
+  const flash = req.session.flash || null;
+  delete req.session.flash;
+  const viewState = await resolveMyAccountViewState(req, user);
+
+  return res.render('pages/admin/my_account', {
+    title: 'My Account',
+    accountUser: user,
+    flash,
+    qrCodeDataUrl: viewState.qrCodeDataUrl,
+    manualSetupKey: viewState.manualSetupKey,
+    backupCodes: viewState.backupCodes
+  });
+});
+
+router.post('/account/profile', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id).catch(() => null);
+  if (!user) {
+    setAuthFlash(req, { type: 'error', message: 'Admin account not found. Please log in again.' });
+    return res.redirect('/admin/login');
+  }
+
+  const name = String(req.body.name || '').trim();
+  await updateAdminAccount(user, { name });
+  await logAccountAudit(req, {
+    stage: 'account-update',
+    reason: `Updated profile name for ${user.email}.`
+  });
+  setFlash(req, { type: 'success', message: 'Profile updated.' });
+  return res.redirect('/admin/account');
+});
+
+router.post('/account/password', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id).catch(() => null);
+  if (!user) {
+    setAuthFlash(req, { type: 'error', message: 'Admin account not found. Please log in again.' });
+    return res.redirect('/admin/login');
+  }
+
+  const currentPassword = String(req.body.currentPassword || '');
+  const nextPassword = String(req.body.password || '');
+  const confirmPassword = String(req.body.confirmPassword || '');
+  const validCurrent = await verifyPassword(currentPassword, getStoredPasswordHash(user));
+  if (!validCurrent) {
+    setFlash(req, { type: 'danger', message: 'Current password is incorrect.' });
+    return res.redirect('/admin/account');
+  }
+  if (nextPassword !== confirmPassword) {
+    setFlash(req, { type: 'danger', message: 'New password and confirmation do not match.' });
+    return res.redirect('/admin/account');
+  }
+
+  const updated = await updateAdminPassword(user, nextPassword);
+  if (!updated.ok) {
+    setFlash(req, { type: 'danger', message: updated.reason || 'Unable to update password.' });
+    return res.redirect('/admin/account');
+  }
+
+  await logAccountAudit(req, {
+    stage: 'account-update',
+    reason: `Changed password for ${user.email}.`
+  });
+  setFlash(req, { type: 'success', message: 'Password updated.' });
+  return res.redirect('/admin/account');
+});
+
+router.post('/account/2fa/start', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id).select('email is2FAEnabled twoFASecret').catch(() => null);
+  if (!user) {
+    setAuthFlash(req, { type: 'error', message: 'Admin account not found. Please log in again.' });
+    return res.redirect('/admin/login');
+  }
+
+  if (user.is2FAEnabled && user.twoFASecret) {
+    setFlash(req, { type: 'info', message: 'Authenticator is already enabled for this account.' });
+    return res.redirect('/admin/account');
+  }
+
+  const secret = speakeasy.generateSecret({
+    name: `${env.ADMIN_TOTP_ISSUER || 'Rodstarkian Suite'} (${user.email})`,
+    issuer: env.ADMIN_TOTP_ISSUER || 'Rodstarkian Suite',
+    length: 32
+  });
+
+  req.session.account2FASetup = {
+    userId: String(user._id),
+    secret: secret.base32,
+    generatedAt: new Date().toISOString()
+  };
+
+  setFlash(req, { type: 'info', message: 'Scan the QR code or use the manual setup key below, then confirm with a 6-digit code.' });
+  return res.redirect('/admin/account');
+});
+
+router.post('/account/2fa/cancel', requireAdmin, async (req, res) => {
+  clearPendingAccount2FASetup(req);
+  setFlash(req, { type: 'info', message: 'Authenticator setup canceled.' });
+  return res.redirect('/admin/account');
+});
+
+router.post('/account/2fa/enable', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id).catch(() => null);
+  const pendingSetup = getPendingAccount2FASetup(req, req.adminUser._id);
+  const code = String(req.body.code || '').trim();
+  if (!user) {
+    setAuthFlash(req, { type: 'error', message: 'Admin account not found. Please log in again.' });
+    return res.redirect('/admin/login');
+  }
+  if (!pendingSetup?.secret) {
+    setFlash(req, { type: 'warning', message: 'Start a new authenticator setup first.' });
+    return res.redirect('/admin/account');
+  }
+
+  const verified = speakeasy.totp.verify({
+    secret: String(pendingSetup.secret || ''),
+    encoding: 'base32',
+    token: code,
+    window: 1
+  });
+
+  if (!verified) {
+    setFlash(req, { type: 'danger', message: 'Invalid authenticator code. Try again.' });
+    return res.redirect('/admin/account');
+  }
+
+  await enableTwoFactor(user, pendingSetup.secret);
+  clearPendingAccount2FASetup(req);
+  await generateAndStoreBackupCodes(user);
+  await logAccountAudit(req, {
+    stage: 'account-update',
+    reason: `Enabled authenticator for ${user.email}.`
+  });
+  setFlash(req, { type: 'success', message: 'Authenticator enabled. Backup codes were generated for this account.' });
+  return res.redirect('/admin/account');
+});
+
+router.post('/account/2fa/disable', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id).catch(() => null);
+  if (!user) {
+    setAuthFlash(req, { type: 'error', message: 'Admin account not found. Please log in again.' });
+    return res.redirect('/admin/login');
+  }
+
+  const challenge = await verifySecurityChallenge({
+    user,
+    password: req.body.password,
+    code: req.body.code,
+    backupCode: req.body.backupCode
+  });
+  if (!challenge.ok) {
+    setFlash(req, { type: 'danger', message: challenge.reason || 'Unable to verify account security challenge.' });
+    return res.redirect('/admin/account');
+  }
+
+  await disableTwoFactor(user);
+  clearPendingAccount2FASetup(req);
+  await logAccountAudit(req, {
+    stage: 'account-update',
+    reason: `Disabled authenticator for ${user.email}.`
+  });
+  setFlash(req, { type: 'success', message: 'Authenticator disabled and backup codes cleared.' });
+  return res.redirect('/admin/account');
+});
+
+router.post('/account/backup-codes/regenerate', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id).catch(() => null);
+  if (!user) {
+    setAuthFlash(req, { type: 'error', message: 'Admin account not found. Please log in again.' });
+    return res.redirect('/admin/login');
+  }
+  if (!user.is2FAEnabled || !user.twoFASecret) {
+    setFlash(req, { type: 'warning', message: 'Enable authenticator first before generating backup codes.' });
+    return res.redirect('/admin/account');
+  }
+
+  const challenge = await verifySecurityChallenge({
+    user,
+    password: req.body.password,
+    code: req.body.code,
+    backupCode: req.body.backupCode
+  });
+  if (!challenge.ok) {
+    setFlash(req, { type: 'danger', message: challenge.reason || 'Unable to verify account security challenge.' });
+    return res.redirect('/admin/account');
+  }
+
+  await generateAndStoreBackupCodes(user);
+  await logAccountAudit(req, {
+    stage: 'account-update',
+    reason: `Regenerated backup codes for ${user.email}.`
+  });
+  setFlash(req, { type: 'success', message: 'Generated a brand new set of backup codes.' });
+  return res.redirect('/admin/account');
+});
+
+router.post('/account/disable', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id).catch(() => null);
+  if (!user) {
+    setAuthFlash(req, { type: 'error', message: 'Admin account not found. Please log in again.' });
+    return res.redirect('/admin/login');
+  }
+  if (user.role === 'owner') {
+    setFlash(req, { type: 'warning', message: 'Prime accounts cannot disable themselves.' });
+    return res.redirect('/admin/account');
+  }
+
+  const challenge = await verifySecurityChallenge({
+    user,
+    password: req.body.password,
+    code: req.body.code,
+    backupCode: req.body.backupCode
+  });
+  if (!challenge.ok) {
+    setFlash(req, { type: 'danger', message: challenge.reason || 'Unable to verify account security challenge.' });
+    return res.redirect('/admin/account');
+  }
+
+  await updateAdminAccount(user, { disabled: true });
+  await logAccountAudit(req, {
+    stage: 'account-disable',
+    reason: `Disabled own account ${user.email}.`
+  });
+
+  clearAdminAuthCookie(res);
+  req.session.adminUserId = null;
+  req.adminUser = null;
+  res.locals.adminUser = null;
+  setAuthFlash(req, { type: 'success', message: 'Your account has been disabled and signed out.' });
+  return res.redirect('/admin/login');
+});
+
+router.post('/account/delete', requireAdmin, async (req, res) => {
+  const user = await AdminUser.findById(req.adminUser._id).catch(() => null);
+  if (!user) {
+    setAuthFlash(req, { type: 'error', message: 'Admin account not found. Please log in again.' });
+    return res.redirect('/admin/login');
+  }
+  if (user.role === 'owner') {
+    setFlash(req, { type: 'warning', message: 'Prime accounts cannot delete themselves.' });
+    return res.redirect('/admin/account');
+  }
+
+  const challenge = await verifySecurityChallenge({
+    user,
+    password: req.body.password,
+    code: req.body.code,
+    backupCode: req.body.backupCode
+  });
+  if (!challenge.ok) {
+    setFlash(req, { type: 'danger', message: challenge.reason || 'Unable to verify account security challenge.' });
+    return res.redirect('/admin/account');
+  }
+
+  await AdminUser.deleteOne({ _id: user._id });
+  await logAccountAudit(req, {
+    stage: 'account-delete',
+    reason: `Deleted own account ${user.email}.`
+  });
+
+  clearAdminAuthCookie(res);
+  req.session.adminUserId = null;
+  req.adminUser = null;
+  res.locals.adminUser = null;
+  setAuthFlash(req, { type: 'success', message: 'Your account has been deleted and signed out.' });
+  return res.redirect('/admin/login');
 });
 
 // Servers + approvals
@@ -730,8 +1092,8 @@ router.post('/guilds/select', requireAdmin, async (req, res) => {
   return res.redirect('/admin/dashboard');
 });
 
-// Accounts (owner only)
-router.get('/accounts', requireAdmin, requireOwner, async (req, res) => {
+// Accounts
+router.get('/accounts', requireAdmin, async (req, res) => {
   const [users, auditLogs] = await Promise.all([
     AdminUser.find({})
       .select('name email role disabled createdAt lastLoginAt')
@@ -757,15 +1119,16 @@ router.get('/accounts', requireAdmin, requireOwner, async (req, res) => {
     auditLogs,
     flash,
     stats,
-    meId: String(req.adminUser._id)
+    meId: String(req.adminUser._id),
+    isOwner: req.adminUser.role === 'owner'
   });
 });
 
-router.post('/accounts', requireAdmin, requireOwner, async (req, res) => {
+router.post('/accounts', requireAdmin, async (req, res) => {
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').trim();
   const password = String(req.body.password || '');
-  const role = String(req.body.role || 'admin') === 'owner' ? 'owner' : 'admin';
+  const role = req.adminUser.role === 'owner' && String(req.body.role || 'admin') === 'owner' ? 'owner' : 'admin';
 
   const created = await createAdminUser({ email, password, role, name, enforceAllowlist: false });
   if (!created.ok) {
@@ -780,10 +1143,70 @@ router.post('/accounts', requireAdmin, requireOwner, async (req, res) => {
 
   await logAccountAudit(req, {
     stage: 'account-create',
-    reason: `Created ${created.user.email} (${created.user.role}).`
+    reason: `Created ${created.user.email} (${roleLabel(created.user.role)}).`
   });
-  setFlash(req, { type: 'success', message: `Created ${created.user.email} (${created.user.role}).` });
+  setFlash(req, { type: 'success', message: `Created ${created.user.email} (${roleLabel(created.user.role)}).` });
   return res.redirect('/admin/accounts');
+});
+
+router.get('/accounts/:id', requireAdmin, requireOwner, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.redirect('/admin/accounts');
+
+  const user = await AdminUser.findById(id)
+    .select('name email role disabled createdAt lastLoginAt lastLoginIP is2FAEnabled')
+    .lean()
+    .catch(() => null);
+  if (!user) {
+    setFlash(req, { type: 'danger', message: 'Account not found.' });
+    return res.redirect('/admin/accounts');
+  }
+
+  const flash = req.session.flash || null;
+  delete req.session.flash;
+  return res.render('pages/admin/account_manage', {
+    title: 'Manage Account',
+    user,
+    flash,
+    meId: String(req.adminUser._id)
+  });
+});
+
+router.post('/accounts/:id', requireAdmin, requireOwner, async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) return res.redirect('/admin/accounts');
+
+  const user = await AdminUser.findById(id).catch(() => null);
+  if (!user) {
+    setFlash(req, { type: 'danger', message: 'Account not found.' });
+    return res.redirect('/admin/accounts');
+  }
+
+  const nextRole = normalizeRole(req.body.role);
+  if (String(user._id) === String(req.adminUser._id) && nextRole !== user.role) {
+    setFlash(req, { type: 'warning', message: 'You cannot change your own role.' });
+    return res.redirect(`/admin/accounts/${id}`);
+  }
+
+  if (user.role === 'owner' && nextRole !== 'owner') {
+    const ownerCount = await AdminUser.countDocuments({ role: 'owner', disabled: false });
+    if (ownerCount <= 1) {
+      setFlash(req, { type: 'warning', message: 'At least one active Prime account must remain.' });
+      return res.redirect(`/admin/accounts/${id}`);
+    }
+  }
+
+  await updateAdminAccount(user, {
+    name: String(req.body.name || '').trim(),
+    role: nextRole
+  });
+
+  await logAccountAudit(req, {
+    stage: 'account-update',
+    reason: `Updated ${user.email} → ${roleLabel(nextRole)}.`
+  });
+  setFlash(req, { type: 'success', message: `Updated ${user.email}.` });
+  return res.redirect(`/admin/accounts/${id}`);
 });
 
 router.post('/accounts/disable/:id', requireAdmin, requireOwner, async (req, res) => {
@@ -803,6 +1226,13 @@ router.post('/accounts/disable/:id', requireAdmin, requireOwner, async (req, res
     setFlash(req, { type: 'danger', message: 'Account not found.' });
     return res.redirect('/admin/accounts');
   }
+  if (user.role === 'owner') {
+    const ownerCount = await AdminUser.countDocuments({ role: 'owner', disabled: false });
+    if (ownerCount <= 1) {
+      setFlash(req, { type: 'warning', message: 'You cannot disable the last active Prime account.' });
+      return res.redirect('/admin/accounts');
+    }
+  }
   if (user.disabled) {
     setFlash(req, { type: 'info', message: 'Account is already disabled.' });
     return res.redirect('/admin/accounts');
@@ -810,7 +1240,7 @@ router.post('/accounts/disable/:id', requireAdmin, requireOwner, async (req, res
   await AdminUser.updateOne({ _id: id }, { $set: { disabled: true } });
   await logAccountAudit(req, {
     stage: 'account-disable',
-    reason: `Disabled ${user.email} (${user.role}).`
+    reason: `Disabled ${user.email} (${roleLabel(user.role)}).`
   });
   setFlash(req, { type: 'info', message: `Disabled ${user.email}.` });
   return res.redirect('/admin/accounts');
@@ -831,7 +1261,7 @@ router.post('/accounts/enable/:id', requireAdmin, requireOwner, async (req, res)
   await AdminUser.updateOne({ _id: id }, { $set: { disabled: false } });
   await logAccountAudit(req, {
     stage: 'account-enable',
-    reason: `Enabled ${user.email} (${user.role}).`
+    reason: `Enabled ${user.email} (${roleLabel(user.role)}).`
   });
   setFlash(req, { type: 'success', message: `Enabled ${user.email}.` });
   return res.redirect('/admin/accounts');
@@ -855,11 +1285,18 @@ router.post('/accounts/delete/:id', requireAdmin, requireOwner, async (req, res)
     setFlash(req, { type: 'danger', message: 'Account not found.' });
     return res.redirect('/admin/accounts');
   }
+  if (user.role === 'owner') {
+    const ownerCount = await AdminUser.countDocuments({ role: 'owner' });
+    if (ownerCount <= 1) {
+      setFlash(req, { type: 'warning', message: 'You cannot delete the last Prime account.' });
+      return res.redirect('/admin/accounts');
+    }
+  }
 
   await AdminUser.deleteOne({ _id: id });
   await logAccountAudit(req, {
     stage: 'account-delete',
-    reason: `Deleted ${user.email} (${user.role}) from the admin database.`
+    reason: `Deleted ${user.email} (${roleLabel(user.role)}) from the admin database.`
   });
   setFlash(req, {
     type: 'success',

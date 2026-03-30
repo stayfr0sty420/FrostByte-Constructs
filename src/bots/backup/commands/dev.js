@@ -10,7 +10,8 @@ module.exports = {
     return await safeReply(interaction, {
       embeds: [buildDevProfileEmbed('Rodstarkian Vault')],
       components: [buildDevProfileRow()],
-      ephemeral: false
+      ephemeral: false,
+      skipBotBranding: true
     });
   }
 };

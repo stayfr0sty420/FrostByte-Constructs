@@ -10,7 +10,8 @@ module.exports = {
     return await safeReply(interaction, {
       embeds: [buildDevProfileEmbed('RoBot')],
       components: [buildDevProfileRow()],
-      ephemeral: false
+      ephemeral: false,
+      skipBotBranding: true
     });
   }
 };

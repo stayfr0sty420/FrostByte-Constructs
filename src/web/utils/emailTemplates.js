@@ -1,11 +1,9 @@
-const fs = require('fs');
-const path = require('path');
 const { env } = require('../../config/env');
 const { OTP_TTL_MS } = require('./otpService');
 
-const BRAND_LOGO_CID = 'rodstark-mark@rdskbots';
 const DEFAULT_APP_URL = 'https://rdskbots.xyz/';
 const DEFAULT_TIMEZONE = 'Asia/Manila';
+const BRAND_LOGO_PATH = '/assets/images/verification/rodstark-mark.png';
 
 function escapeHtml(value) {
   return String(value || '')
@@ -86,15 +84,18 @@ function resolveAppUrl() {
   return DEFAULT_APP_URL;
 }
 
-function getBrandLogoAttachment() {
-  const logoPath = path.join(process.cwd(), 'images', 'verification', 'rodstark-mark.png');
-  if (!fs.existsSync(logoPath)) return null;
-  return {
-    filename: 'rodstark-mark.png',
-    path: logoPath,
-    cid: BRAND_LOGO_CID,
-    contentDisposition: 'inline'
-  };
+function getBrandLogoUrl() {
+  const base = getBaseUrl();
+  if (!base) return '';
+  return `${base}${BRAND_LOGO_PATH}`;
+}
+
+function getBaseUrl() {
+  const configured = String(env.PUBLIC_BASE_URL || '').trim();
+  if (configured && /^https?:\/\//i.test(configured)) {
+    return configured.replace(/\/+$/, '');
+  }
+  return resolveAppUrl().replace(/\/+$/, '');
 }
 
 function buildPasswordResetOtpEmail({ to = '', otp = '', recipientName = '', role = 'admin', issuedAt = new Date() } = {}) {
@@ -106,8 +107,7 @@ function buildPasswordResetOtpEmail({ to = '', otp = '', recipientName = '', rol
   const issuedLabel = formatIssuedAt(issuedAt);
   const accountEmail = String(to || '').trim().toLowerCase();
   const safeOtp = String(otp || '').trim();
-  const spacedOtp = safeOtp.split('').join(' ');
-  const logoAttachment = getBrandLogoAttachment();
+  const logoUrl = getBrandLogoUrl();
   const subject = `${suiteName} Admin Password Reset OTP`;
   const preheader = `Your ${safeOtp} password reset OTP expires in ${expiresInSeconds} seconds.`;
 
@@ -116,7 +116,7 @@ function buildPasswordResetOtpEmail({ to = '', otp = '', recipientName = '', rol
     '',
     `Hello ${displayName},`,
     '',
-    `Your rdskbots.xyz admin account requested a password reset. Here is your generated one-time code: ${safeOtp}`,
+    `Your ${suiteName} account requested a password reset. Here is your generated one-time code: ${safeOtp}`,
     '',
     `This code expires in ${expiresInSeconds} seconds.`,
     `Admin Email: ${accountEmail}`,
@@ -147,8 +147,8 @@ function buildPasswordResetOtpEmail({ to = '', otp = '', recipientName = '', rol
             <tr>
               <td style="padding:30px 28px 12px 28px;">
                 ${
-                  logoAttachment
-                    ? `<img src="cid:${BRAND_LOGO_CID}" alt="${escapeHtml(suiteName)} logo" width="92" style="display:block;width:92px;max-width:92px;height:auto;border:0;" />`
+                  logoUrl
+                    ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(suiteName)} logo" width="92" style="display:block;width:92px;max-width:92px;height:auto;border:0;" />`
                     : `<div style="font-family:Arial,Helvetica,sans-serif;font-size:20px;font-weight:700;line-height:1.2;color:#ffffff;">${escapeHtml(
                         suiteName
                       )}</div>`
@@ -157,10 +157,10 @@ function buildPasswordResetOtpEmail({ to = '', otp = '', recipientName = '', rol
             </tr>
             <tr>
               <td style="padding:0 28px 8px 28px;font-family:Arial,Helvetica,sans-serif;color:#ffffff;">
-                <div style="font-size:20px;line-height:1.3;font-weight:700;margin:0 0 14px 0;">Hello ${escapeHtml(displayName)},</div>
-                <div style="font-size:18px;line-height:1.35;font-weight:700;margin:0 0 14px 0;">Forgot Password Authentication Code</div>
-                <div style="font-size:15px;line-height:1.65;color:#e7dfe1;margin:0 0 22px 0;">
-                  Your rdskbots.xyz account has requested a password reset. Here is your generated code upon your request.
+                <div style="font-size:28.8px;line-height:1.25;font-weight:700;margin:0 0 18px 0;">Hello ${escapeHtml(displayName)},</div>
+                <div style="font-size:24px;line-height:1.3;font-weight:700;margin:0 0 18px 0;">Forgot Password Authentication Code</div>
+                <div style="font-size:13.44px;line-height:1.6;color:#e7dfe1;margin:0 0 22px 0;">
+                  Your ${escapeHtml(suiteName)} account has requested a password reset. Here is your generated code upon your request.
                 </div>
               </td>
             </tr>
@@ -174,8 +174,8 @@ function buildPasswordResetOtpEmail({ to = '', otp = '', recipientName = '', rol
                   </tr>
                   <tr>
                     <td style="border:2px solid #f0442f;border-top:0;background-color:#1f1b1c;padding:28px 18px;text-align:center;">
-                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:28px;line-height:1.2;font-weight:800;letter-spacing:10px;color:#ff4a37;">
-                        ${escapeHtml(spacedOtp)}
+                      <div style="font-family:Arial,Helvetica,sans-serif;font-size:27.2px;line-height:1.2;font-weight:800;letter-spacing:8px;color:#ff4a37;">
+                        ${escapeHtml(safeOtp)}
                       </div>
                     </td>
                   </tr>
@@ -206,7 +206,7 @@ function buildPasswordResetOtpEmail({ to = '', otp = '', recipientName = '', rol
                             <div>System:</div>
                             <div>Date Issued:</div>
                           </td>
-                          <td style="padding:0;vertical-align:top;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.9;color:#ffffff;font-weight:600;">
+                          <td style="padding:0;vertical-align:top;font-family:Arial,Helvetica,sans-serif;font-size:11.2px;line-height:2;color:#ffffff;font-weight:600;">
                             <div>${escapeHtml(accountEmail)}</div>
                             <div>${escapeHtml(displayRole)}</div>
                             <div>Rodstarkian Bots Ecosystem</div>
@@ -251,7 +251,7 @@ function buildPasswordResetOtpEmail({ to = '', otp = '', recipientName = '', rol
     subject,
     text,
     html,
-    attachments: logoAttachment ? [logoAttachment] : []
+    attachments: []
   };
 }
 

@@ -1,8 +1,15 @@
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const AdminUser = require('../../db/models/AdminUser');
 const { env } = require('../../config/env');
 
 const DEFAULT_BCRYPT_ROUNDS = 12;
+const BACKUP_CODE_COUNT = 10;
+const BACKUP_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function getAdminRoleLabel(role) {
+  return String(role || '').trim().toLowerCase() === 'owner' ? 'Prime' : 'Administrator';
+}
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -10,6 +17,51 @@ function normalizeEmail(email) {
 
 function normalizeName(name) {
   return String(name || '').trim();
+}
+
+function normalizeRole(role) {
+  return String(role || '').trim().toLowerCase() === 'owner' ? 'owner' : 'admin';
+}
+
+function normalizeBackupCode(code) {
+  return String(code || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+}
+
+function getEncryptionKey() {
+  const secret = String(env.JWT_SECRET || env.SESSION_SECRET || 'rodstarkian-suite').trim();
+  return crypto.createHash('sha256').update(secret, 'utf8').digest();
+}
+
+function encryptSensitiveValue(value) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', getEncryptionKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(String(value || ''), 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, tag, encrypted]).toString('base64');
+}
+
+function decryptSensitiveValue(value) {
+  const packed = Buffer.from(String(value || ''), 'base64');
+  if (packed.length < 29) return '';
+
+  const iv = packed.subarray(0, 12);
+  const tag = packed.subarray(12, 28);
+  const encrypted = packed.subarray(28);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', getEncryptionKey(), iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+}
+
+function createBackupCodeValue() {
+  let value = '';
+  while (value.length < 8) {
+    const index = crypto.randomInt(0, BACKUP_CODE_ALPHABET.length);
+    value += BACKUP_CODE_ALPHABET[index];
+  }
+  return `${value.slice(0, 4)}-${value.slice(4, 8)}`;
 }
 
 function getAllowedAdminEmails() {
@@ -53,6 +105,75 @@ function getStoredPasswordHash(user) {
 
 function isLocked(user) {
   return Boolean(user?.lockUntil && user.lockUntil instanceof Date && user.lockUntil.getTime() > Date.now());
+}
+
+async function buildBackupCodeRecord(code) {
+  const normalizedCode = normalizeBackupCode(code);
+  return {
+    codeHash: await hashPassword(normalizedCode),
+    codeEncrypted: encryptSensitiveValue(String(code || '').trim().toUpperCase()),
+    usedAt: null
+  };
+}
+
+async function generateAndStoreBackupCodes(user, count = BACKUP_CODE_COUNT) {
+  const rawCodes = [];
+  while (rawCodes.length < count) {
+    const candidate = createBackupCodeValue();
+    if (!rawCodes.includes(candidate)) rawCodes.push(candidate);
+  }
+
+  const records = [];
+  for (const code of rawCodes) {
+    // eslint-disable-next-line no-await-in-loop
+    records.push(await buildBackupCodeRecord(code));
+  }
+
+  await persistUserState(user, { backupCodes: records });
+  return rawCodes;
+}
+
+function getBackupCodes(user) {
+  const entries = Array.isArray(user?.backupCodes) ? user.backupCodes : [];
+  return entries.map((entry, index) => {
+    let code = '';
+    try {
+      code = decryptSensitiveValue(entry?.codeEncrypted || '');
+    } catch {
+      code = '';
+    }
+
+    return {
+      id: `backup-${index + 1}`,
+      code,
+      usedAt: entry?.usedAt || null,
+      isUsed: Boolean(entry?.usedAt)
+    };
+  });
+}
+
+async function consumeBackupCode(user, code) {
+  const normalized = normalizeBackupCode(code);
+  if (!normalized || !user?._id) return { ok: false };
+
+  const entries = Array.isArray(user.backupCodes) ? [...user.backupCodes] : [];
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    if (!entry || entry.usedAt) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const matches = await verifyPassword(normalized, entry.codeHash);
+    if (!matches) continue;
+    const usedAt = new Date();
+    entries[index] = {
+      codeHash: entry.codeHash,
+      codeEncrypted: entry.codeEncrypted,
+      usedAt
+    };
+    await persistUserState(user, { backupCodes: entries });
+    return { ok: true, usedAt };
+  }
+
+  return { ok: false };
 }
 
 async function persistUserState(user, updates = {}) {
@@ -130,7 +251,7 @@ async function createAdminUser({ email, password, role = 'admin', name = '', enf
     email: normalized,
     password: passwordHash,
     passwordHash,
-    role,
+    role: normalizeRole(role),
     name: normalizeName(name)
   });
   return { ok: true, user };
@@ -209,7 +330,8 @@ async function enableTwoFactor(user, secretBase32) {
 async function disableTwoFactor(user) {
   return await persistUserState(user, {
     twoFASecret: '',
-    is2FAEnabled: false
+    is2FAEnabled: false,
+    backupCodes: []
   });
 }
 
@@ -242,9 +364,21 @@ async function updateAdminPassword(user, password) {
   return { ok: true, user };
 }
 
+async function updateAdminAccount(user, { name, role, disabled } = {}) {
+  const updates = {};
+  if (typeof name !== 'undefined') updates.name = normalizeName(name);
+  if (typeof role !== 'undefined') updates.role = normalizeRole(role);
+  if (typeof disabled !== 'undefined') updates.disabled = Boolean(disabled);
+  await persistUserState(user, updates);
+  return { ok: true, user };
+}
+
 module.exports = {
+  getAdminRoleLabel,
   normalizeEmail,
   normalizeName,
+  normalizeRole,
+  normalizeBackupCode,
   getAllowedAdminEmails,
   isAllowedAdminEmail,
   validatePassword,
@@ -261,7 +395,11 @@ module.exports = {
   markLoginSuccess,
   enableTwoFactor,
   disableTwoFactor,
+  generateAndStoreBackupCodes,
+  getBackupCodes,
+  consumeBackupCode,
   setPasswordResetOtp,
   clearPasswordResetOtp,
-  updateAdminPassword
+  updateAdminPassword,
+  updateAdminAccount
 };

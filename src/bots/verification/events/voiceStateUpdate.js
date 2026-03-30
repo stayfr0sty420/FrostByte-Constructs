@@ -2,7 +2,7 @@
 
 const { sendLog } = require('../../../services/discord/loggingService');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
-const { baseEmbed, addField, formatUser, formatChannel } = require('../util/logHelpers');
+const { baseEmbed, addField, formatUser, formatChannel, setUserIdentity } = require('../util/logHelpers');
 
 async function execute(client, oldState, newState) {
   const guildId = newState?.guild?.id || oldState?.guild?.id;
@@ -20,6 +20,7 @@ async function execute(client, oldState, newState) {
     const embed = baseEmbed('Voice Channel Join');
     addField(embed, 'User', formatUser(user));
     addField(embed, 'Channel', formatChannel(newChannel));
+    setUserIdentity(embed, user);
     await sendLog({
       discordClient: client,
       guildId,
@@ -35,6 +36,7 @@ async function execute(client, oldState, newState) {
     const embed = baseEmbed('Voice Channel Leave');
     addField(embed, 'User', formatUser(user));
     addField(embed, 'Channel', formatChannel(oldChannel));
+    setUserIdentity(embed, user);
     await sendLog({
       discordClient: client,
       guildId,
@@ -51,6 +53,7 @@ async function execute(client, oldState, newState) {
     addField(embed, 'User', formatUser(user));
     addField(embed, 'From', formatChannel(oldChannel), true);
     addField(embed, 'To', formatChannel(newChannel), true);
+    setUserIdentity(embed, user);
     await sendLog({
       discordClient: client,
       guildId,

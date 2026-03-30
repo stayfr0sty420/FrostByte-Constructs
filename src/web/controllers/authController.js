@@ -17,7 +17,9 @@ const {
   setPasswordResetOtp,
   updateAdminPassword,
   resetLoginAttempts,
-  getAllowedAdminEmails
+  getAllowedAdminEmails,
+  consumeBackupCode,
+  generateAndStoreBackupCodes
 } = require('../../services/admin/adminUserService');
 const { isEmailConfigured, sendPasswordResetOtpEmail } = require('../utils/emailService');
 const { generateNumericOtp, getOtpExpiryDate, hashOtp, verifyOtp } = require('../utils/otpService');
@@ -49,6 +51,13 @@ const forgotPasswordSchema = z.object({
 const verifyResetSchema = z.object({
   email: z.string().email(),
   otp: z.string().trim().regex(/^\d{6}$/, 'Enter a valid 6-digit OTP.')
+});
+
+const backupCodeSchema = z.object({
+  backupCode: z
+    .string()
+    .trim()
+    .min(6, 'Enter a valid backup code.')
 });
 
 const resetPasswordSchema = z
@@ -90,6 +99,7 @@ function renderLogin(res, options = {}) {
     setupToken: options.setupToken || '',
     resetToken: options.resetToken || '',
     qrCodeDataUrl: options.qrCodeDataUrl || '',
+    setupKey: options.setupKey || '',
     allowedEmailsHint: getAllowedEmailsHint()
   });
 }
@@ -164,8 +174,15 @@ async function getLogin(req, res) {
   if (req.adminUser) return res.redirect('/admin');
   const mode = String(req.query.mode || 'credentials').trim();
   const returnTo = resolveReturnTo(req.query.returnTo || '/admin');
-  const viewMode = ['forgot-password'].includes(mode) ? mode : 'credentials';
-  return renderLogin(res, { viewMode, returnTo });
+  const viewMode = ['forgot-password', 'authenticator-start'].includes(mode) ? mode : 'credentials';
+  const authFlash = req.session?.authFlash || null;
+  if (req.session?.authFlash) delete req.session.authFlash;
+  return renderLogin(res, {
+    viewMode,
+    returnTo,
+    error: authFlash?.type === 'error' ? authFlash.message : '',
+    success: authFlash?.type === 'success' ? authFlash.message : ''
+  });
 }
 
 async function postLogin(req, res) {
@@ -270,7 +287,49 @@ async function post2FASetup(req, res) {
     email: user.email,
     qrCodeDataUrl,
     setupToken,
+    setupKey: secret.base32,
     success: 'Scan the QR code with Google Authenticator, then enter the 6-digit code below.'
+  });
+}
+
+async function postAuthenticatorLoginStart(req, res) {
+  const email = String(req.body.email || '').trim();
+  const returnTo = resolveReturnTo(req.body.returnTo || '/admin');
+  const parsed = forgotPasswordSchema.safeParse({ email });
+  if (!parsed.success) {
+    return renderLogin(res, {
+      status: 400,
+      viewMode: 'authenticator-start',
+      email,
+      returnTo,
+      error: 'Enter a valid admin email.'
+    });
+  }
+
+  const user = await findAdminByEmail(parsed.data.email);
+  if (!user || !user.is2FAEnabled || !user.twoFASecret) {
+    await logFailure(req, {
+      email: parsed.data.email,
+      adminId: user?._id || null,
+      stage: 'authenticator-login',
+      reason: 'Authenticator login requested for an account without enabled 2FA.'
+    });
+    return renderLogin(res, {
+      status: 401,
+      viewMode: 'authenticator-start',
+      email: parsed.data.email,
+      returnTo,
+      error: 'Authenticator login is only available for accounts with 2FA enabled.'
+    });
+  }
+
+  const challengeToken = issueLoginChallenge(user, 'admin-login-2fa-code-only', returnTo);
+  return renderLogin(res, {
+    viewMode: '2fa-verify',
+    returnTo,
+    email: user.email,
+    challengeToken,
+    success: 'Enter your 6-digit authenticator code to continue.'
   });
 }
 
@@ -312,6 +371,13 @@ async function post2FAVerify(req, res) {
       token: code,
       window: 1
     });
+  } else if (payload.purpose === 'admin-login-2fa-code-only') {
+    verified = speakeasy.totp.verify({
+      secret: String(user.twoFASecret || ''),
+      encoding: 'base32',
+      token: code,
+      window: 1
+    });
   } else if (payload.purpose === 'admin-login-2fa-setup') {
     failureStage = '2fa-setup';
     viewMode = '2fa-setup';
@@ -323,6 +389,7 @@ async function post2FAVerify(req, res) {
     });
     if (verified) {
       await enableTwoFactor(user, payload.secret);
+      await generateAndStoreBackupCodes(user);
     }
   } else {
     return renderLogin(res, { status: 400, error: 'Invalid 2FA verification request. Please log in again.' });
@@ -342,11 +409,72 @@ async function post2FAVerify(req, res) {
       viewMode,
       email: user.email,
       returnTo: payload.returnTo,
-      challengeToken: payload.purpose === 'admin-login-2fa' ? authToken : '',
+      challengeToken: ['admin-login-2fa', 'admin-login-2fa-code-only'].includes(payload.purpose) ? authToken : '',
       setupToken: payload.purpose === 'admin-login-2fa-setup' ? authToken : '',
       error: locked
         ? 'Account temporarily locked due to too many failed attempts. Please try again later.'
         : 'Invalid authenticator code. Please try again.'
+    });
+  }
+
+  await resetLoginAttempts(user);
+  return await finalizeAdminLogin(req, res, user, payload.returnTo);
+}
+
+async function postBackupCodeVerify(req, res) {
+  const authToken = String(req.body.authToken || req.body.challengeToken || '').trim();
+  const parsedCode = backupCodeSchema.safeParse({ backupCode: req.body.backupCode });
+  if (!authToken || !parsedCode.success) {
+    return renderLogin(res, {
+      status: 400,
+      viewMode: '2fa-backup',
+      challengeToken: authToken,
+      email: req.body.email,
+      error: parsedCode.success ? 'Verification session expired. Please log in again.' : parsedCode.error.issues[0].message
+    });
+  }
+
+  let payload;
+  try {
+    payload = verifyAuthChallengeToken(authToken);
+  } catch (_error) {
+    return renderLogin(res, { status: 400, error: 'Verification session expired. Please log in again.' });
+  }
+
+  if (!['admin-login-2fa', 'admin-login-2fa-code-only'].includes(payload.purpose)) {
+    return renderLogin(res, { status: 400, error: 'Invalid backup code verification request. Please log in again.' });
+  }
+
+  const user = await findAdminByEmail(payload.email);
+  if (!user) {
+    return renderLogin(res, { status: 400, error: 'Admin account not found. Please log in again.' });
+  }
+  if (user.lockUntil && user.lockUntil.getTime() > Date.now()) {
+    return renderLogin(res, {
+      status: 423,
+      viewMode: '2fa-backup',
+      email: user.email,
+      challengeToken: authToken,
+      error: 'Account temporarily locked due to too many failed attempts. Please try again later.'
+    });
+  }
+
+  const result = await consumeBackupCode(user, parsedCode.data.backupCode);
+  if (!result.ok) {
+    await incrementLoginAttempts(user);
+    await logFailure(req, {
+      email: user.email,
+      adminId: user._id,
+      stage: '2fa-backup',
+      reason: 'Invalid backup code.'
+    });
+    return renderLogin(res, {
+      status: 401,
+      viewMode: '2fa-backup',
+      email: user.email,
+      returnTo: payload.returnTo,
+      challengeToken: authToken,
+      error: 'Invalid backup code.'
     });
   }
 
@@ -549,8 +677,10 @@ async function postSetup(req, res) {
 module.exports = {
   getLogin,
   postLogin,
+  postAuthenticatorLoginStart,
   post2FASetup,
   post2FAVerify,
+  postBackupCodeVerify,
   postForgotPassword,
   postVerifyResetOtp,
   postResetPassword,

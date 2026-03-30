@@ -1,7 +1,7 @@
 'use strict';
 
 const { sendLog } = require('../../../services/discord/loggingService');
-const { baseEmbed, addField, formatUser, formatRole, formatDate } = require('../util/logHelpers');
+const { baseEmbed, addField, formatUser, formatRole, formatDate, setUserIdentity } = require('../util/logHelpers');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
 
 async function execute(client, oldMember, newMember) {
@@ -19,6 +19,7 @@ async function execute(client, oldMember, newMember) {
     addField(embed, 'User', formatUser(newMember.user));
     addField(embed, 'Before', oldNick || '(none)');
     addField(embed, 'After', newNick || '(none)');
+    setUserIdentity(embed, newMember.user);
     await sendLog({
       discordClient: client,
       guildId,
@@ -43,6 +44,7 @@ async function execute(client, oldMember, newMember) {
     const embed = baseEmbed('Member Role Added');
     addField(embed, 'User', formatUser(newMember.user));
     addField(embed, 'Roles', roles || '(unknown)');
+    setUserIdentity(embed, newMember.user);
     await sendLog({
       discordClient: client,
       guildId,
@@ -61,6 +63,7 @@ async function execute(client, oldMember, newMember) {
     const embed = baseEmbed('Member Role Removed');
     addField(embed, 'User', formatUser(newMember.user));
     addField(embed, 'Roles', roles || '(unknown)');
+    setUserIdentity(embed, newMember.user);
     await sendLog({
       discordClient: client,
       guildId,
@@ -78,6 +81,7 @@ async function execute(client, oldMember, newMember) {
     addField(embed, 'User', formatUser(newMember.user));
     if (newTimeout) addField(embed, 'Until', formatDate(newTimeout), true);
     if (!newTimeout && oldTimeout) addField(embed, 'Previous', formatDate(oldTimeout), true);
+    setUserIdentity(embed, newMember.user);
     await sendLog({
       discordClient: client,
       guildId,

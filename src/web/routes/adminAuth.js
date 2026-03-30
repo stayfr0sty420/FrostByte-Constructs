@@ -2,8 +2,10 @@ const express = require('express');
 const {
   getLogin,
   postLogin,
+  postAuthenticatorLoginStart,
   post2FASetup,
   post2FAVerify,
+  postBackupCodeVerify,
   postForgotPassword,
   postVerifyResetOtp,
   postResetPassword,
@@ -21,9 +23,11 @@ function asyncHandler(handler) {
 
 router.get('/login', asyncHandler(getLogin));
 router.post('/login', adminLoginLimiter, asyncHandler(postLogin));
+router.post('/authenticator', admin2FALimiter, asyncHandler(postAuthenticatorLoginStart));
 
 router.post('/2fa/setup', admin2FALimiter, asyncHandler(post2FASetup));
 router.post('/2fa/verify', admin2FALimiter, asyncHandler(post2FAVerify));
+router.post('/2fa/backup', admin2FALimiter, asyncHandler(postBackupCodeVerify));
 
 router.post('/forgot-password', passwordResetLimiter, asyncHandler(postForgotPassword));
 router.post('/verify-reset-otp', passwordResetLimiter, asyncHandler(postVerifyResetOtp));

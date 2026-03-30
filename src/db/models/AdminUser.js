@@ -1,5 +1,14 @@
 const mongoose = require('mongoose');
 
+const AdminBackupCodeSchema = new mongoose.Schema(
+  {
+    codeHash: { type: String, required: true },
+    codeEncrypted: { type: String, required: true },
+    usedAt: { type: Date, default: null }
+  },
+  { _id: false }
+);
+
 const AdminUserSchema = new mongoose.Schema(
   {
     name: { type: String, default: '', index: true },
@@ -14,6 +23,7 @@ const AdminUserSchema = new mongoose.Schema(
     passwordHash: { type: String, default: '' },
     twoFASecret: { type: String, default: '' },
     is2FAEnabled: { type: Boolean, default: false, index: true },
+    backupCodes: { type: [AdminBackupCodeSchema], default: [] },
     resetOTP: { type: String, default: '' },
     resetOTPExpiry: { type: Date, default: null },
     loginAttempts: { type: Number, default: 0 },
