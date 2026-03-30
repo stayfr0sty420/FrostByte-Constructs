@@ -55,14 +55,8 @@ function brandPayload(payload) {
 
   const branded = { ...payload };
   const hasEmbeds = Array.isArray(branded.embeds) && branded.embeds.length > 0;
-
-  if (typeof branded.content === 'string') {
-    if (branded.content.trim()) {
-      branded.content = appendBotNote(branded.content);
-    } else if (!hasEmbeds) {
-      branded.content = BOT_NOTE;
-    }
-  }
+  const contentValue = typeof branded.content === 'string' ? branded.content : '';
+  branded.content = appendBotNote(contentValue);
 
   if (hasEmbeds) {
     branded.embeds = branded.embeds.map((embed) => brandEmbed(embed));
