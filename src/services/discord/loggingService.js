@@ -27,6 +27,7 @@ const COMPACT_AUDIT_TYPES = new Set([
   'moderator_command',
   'member_join',
   'member_leave',
+  'member_kick',
   'member_role_add',
   'member_role_remove',
   'member_timeout',
@@ -88,6 +89,7 @@ function toggleForType(cfg, type) {
 
     member_join: logs.logMemberJoins,
     member_leave: logs.logMemberLeaves,
+    member_kick: logs.logMemberLeaves,
     member_role_add: logs.logMemberRoleAdds,
     member_role_remove: logs.logMemberRoleRemoves,
     member_timeout: logs.logMemberTimeouts,
@@ -116,9 +118,20 @@ function toggleForType(cfg, type) {
   return true;
 }
 
-async function writeMessageLog({ guildId, type, botLabel, safeEmbeds, content }) {
+async function writeMessageLog({ guildId, type, botLabel, safeEmbeds, summaryEmbeds = [], content = '', summaryContent = '' }) {
   try {
-    await MessageLog.create({ guildId, type, bot: botLabel, data: { content, embeds: safeEmbeds, bot: botLabel } });
+    await MessageLog.create({
+      guildId,
+      type,
+      bot: botLabel,
+      data: {
+        content,
+        embeds: safeEmbeds,
+        summaryEmbeds,
+        summaryContent,
+        bot: botLabel
+      }
+    });
     return true;
   } catch (err) {
     logger.warn({ err }, 'MessageLog write failed');
@@ -204,6 +217,7 @@ function getTypeStyle(type) {
   const map = {
     member_join: { color: 0x22c55e, title: '✅ Member Joined' },
     member_leave: { color: 0xef4444, title: '📤 Member Left' },
+    member_kick: { color: 0xf97316, title: '🥾 Member Kicked' },
     member_ban: { color: 0xef4444, title: '⛔ Member Banned' },
     member_unban: { color: 0x3b82f6, title: '🔓 Member Unbanned' },
     member_timeout: { color: 0xf97316, title: '⏳ Member Timeout Updated' },
@@ -344,6 +358,8 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
       );
     case 'member_leave':
       return compactText(`${user || 'Unknown member'} left the server.`);
+    case 'member_kick':
+      return compactText([`${user || 'Unknown member'} was kicked from the server.`, detailLine('Reason', reason || 'No reason provided.')].filter(Boolean).join('\n'), 1200);
     case 'member_role_add':
       return compactText([`${user || 'Unknown member'} received new role access.`, detailLine('Roles', roles, 1000)].filter(Boolean).join('\n'), 1200);
     case 'member_role_remove':
@@ -393,6 +409,10 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
   }
 }
 
+function shouldShowAuditThumbnail(type) {
+  return new Set(['member_kick', 'member_ban', 'member_unban']).has(String(type || '').toLowerCase());
+}
+
 function buildCompactAuditEmbed(type, embed) {
   const normalized = normalizeEmbedObject(embed);
   if (!normalized) return null;
@@ -410,7 +430,9 @@ function buildCompactAuditEmbed(type, embed) {
   const displayName = compactText(normalized.author?.name || fields['display name'] || '', 120);
   const imageUrl = pickFirstImageUrl(normalized, fields);
   const isEmojiAudit = String(type || '').toLowerCase().startsWith('emoji_');
-  const thumbnailUrl = normalized.thumbnail?.url || avatarUrl || (isEmojiAudit ? imageUrl : '');
+  const thumbnailUrl = shouldShowAuditThumbnail(type)
+    ? (normalized.thumbnail?.url || avatarUrl || '')
+    : (isEmojiAudit ? imageUrl : '');
 
   if (type === 'image_delete' || type === 'message_delete') {
     if (authorId) footerBits.push(`Author ID: ${authorId}`);
@@ -465,10 +487,26 @@ async function sendLog({ discordClient, guildId, type, content, embeds = [], web
       ? sourceEmbeds.map((embed) => buildCompactAuditEmbed(type, embed)).filter(Boolean)
       : sourceEmbeds;
   const outgoingContent = undefined;
-  const written = await writeMessageLog({ guildId, type, botLabel, safeEmbeds: outgoingEmbeds, content: outgoingContent });
+  const written = await writeMessageLog({
+    guildId,
+    type,
+    botLabel,
+    safeEmbeds: sourceEmbeds,
+    summaryEmbeds: outgoingEmbeds,
+    content: undefined,
+    summaryContent: outgoingContent
+  });
   if (!written) {
     await new Promise((r) => setTimeout(r, 120));
-    await writeMessageLog({ guildId, type, botLabel, safeEmbeds: outgoingEmbeds, content: outgoingContent });
+    await writeMessageLog({
+      guildId,
+      type,
+      botLabel,
+      safeEmbeds: sourceEmbeds,
+      summaryEmbeds: outgoingEmbeds,
+      content: undefined,
+      summaryContent: outgoingContent
+    });
   }
 
   const webhookUrl =
@@ -502,6 +540,7 @@ async function sendLog({ discordClient, guildId, type, content, embeds = [], web
     'moderator_command',
     'member_join',
     'member_leave',
+    'member_kick',
     'member_role_add',
     'member_role_remove',
     'member_timeout',

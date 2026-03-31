@@ -22,8 +22,6 @@ async function execute(client, oldRole, newRole) {
   if (oldRole.mentionable !== newRole.mentionable)
     changes.push(`Mentionable: ${oldRole.mentionable ? 'Yes' : 'No'} -> ${newRole.mentionable ? 'Yes' : 'No'}`);
   if (oldRole.permissions?.bitfield !== newRole.permissions?.bitfield) changes.push('Permissions: updated');
-  if (oldRole.rawPosition !== newRole.rawPosition)
-    changes.push(`Position: ${oldRole.rawPosition} -> ${newRole.rawPosition}`);
 
   if (!changes.length) return;
 

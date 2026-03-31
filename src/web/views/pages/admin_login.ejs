@@ -81,7 +81,7 @@
           <div class="alert alert-info d-none" data-passkey-status></div>
 
           <% if (viewMode === '2fa-setup-intro') { %>
-            <form method="post" action="/admin/2fa/setup" class="d-grid gap-3">
+            <form method="post" action="/admin/2fa/setup" class="d-grid gap-3 auth-form">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <input type="hidden" name="challengeToken" value="<%= challengeToken %>" />
               <div class="form-text text-start">Admin email: <strong><%= email %></strong></div>
@@ -97,12 +97,12 @@
                 style="max-width: 260px;"
               />
             </div>
-            <form method="post" action="/admin/2fa/verify" class="d-grid gap-3">
+            <form method="post" action="/admin/2fa/verify" class="d-grid gap-3 auth-form">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <input type="hidden" name="authToken" value="<%= setupToken %>" />
               <div>
                 <label class="form-label">6-Digit Authenticator Code</label>
-                <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
+                <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" autocomplete="one-time-code" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" required />
               </div>
               <div class="form-text text-start">
                 Manual Setup Key:
@@ -111,107 +111,114 @@
               <button class="btn btn-primary w-100" type="submit">Enable 2FA & Login</button>
             </form>
           <% } else if (viewMode === '2fa-verify') { %>
-            <form method="post" action="/admin/2fa/verify" class="d-grid gap-3">
+            <form method="post" action="/admin/2fa/verify" class="d-grid gap-3 auth-form">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <input type="hidden" name="authToken" value="<%= challengeToken %>" />
               <div class="form-text text-start">Admin email: <strong><%= email %></strong></div>
               <div>
                 <label class="form-label">6-Digit Authenticator Code</label>
-                <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
+                <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" autocomplete="one-time-code" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" required />
               </div>
               <button class="btn btn-primary w-100" type="submit">Verify & Login</button>
               <a class="btn btn-ghost w-100" href="/admin/login?mode=forgot-password">Forgot Password</a>
             </form>
-            <form method="post" action="/admin/2fa/backup" class="d-grid gap-3 mt-3">
+            <form method="post" action="/admin/2fa/backup" class="d-grid gap-3 mt-3 auth-form">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <input type="hidden" name="authToken" value="<%= challengeToken %>" />
               <input type="hidden" name="email" value="<%= email %>" />
               <div>
                 <label class="form-label">Or Use Backup Code</label>
-                <input class="form-control" type="text" name="backupCode" placeholder="ABCD-EFGH" required />
+                <input class="form-control" type="text" name="backupCode" placeholder="ABCD-EFGH" autocomplete="one-time-code" autocapitalize="characters" autocorrect="off" spellcheck="false" required />
               </div>
               <button class="btn btn-outline-light w-100" type="submit">Verify Backup Code</button>
             </form>
           <% } else if (viewMode === 'passkey-start') { %>
-            <div class="d-grid gap-3">
+            <div class="d-grid gap-3 auth-form">
               <button class="btn btn-primary w-100" type="button" data-passkey-login>Continue with Passkey / QR</button>
               <div class="form-text text-start">Passkeys work on HTTPS or localhost and can open a QR flow automatically when your passkey is on another device.</div>
               <a class="btn btn-ghost w-100" href="/admin/login">Back to Password Login</a>
             </div>
           <% } else if (viewMode === 'authenticator-start') { %>
-            <form method="post" action="/admin/authenticator" class="d-grid gap-3">
+            <form method="post" action="/admin/authenticator" class="d-grid gap-3 auth-form">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <input type="hidden" name="returnTo" value="<%= returnTo %>" />
               <div>
                 <label class="form-label">Admin Email</label>
-                <input class="form-control" type="email" name="email" value="<%= email %>" placeholder="admin@example.com" required />
+                <input class="form-control" type="email" name="email" value="<%= email %>" placeholder="admin@example.com" autocomplete="email" required />
               </div>
               <button class="btn btn-primary w-100" type="submit">Continue with Authenticator</button>
               <a class="btn btn-ghost w-100" href="/admin/login">Back to Password Login</a>
             </form>
           <% } else if (viewMode === '2fa-backup') { %>
-            <form method="post" action="/admin/2fa/backup" class="d-grid gap-3">
+            <form method="post" action="/admin/2fa/backup" class="d-grid gap-3 auth-form">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <input type="hidden" name="authToken" value="<%= challengeToken %>" />
               <div class="form-text text-start">Admin email: <strong><%= email %></strong></div>
               <div>
                 <label class="form-label">Backup Code</label>
-                <input class="form-control" type="text" name="backupCode" placeholder="ABCD-EFGH" required />
+                <input class="form-control" type="text" name="backupCode" placeholder="ABCD-EFGH" autocomplete="one-time-code" autocapitalize="characters" autocorrect="off" spellcheck="false" required />
               </div>
               <button class="btn btn-primary w-100" type="submit">Verify Backup Code</button>
               <a class="btn btn-ghost w-100" href="/admin/login">Start Over</a>
             </form>
           <% } else if (viewMode === 'forgot-password') { %>
-            <form method="post" action="/admin/forgot-password" class="d-grid gap-3">
+            <form method="post" action="/admin/forgot-password" class="d-grid gap-3 auth-form">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <div>
                 <label class="form-label">Admin Email</label>
-                <input class="form-control" type="email" name="email" value="<%= forgotEmail %>" placeholder="admin@example.com" required />
+                <input class="form-control" type="email" name="email" value="<%= forgotEmail %>" placeholder="admin@example.com" autocomplete="email" required />
               </div>
               <button class="btn btn-primary w-100" type="submit">Send Reset OTP</button>
               <a class="btn btn-ghost w-100" href="/admin/login">Back to Login</a>
             </form>
           <% } else if (viewMode === 'verify-reset-otp') { %>
-            <form method="post" action="/admin/verify-reset-otp" class="d-grid gap-3">
+            <form method="post" action="/admin/verify-reset-otp" class="d-grid gap-3 auth-form">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <div>
                 <label class="form-label">Admin Email</label>
-                <input class="form-control" type="email" name="email" value="<%= forgotEmail %>" placeholder="admin@example.com" required />
+                <input class="form-control" type="email" name="email" value="<%= forgotEmail %>" placeholder="admin@example.com" autocomplete="email" required />
               </div>
               <div>
                 <label class="form-label">6-Digit OTP</label>
-                <input class="form-control" type="text" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
+                <input class="form-control" type="text" name="otp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" autocomplete="one-time-code" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" required />
               </div>
               <button class="btn btn-primary w-100" type="submit">Verify OTP</button>
               <a class="btn btn-ghost w-100" href="/admin/login?mode=forgot-password">Request New OTP</a>
             </form>
           <% } else if (viewMode === 'reset-password') { %>
-            <form method="post" action="/admin/reset-password" class="d-grid gap-3">
+            <form method="post" action="/admin/reset-password" class="d-grid gap-3 auth-form">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <input type="hidden" name="resetToken" value="<%= resetToken %>" />
               <div>
                 <label class="form-label">New Password</label>
-                <input class="form-control" type="password" name="password" placeholder="Use uppercase, lowercase, and a number" required />
+                <input class="form-control" type="password" name="password" placeholder="Use uppercase, lowercase, and a number" autocomplete="new-password" required />
               </div>
               <div>
                 <label class="form-label">Confirm Password</label>
-                <input class="form-control" type="password" name="confirmPassword" placeholder="Repeat your new password" required />
+                <input class="form-control" type="password" name="confirmPassword" placeholder="Repeat your new password" autocomplete="new-password" required />
               </div>
               <button class="btn btn-primary w-100" type="submit">Update Password</button>
               <a class="btn btn-ghost w-100" href="/admin/login">Back to Login</a>
             </form>
           <% } else { %>
-            <form method="post" action="/admin/login" class="d-grid gap-3">
+            <form method="post" action="/admin/login" class="d-grid gap-3 auth-form auth-form--login">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
               <input type="hidden" name="returnTo" value="<%= returnTo %>" />
 
               <div>
                 <label class="form-label">Email</label>
-                <input class="form-control" type="email" name="email" value="<%= email %>" placeholder="admin@example.com" required />
+                <div class="auth-input">
+                  <span class="auth-input__icon" aria-hidden="true">✉</span>
+                  <input class="form-control auth-input__control" type="email" name="email" value="<%= email %>" placeholder="admin@example.com" autocomplete="username" required />
+                </div>
               </div>
               <div>
                 <label class="form-label">Password</label>
-                <input class="form-control" type="password" name="password" placeholder="••••••••••" required />
+                <div class="auth-input auth-input--password">
+                  <span class="auth-input__icon" aria-hidden="true">•</span>
+                  <input class="form-control auth-input__control" type="password" name="password" placeholder="••••••••••" autocomplete="current-password" data-password-input required />
+                  <button class="auth-input__toggle" type="button" data-password-toggle aria-label="Show password">Show</button>
+                </div>
               </div>
 
               <button class="btn btn-primary w-100" type="submit">Login</button>

@@ -14,7 +14,7 @@ function formatUser(user) {
   if (!user) return 'Unknown';
   const id = user.id ? String(user.id) : '';
   const tag = user.tag || user.username || '';
-  if (id && tag) return `<@${id}> (${tag}) [${id}]`;
+  if (id && tag) return `<@${id}> [${id}]`;
   if (id) return `<@${id}> [${id}]`;
   return tag || 'Unknown';
 }
@@ -22,8 +22,7 @@ function formatUser(user) {
 function formatChannel(channel) {
   if (!channel) return 'Unknown';
   if (channel.id) {
-    const name = channel.name ? `#${channel.name}` : 'channel';
-    return `<#${channel.id}> (${name})`;
+    return `<#${channel.id}>`;
   }
   if (channel.name) return `#${channel.name}`;
   return 'Unknown';
@@ -31,7 +30,7 @@ function formatChannel(channel) {
 
 function formatRole(role) {
   if (!role) return 'Unknown';
-  if (role.id) return `<@&${role.id}> (${role.name || 'role'})`;
+  if (role.id) return `<@&${role.id}>`;
   if (role.name) return role.name;
   return 'Unknown';
 }
@@ -54,7 +53,7 @@ function getUserAvatarUrl(user, size = 128) {
   return '';
 }
 
-function setUserIdentity(embed, user, { thumbnail = true } = {}) {
+function setUserIdentity(embed, user, { thumbnail = false } = {}) {
   if (!embed || !user) return embed;
   const label = user.tag || user.username || user.globalName || user.id || 'Unknown User';
   const avatarUrl = getUserAvatarUrl(user);

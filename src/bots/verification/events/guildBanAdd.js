@@ -15,7 +15,7 @@ async function execute(client, ban) {
   const embed = baseEmbed('Member Banned');
   addField(embed, 'User', formatUser(user));
   if (reason) addField(embed, 'Reason', reason);
-  setUserIdentity(embed, user);
+  setUserIdentity(embed, user, { thumbnail: true });
 
   await sendLog({
     discordClient: client,

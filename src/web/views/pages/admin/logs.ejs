@@ -74,6 +74,7 @@
         <% logs.forEach((log) => { %>
           <%
             const embeds = Array.isArray(log.data?.embeds) ? log.data.embeds : [];
+            const summaryEmbeds = Array.isArray(log.data?.summaryEmbeds) && log.data.summaryEmbeds.length ? log.data.summaryEmbeds : embeds;
             const storedBot = String(log.bot || log.data?.bot || '').trim();
             const typeKey = String(log.type || '').toLowerCase();
             const fallbackBot = typeKey.includes('economy')
@@ -85,10 +86,14 @@
                   : '';
             const botLabel = storedBot || fallbackBot || 'System';
             const typeLabel = String(log.type || '').split('_').join(' ');
-            const firstEmbed = embeds[0] || null;
-            const firstFields = Array.isArray(firstEmbed?.fields) ? firstEmbed.fields.slice(0, 3) : [];
+            const firstEmbed = summaryEmbeds[0] || null;
+            const firstFields = Array.isArray(firstEmbed?.fields) ? firstEmbed.fields.slice(0, 2) : [];
+            const summarize = (value, max = 180) => {
+              const text = String(value || '').replace(/\s+/g, ' ').trim();
+              return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+            };
             const summaryTitle = String(firstEmbed?.title || typeLabel || 'Log Entry').trim();
-            const summaryDescription = String(firstEmbed?.description || log.data?.content || '').trim();
+            const summaryDescription = summarize(firstEmbed?.description || log.data?.summaryContent || log.data?.content || '', 220);
           %>
           <article class="log-card log-card-compact">
             <header class="log-card-header">
@@ -122,12 +127,12 @@
               <% } %>
               <% if (firstFields.length) { %>
                 <div class="log-summary-grid">
-                  <% firstFields.forEach((field) => { %>
-                    <div class="log-summary-chip">
-                      <span class="log-summary-chip__label"><%= field.name %></span>
-                      <span class="log-summary-chip__value"><%= field.value %></span>
-                    </div>
-                  <% }) %>
+                      <% firstFields.forEach((field) => { %>
+                        <div class="log-summary-chip">
+                          <span class="log-summary-chip__label"><%= field.name %></span>
+                          <span class="log-summary-chip__value"><%= summarize(field.value, 140) %></span>
+                        </div>
+                      <% }) %>
                 </div>
               <% } %>
             </div>

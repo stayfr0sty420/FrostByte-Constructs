@@ -42,7 +42,7 @@
 
     saving = true;
     pendingPayload = '';
-    setStatus('Saving…', 'saving');
+    setStatus('Saving...', 'saving');
 
     try {
       const res = await fetch(form.getAttribute('action') || window.location.pathname, {
@@ -76,33 +76,221 @@
     saveTimer = window.setTimeout(autoSave, 400);
   };
 
-  form.addEventListener('change', (event) => {
-    if (event.target && event.target.hasAttribute('data-filter-input')) return;
+  form.addEventListener('change', () => {
     queueSave();
   });
   form.addEventListener('input', (event) => {
     if (event.target && event.target.name === 'questions') queueSave();
   });
 
-  document.querySelectorAll('[data-filter-input]').forEach((input) => {
-    const targetId = input.getAttribute('data-filter-input');
-    const select = targetId ? document.getElementById(targetId) : null;
-    if (!select) return;
-    input.addEventListener('input', () => {
-      const query = String(input.value || '').trim().toLowerCase();
-      Array.from(select.options).forEach((opt) => {
-        const label = String(opt.textContent || '').toLowerCase();
-        if (!query || !opt.value || label.includes(query)) {
-          opt.hidden = false;
-        } else {
-          opt.hidden = true;
-        }
+  const escapeSelector = (value) => {
+    if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(value);
+    return String(value || '').replace(/(["\\.#:[\],])/g, '\\$1');
+  };
+
+  const createToken = (option, kind, placeholder, preferEmptyLabel = false) => {
+    const selected = document.createElement('span');
+    selected.className = 'wick-select__token';
+
+    if (!option || !option.value) {
+      const empty = document.createElement('span');
+      empty.className = 'wick-select__placeholder';
+      empty.textContent = preferEmptyLabel ? String(option?.textContent || '').trim() || placeholder || 'Select an option' : (placeholder || 'Select an option');
+      selected.appendChild(empty);
+      return selected;
+    }
+
+    const accent = document.createElement('span');
+    accent.className = `wick-select__accent wick-select__accent--${kind}`;
+    if (kind === 'role') {
+      const color = String(option.getAttribute('data-color') || '').trim();
+      if (color) accent.style.setProperty('--wick-accent', color);
+    } else {
+      accent.textContent = '#';
+    }
+
+    const label = document.createElement('span');
+    label.className = 'wick-select__token-label';
+    label.textContent = String(option.textContent || '').trim() || placeholder || 'Select an option';
+
+    selected.append(accent, label);
+    return selected;
+  };
+
+  const wickInstances = [];
+
+  const closeAllWickSelects = (except = null) => {
+    wickInstances.forEach((instance) => {
+      if (instance !== except) instance.close();
+    });
+  };
+
+  const enhanceSelect = (select) => {
+    const kind = String(select.dataset.wickSelect || 'channel').trim().toLowerCase();
+    const placeholder = String(select.dataset.placeholder || 'Select an option').trim();
+    const searchPlaceholder = String(select.dataset.searchPlaceholder || 'Search...').trim();
+
+    const wrapper = document.createElement('div');
+    wrapper.className = `wick-select wick-select--${kind}`;
+
+    const control = document.createElement('div');
+    control.className = 'wick-select__control';
+
+    const trigger = document.createElement('button');
+    trigger.type = 'button';
+    trigger.className = 'wick-select__trigger';
+
+    const valueEl = document.createElement('span');
+    valueEl.className = 'wick-select__value';
+
+    const chevron = document.createElement('span');
+    chevron.className = 'wick-select__chevron';
+    chevron.innerHTML = '&#9662;';
+
+    trigger.append(valueEl, chevron);
+
+    const clearButton = document.createElement('button');
+    clearButton.type = 'button';
+    clearButton.className = 'wick-select__clear';
+    clearButton.setAttribute('aria-label', `Clear ${placeholder.toLowerCase()}`);
+    clearButton.textContent = '×';
+
+    control.append(trigger, clearButton);
+
+    const panel = document.createElement('div');
+    panel.className = 'wick-select__panel';
+
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'wick-select__search';
+    search.placeholder = searchPlaceholder;
+    search.autocomplete = 'off';
+
+    const list = document.createElement('div');
+    list.className = 'wick-select__list';
+
+    const empty = document.createElement('div');
+    empty.className = 'wick-select__empty';
+    empty.textContent = 'No matching options.';
+
+    panel.append(search, list, empty);
+    wrapper.append(control, panel);
+    select.insertAdjacentElement('afterend', wrapper);
+    select.classList.add('wick-select-native');
+    select.setAttribute('data-wick-enhanced', '1');
+
+    const updateControl = () => {
+      const selectedOption = select.selectedOptions && select.selectedOptions[0] ? select.selectedOptions[0] : select.options[0];
+      valueEl.innerHTML = '';
+      valueEl.appendChild(createToken(selectedOption, kind, placeholder));
+      clearButton.hidden = !selectedOption || !selectedOption.value;
+    };
+
+    const renderOptions = () => {
+      const query = String(search.value || '').trim().toLowerCase();
+      list.innerHTML = '';
+      let visibleCount = 0;
+
+      Array.from(select.options).forEach((option) => {
+        const label = String(option.textContent || '').trim();
+        const normalized = label.toLowerCase();
+        if (query && option.value && !normalized.includes(query)) return;
+
+        visibleCount += 1;
+        const optionButton = document.createElement('button');
+        optionButton.type = 'button';
+        optionButton.className = 'wick-select__option';
+        if (option.selected) optionButton.classList.add('is-selected');
+        if (!option.value) optionButton.classList.add('is-empty');
+        optionButton.dataset.value = option.value;
+
+        const token = createToken(option, kind, placeholder, true);
+        token.classList.add('wick-select__token--option');
+        optionButton.appendChild(token);
+
+        optionButton.addEventListener('click', () => {
+          if (select.value !== option.value) {
+            select.value = option.value;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          close();
+        });
+
+        list.appendChild(optionButton);
       });
+
+      empty.hidden = visibleCount > 0;
+    };
+
+    const open = () => {
+      closeAllWickSelects(instance);
+      wrapper.classList.add('is-open');
+      panel.hidden = false;
+      renderOptions();
+      search.value = '';
+      renderOptions();
+      window.requestAnimationFrame(() => search.focus());
+    };
+
+    const close = () => {
+      wrapper.classList.remove('is-open');
+      panel.hidden = true;
+      search.value = '';
+    };
+
+    trigger.addEventListener('click', () => {
+      if (wrapper.classList.contains('is-open')) {
+        close();
+      } else {
+        open();
+      }
+    });
+
+    clearButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      if (select.value) {
+        select.value = '';
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      close();
+    });
+
+    search.addEventListener('input', () => {
+      renderOptions();
+    });
+
+    select.addEventListener('change', () => {
+      updateControl();
+      renderOptions();
+    });
+
+    const instance = {
+      element: wrapper,
+      close
+    };
+
+    wickInstances.push(instance);
+    panel.hidden = true;
+    updateControl();
+    return instance;
+  };
+
+  document.querySelectorAll('select[data-wick-select]').forEach((select) => {
+    if (!select.hasAttribute('data-wick-enhanced')) enhanceSelect(select);
+  });
+
+  document.addEventListener('click', (event) => {
+    wickInstances.forEach((instance) => {
+      if (!instance.element.contains(event.target)) instance.close();
     });
   });
 
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeAllWickSelects();
+  });
+
   const updateRolePreview = (select) => {
-    const preview = document.querySelector(`[data-role-preview="${select.id}"]`);
+    const preview = document.querySelector(`[data-role-preview="${escapeSelector(select.id)}"]`);
     if (!preview) return;
     const opt = select.selectedOptions && select.selectedOptions[0];
     if (!opt || !opt.value) {

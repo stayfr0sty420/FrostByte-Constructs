@@ -10,6 +10,7 @@ const { getOrCreateGuildConfig } = require('../economy/guildConfigService');
 const { env } = require('../../config/env');
 const net = require('net');
 const { lookupIpGeo } = require('./ipGeoService');
+const { snowflakeToDate } = require('../utils/discordSnowflake');
 
 function getReqIp(req) {
   const normalize = (value) => {
@@ -214,6 +215,49 @@ function getDiscordAvatarUrl(user) {
   return `https://cdn.discordapp.com/avatars/${encodeURIComponent(userId)}/${encodeURIComponent(avatar)}.${ext}?size=256`;
 }
 
+function resolveDiscordAccountCreatedAt(userId) {
+  const safeId = String(userId || '').trim();
+  if (!/^\d{15,22}$/.test(safeId)) return null;
+  try {
+    return snowflakeToDate(safeId);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function formatDiscordDate(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Unknown';
+  const timeZone = String(env.APP_TIMEZONE || 'Asia/Manila').trim() || 'Asia/Manila';
+  return date.toLocaleString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone
+  });
+}
+
+function buildVerificationStatusCopy({ status, username, noteLines = [] }) {
+  const safeName = safeText(username, 48) || 'This member';
+  const lines = [];
+
+  if (status === 'approved') {
+    lines.push(`✅ **${safeName}** has passed verification successfully.`);
+  } else if (status === 'pending') {
+    lines.push(`⏳ **${safeName}** was submitted for manual review.`);
+  } else {
+    lines.push(`❌ **${safeName}** did not pass verification.`);
+  }
+
+  noteLines
+    .map((line) => safeText(line, 260))
+    .filter(Boolean)
+    .forEach((line) => lines.push(`▸ ${line}`));
+
+  return lines.join('\n');
+}
+
 async function applyVerifiedRolesWithRetry(roleClients, guildId, userId) {
   const delays = [0, 350, 900];
   let lastResult = { ok: false, reason: 'Role apply failed.' };
@@ -237,14 +281,14 @@ async function applyVerifiedRolesWithRetry(roleClients, guildId, userId) {
   return lastResult;
 }
 
-function buildVerificationEmbed({ title, guildId, user, attempt, ip, userAgent, geo, riskScore, status, note = '' }) {
+function buildVerificationEmbed({ user, attempt, riskScore, status, noteLines = [] }) {
   const username = user?.username || user?.globalName || attempt?.username || '(unknown)';
   const userId = user?.id || attempt?.discordId || '';
   const attemptId = attempt?.verificationId || '';
-  const observedIp = attempt?.observedIp || '';
-  const publicIp = attempt?.publicIp || '';
-  const ipGeo = attempt?.ipGeo || null;
   const avatarUrl = getDiscordAvatarUrl(user);
+  const accountCreatedAt =
+    (user?.createdAt instanceof Date && !Number.isNaN(user.createdAt.getTime()) ? user.createdAt : null) ||
+    resolveDiscordAccountCreatedAt(userId);
 
   const color = (() => {
     const s = String(status || '').toLowerCase();
@@ -254,35 +298,21 @@ function buildVerificationEmbed({ title, guildId, user, attempt, ip, userAgent, 
     return 0xe11d48;
   })();
 
-  const statusLabel = String(status || '').toUpperCase() || 'UNKNOWN';
-  const ipLabel = ip || publicIp || observedIp || '';
-  const locationText = verificationLocationText(geo, ipGeo);
-  const userLabel = userId ? `${safeText(username, 60)} (${userId})` : safeText(username, 60);
+  const userLabel = userId ? `${safeText(username, 60)} [${userId}]` : safeText(username, 60);
+  const statusCopy = buildVerificationStatusCopy({ status, username, noteLines });
   const embed = new EmbedBuilder()
-    .setTitle(title)
+    .setTitle(`${safeText(username, 60)}'s Verification Result`)
     .setColor(color)
-    .setDescription(
-      status === 'approved'
-        ? 'Verification completed successfully and the member can now access the server.'
-        : status === 'pending'
-          ? 'Verification was submitted and is waiting for a manual admin review.'
-          : 'Verification was denied and access was not granted.'
-    )
     .addFields(
-      { name: 'User', value: userLabel || '(unknown)', inline: false },
-      { name: 'Status', value: statusLabel, inline: true },
-      { name: 'Risk Score', value: typeof riskScore === 'number' ? String(riskScore) : '(n/a)', inline: true },
-      { name: 'IP Address', value: ipLabel ? `\`${ipLabel}\`` : '(none)', inline: true },
-      { name: 'Location', value: locationText || '(none)', inline: false }
+      { name: 'Member', value: userLabel || '(unknown)', inline: false },
+      { name: 'Creation', value: formatDiscordDate(accountCreatedAt), inline: true },
+      { name: 'Risk Score', value: typeof riskScore === 'number' ? String(riskScore) : 'Unknown', inline: true },
+      { name: 'Status', value: statusCopy, inline: false }
     )
     .setFooter({ text: attemptId ? `Verification ID: ${attemptId}` : 'Verification Result' })
     .setTimestamp();
 
-  if (avatarUrl) {
-    embed.setAuthor({ name: safeText(username, 80), iconURL: avatarUrl });
-    embed.setThumbnail(avatarUrl);
-  }
-  if (note) embed.addFields({ name: 'Note', value: safeText(note, 500) || '(none)', inline: false });
+  if (avatarUrl) embed.setThumbnail(avatarUrl);
   return embed;
 }
 
@@ -426,20 +456,15 @@ async function submitVerification({
   if (status === 'approved') {
     const roleClientList = roleClients || discordClient;
     const roleResult = await applyVerifiedRolesWithRetry(roleClientList, guildId, user.id);
-    const userLabel = `${user.username || user.globalName || user.id} (${user.id})`;
     const embed = buildVerificationEmbed({
-      title: 'Verification Result',
-      guildId,
       user,
       attempt,
-      ip: ipForDecision,
-      userAgent,
-      geo: geoFinal,
       riskScore: risk,
       status,
-      note: `${geoFallback ? 'GPS missing; used IP location fallback. ' : ''}${
-        roleResult.ok ? 'Roles applied successfully.' : `Role apply failed: ${roleResult.reason || 'unknown'}`
-      }`
+      noteLines: [
+        geoFallback ? 'Used IP-based location fallback because GPS was unavailable.' : '',
+        roleResult.ok ? 'Auto roles have been assigned as well.' : `Role sync failed: ${roleResult.reason || 'unknown'}`
+      ]
     });
     await sendLog({
       discordClient,
@@ -453,13 +478,8 @@ async function submitVerification({
   }
 
   const embed = buildVerificationEmbed({
-    title: 'Verification Result',
-    guildId,
     user,
     attempt,
-    ip: ipForDecision,
-    userAgent,
-    geo,
     riskScore: risk,
     status
   });
@@ -501,16 +521,14 @@ async function reviewVerification({ discordClient, roleClients, guildId, verific
     }));
     const discordUser = discordClient?.users ? await discordClient.users.fetch(attempt.discordId).catch(() => null) : null;
     const embed = buildVerificationEmbed({
-      title: 'Verification Reviewed',
-      guildId,
       user: discordUser,
       attempt,
-      ip: attempt.ip,
-      userAgent: attempt.userAgent,
-      geo: attempt.geo,
       riskScore: attempt.riskScore,
       status: 'approved',
-      note: `Reviewed by ${reviewerLabel}. ${roleResult.ok ? 'Roles applied.' : `Role apply failed: ${roleResult.reason || 'unknown'}`}`
+      noteLines: [
+        `Reviewed by ${reviewerLabel}.`,
+        roleResult.ok ? 'Auto roles have been assigned as well.' : `Role sync failed: ${roleResult.reason || 'unknown'}`
+      ]
     });
     await sendLog({
       discordClient,
@@ -525,16 +543,11 @@ async function reviewVerification({ discordClient, roleClients, guildId, verific
 
   const discordUser = discordClient?.users ? await discordClient.users.fetch(attempt.discordId).catch(() => null) : null;
   const denyEmbed = buildVerificationEmbed({
-    title: 'Verification Reviewed',
-    guildId,
     user: discordUser,
     attempt,
-    ip: attempt.ip,
-    userAgent: attempt.userAgent,
-    geo: attempt.geo,
     riskScore: attempt.riskScore,
     status: 'denied',
-    note: `Reviewed by ${reviewerLabel}.`
+    noteLines: [`Reviewed by ${reviewerLabel}.`]
   });
 
   await sendLog({

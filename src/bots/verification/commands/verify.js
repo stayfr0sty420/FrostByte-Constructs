@@ -63,13 +63,13 @@ module.exports = {
         if (oldChannel?.isTextBased?.()) {
           const oldMsg = await oldChannel.messages.fetch(prevMessageId).catch(() => null);
           if (oldMsg) {
-            msg = await oldMsg.edit({ embeds: [embed], components: [row] }).catch(() => null);
+            msg = await oldMsg.edit({ embeds: [embed], components: [row], skipBotBranding: true }).catch(() => null);
           }
         }
       }
 
       if (!msg) {
-        msg = await channel.send({ embeds: [embed], components: [row] }).catch(() => null);
+        msg = await channel.send({ embeds: [embed], components: [row], skipBotBranding: true }).catch(() => null);
       }
 
       if (msg?.id) {

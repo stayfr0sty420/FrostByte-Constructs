@@ -1,6 +1,18 @@
 (() => {
   const root = document.querySelector('[data-admin-passkey]');
   const buttons = Array.from(document.querySelectorAll('[data-passkey-login]'));
+  const passwordInput = document.querySelector('[data-password-input]');
+  const passwordToggle = document.querySelector('[data-password-toggle]');
+
+  if (passwordInput && passwordToggle) {
+    passwordToggle.addEventListener('click', () => {
+      const visible = passwordInput.getAttribute('type') === 'text';
+      passwordInput.setAttribute('type', visible ? 'password' : 'text');
+      passwordToggle.textContent = visible ? 'Show' : 'Hide';
+      passwordToggle.setAttribute('aria-label', visible ? 'Show password' : 'Hide password');
+    });
+  }
+
   if (!root || !buttons.length) return;
 
   const statusEl = root.querySelector('[data-passkey-status]');

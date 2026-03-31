@@ -119,6 +119,22 @@ function adminDisplayName(adminUser) {
   return email || 'admin';
 }
 
+function resolveRequestBaseUrl(req) {
+  const explicit = String(env.PUBLIC_BASE_URL || '').trim();
+  if (explicit) return explicit.replace(/\/+$/, '');
+
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
+    .split(',')[0]
+    .trim();
+  const protocol = forwardedProto || req.protocol || (req.secure ? 'https' : 'http');
+  const host = String(req.headers['x-forwarded-host'] || req.get('host') || '')
+    .split(',')[0]
+    .trim();
+
+  if (!host) return `http://localhost:${env.PORT}`;
+  return `${protocol}://${host}`.replace(/\/+$/, '');
+}
+
 function roleLabel(role) {
   return getAdminRoleLabel(role);
 }
@@ -233,7 +249,7 @@ async function leaveGuildIfPresent(client, guildId) {
   return true;
 }
 
-async function upsertVerificationPanel({ discordClient, guildId, cfg }) {
+async function upsertVerificationPanel({ discordClient, guildId, cfg, baseUrl = '' }) {
   const enabled = Boolean(cfg?.verification?.panelEnabled);
   const channelId = String(cfg?.verification?.panelChannelId || '').trim();
   const messageId = String(cfg?.verification?.panelMessageId || '').trim();
@@ -256,17 +272,17 @@ async function upsertVerificationPanel({ discordClient, guildId, cfg }) {
   const channel = await guild.channels.fetch(channelId).catch(() => null);
   if (!channel || !channel.isTextBased()) return { ok: false, reason: 'Verification channel is not text-based.' };
 
-  const embed = buildVerifyPanelEmbed(cfg, { guildName: guild.name || '' });
-  const row = buildVerifyPanelRow(guildId);
+  const embed = buildVerifyPanelEmbed(cfg, { guildName: guild.name || '', baseUrl });
+  const row = buildVerifyPanelRow(guildId, { baseUrl });
   let msg = null;
   if (messageId) {
     msg = await channel.messages.fetch(messageId).catch(() => null);
   }
 
   if (msg) {
-    await msg.edit({ embeds: [embed], components: [row] }).catch(() => null);
+    await msg.edit({ embeds: [embed], components: [row], skipBotBranding: true }).catch(() => null);
   } else {
-    msg = await channel.send({ embeds: [embed], components: [row] }).catch(() => null);
+    msg = await channel.send({ embeds: [embed], components: [row], skipBotBranding: true }).catch(() => null);
   }
 
   if (msg?.id) {
@@ -334,7 +350,10 @@ function escapeRegex(input) {
 }
 
 function serializeLogForSearch(log) {
-  const embeds = Array.isArray(log?.data?.embeds) ? log.data.embeds : [];
+  const embeds = [
+    ...(Array.isArray(log?.data?.embeds) ? log.data.embeds : []),
+    ...(Array.isArray(log?.data?.summaryEmbeds) ? log.data.summaryEmbeds : [])
+  ];
   const embedText = embeds
     .map((embed) => {
       const fields = Array.isArray(embed?.fields) ? embed.fields : [];
@@ -343,7 +362,9 @@ function serializeLogForSearch(log) {
     })
     .join(' ');
 
-  return String(`${log?.bot || ''} ${log?.type || ''} ${log?.data?.content || ''} ${embedText} ${JSON.stringify(log?.data || {}) || ''}`).toLowerCase();
+  return String(
+    `${log?.bot || ''} ${log?.type || ''} ${log?.data?.content || ''} ${log?.data?.summaryContent || ''} ${embedText} ${JSON.stringify(log?.data || {}) || ''}`
+  ).toLowerCase();
 }
 
 function listCommands(client) {
@@ -500,7 +521,7 @@ async function purgeGuildData({ discord, guildId }) {
   };
 }
 
-async function sendApprovalNotice({ req, guildId, botName, status, actionLabel, cfg }) {
+async function sendApprovalNotice({ req, guildId, botName, status, actionLabel, actionType = '', cfg }) {
   const discordClient = req.app.locals.discord?.verification;
   if (!discordClient) return;
   const reviewer = adminDisplayName(req.adminUser);
@@ -525,18 +546,26 @@ async function sendApprovalNotice({ req, guildId, botName, status, actionLabel, 
   if (!targetChannel?.isTextBased?.()) return;
 
   const { EmbedBuilder } = require('discord.js');
+  const normalizedAction = String(actionType || '').trim().toLowerCase();
+  const isDelete = normalizedAction === 'delete';
   const color = status === 'approved' ? 0x22c55e : 0xef4444;
+  const title = isDelete
+    ? `${botName} Deleted From Server`
+    : `${botName} ${status === 'approved' ? 'Approved' : 'Rejected'}`;
+  const description = isDelete
+    ? `${botName} was removed from this server and its approval was revoked.`
+    : (
+        status === 'approved'
+          ? `${botName} is now approved for this server.`
+          : `${botName} is no longer approved for this server.`
+      );
   const embed = new EmbedBuilder()
     .setColor(color)
-    .setTitle(`${botName} ${status === 'approved' ? 'Approved' : 'Rejected'}`)
-    .setDescription(
-      status === 'approved'
-        ? `${botName} is now approved for this server.`
-        : `${botName} is no longer approved for this server.`
-    )
+    .setTitle(title)
+    .setDescription(description)
     .addFields(
       { name: 'Sanctioned By', value: reviewer, inline: true },
-      { name: 'Action', value: actionLabel || status, inline: true },
+      { name: 'Action', value: actionLabel || (isDelete ? 'Delete + Reject' : status), inline: true },
       { name: 'Channel', value: targetChannel ? `<#${targetChannel.id}>` : 'Unavailable', inline: true }
     )
     .setTimestamp();
@@ -1215,6 +1244,7 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
     botName: def?.name || botKey,
     status: statusLabel,
     actionLabel: action === 'delete' ? 'Delete + Reject' : statusLabel,
+    actionType: action,
     cfg: refreshedConfig
   });
 
@@ -2286,6 +2316,8 @@ router.get('/verification/settings', requireAdmin, requireGuild, async (req, res
     listRoles(req.app.locals.discord.verification, guildId).catch(() => []),
     listChannels(req.app.locals.discord.verification, guildId).catch(() => [])
   ]);
+  roles.sort((a, b) => (b.position || 0) - (a.position || 0) || String(a.name || '').localeCompare(String(b.name || '')));
+  channels.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   const baseQuestions = Array.isArray(cfg.verification?.questions) && cfg.verification.questions.length
     ? cfg.verification.questions
     : [cfg.verification?.question1, cfg.verification?.question2, cfg.verification?.question3].filter(Boolean);
@@ -2382,7 +2414,8 @@ router.post('/verification/settings', requireAdmin, requireGuild, async (req, re
     : await upsertVerificationPanel({
         discordClient: req.app.locals.discord.verification,
         guildId,
-        cfg
+        cfg,
+        baseUrl: resolveRequestBaseUrl(req)
       }).catch((err) => ({ ok: false, reason: String(err?.message || err || 'Failed') }));
   if (panelResult?.ok && cfg.isModified()) {
     await cfg.save();

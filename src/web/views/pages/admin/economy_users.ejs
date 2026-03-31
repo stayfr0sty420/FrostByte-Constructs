@@ -30,8 +30,8 @@
         <div class="card-body">
           <div class="row g-3 align-items-end">
             <div class="col-12 col-lg-7">
-              <form method="get" action="/admin/economy/users" class="row g-2 economy-search-form">
-                <div class="col-12">
+              <form method="get" action="/admin/economy/users" class="row g-2 align-items-end economy-search-form">
+                <div class="col-12 col-lg">
                   <label class="form-label">Search</label>
                   <input
                     class="form-control"
@@ -42,9 +42,11 @@
                   />
                   <div class="form-text">Tip: paste a Discord ID for exact match.</div>
                 </div>
-                <div class="col-12 d-flex gap-2 align-items-end">
-                  <button class="btn btn-outline-primary" type="submit">Search</button>
-                  <a class="btn btn-outline-secondary" href="/admin/economy/users">Clear</a>
+                <div class="col-12 col-lg-auto">
+                  <div class="economy-search-actions">
+                    <button class="btn btn-outline-primary" type="submit">Search</button>
+                    <a class="btn btn-outline-secondary" href="/admin/economy/users">Clear</a>
+                  </div>
                 </div>
               </form>
             </div>
@@ -123,13 +125,12 @@
 
           <form method="post" action="/admin/economy/users/whitelist/add" class="row g-2 align-items-end whitelist-add-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-            <div class="col-12 col-md-8 col-lg-7">
+            <div class="col-12 col-lg">
               <label class="form-label">Discord ID</label>
               <input class="form-control" name="discordId" placeholder="123456789012345678" required />
               <div class="form-text">Tip: enable Developer Mode in Discord to copy user IDs.</div>
             </div>
-            <div class="col-12 col-md-4 col-lg-3 d-grid align-self-end whitelist-submit-col">
-              <label class="form-label d-none d-md-block">&nbsp;</label>
+            <div class="col-12 col-lg-auto d-grid align-self-end whitelist-submit-col">
               <button class="btn btn-outline-warning whitelist-submit-btn" type="submit">Add to Whitelist</button>
             </div>
           </form>

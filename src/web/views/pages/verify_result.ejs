@@ -10,6 +10,9 @@
         const status = result && result.ok ? String(result.status || 'approved').toLowerCase() : 'failed';
         const badgeText = status === 'approved' ? 'Approved' : (status === 'pending' ? 'Pending Review' : 'Denied');
         const badgeClass = status === 'approved' ? 'text-bg-success' : (status === 'pending' ? 'text-bg-warning' : 'text-bg-danger');
+        const roleSyncText = result && result.roleResult && result.roleResult.ok
+          ? 'Roles Synced'
+          : (status === 'pending' ? 'Manual Review' : 'Result Recorded');
         const avatarUrl = discordUser && discordUser.id && discordUser.avatar
           ? `https://cdn.discordapp.com/avatars/${discordUser.id}/${discordUser.avatar}.${String(discordUser.avatar).startsWith('a_') ? 'gif' : 'png'}?size=256`
           : '';
@@ -18,7 +21,7 @@
         <section class="verify-showcase">
           <div class="verify-showcase-copy">
             <div class="verify-badge">
-              <img src="/assets/images/branding/website/gods-eye-website.png" alt="God's Eye badge" loading="lazy" />
+              <img src="/assets/images/verification/core-guardian.png" alt="Verification guardian badge" loading="lazy" />
               <span>God's Eye • Watchpoint</span>
             </div>
             <h1 class="verify-title">Verification Result</h1>
@@ -26,17 +29,17 @@
               Your profiling request for <strong><%= guildName || guildId || 'this server' %></strong> has been processed. Review the status card for the final outcome.
             </p>
             <div class="verify-pill-row">
-              <span class="verify-pill">Secure Verification</span>
-              <span class="verify-pill">Role Delivery</span>
+              <span class="verify-pill"><%= badgeText %></span>
+              <span class="verify-pill"><%= roleSyncText %></span>
               <span class="verify-pill">Audit Tracked</span>
             </div>
           </div>
           <div class="verify-showcase-art">
             <div class="verify-art-card verify-art-card--core">
-              <img src="<%= avatarUrl || '/assets/images/branding/website/gods-eye-website.png' %>" alt="Verification account avatar" loading="lazy" />
+              <img src="<%= avatarUrl || '/assets/images/verification/core-guardian.png' %>" alt="Verification account avatar" loading="lazy" />
             </div>
             <div class="verify-art-card verify-art-card--sigil">
-              <img src="/assets/images/branding/website/gods-eye-website.png" alt="God's Eye sigil" loading="lazy" />
+              <img src="/assets/images/verification/winged-eye.png" alt="God's Eye sigil" loading="lazy" />
             </div>
           </div>
           <div class="verify-banner-shell">

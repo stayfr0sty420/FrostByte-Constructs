@@ -12,6 +12,15 @@ async function execute(client, message) {
 
   const channel = message.channel || null;
   const author = message.author || null;
+  if (
+    author?.bot &&
+    (
+      (author.id && client?.user?.id && author.id === client.user.id) ||
+      (author.username && client?.user?.username && author.username === client.user.username)
+    )
+  ) {
+    return;
+  }
   const content = truncate(message.content || '', 1500);
   const attachments = message.attachments?.values ? Array.from(message.attachments.values()) : [];
   const attachmentUrls = attachments.map((a) => a.url).filter(Boolean);

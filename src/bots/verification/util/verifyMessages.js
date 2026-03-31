@@ -4,33 +4,42 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('
 const { env } = require('../../../config/env');
 
 const VERIFICATION_ASSET_PATHS = Object.freeze({
-  avatar: '/assets/images/branding/website/gods-eye-website.png',
-  sigil: '/assets/images/branding/website/gods-eye-website.png',
-  banner: '/assets/images/verification/watchpoint-banner2.gif',
-  brand: '/assets/images/branding/website/gods-eye-website.png'
+  avatar: '/assets/images/verification/gods-eye-avatar.png',
+  sigil: '/assets/images/verification/winged-eye.png',
+  banner: '/assets/images/verification/watchpoint-banner.png',
+  brand: '/assets/images/verification/rodstark-mark.png'
 });
 
+function normalizeBaseUrl(value) {
+  const base = String(value || '').trim();
+  return base ? base.replace(/\/+$/, '') : '';
+}
+
 function getBaseUrl() {
-  const v = String(env.PUBLIC_BASE_URL || '').trim();
-  if (v) return v.replace(/\/+$/, '');
+  const v = normalizeBaseUrl(env.PUBLIC_BASE_URL);
+  if (v) return v;
   return `http://localhost:${env.PORT}`;
 }
 
-function getVerificationAssetUrl(pathname) {
-  return `${getBaseUrl()}${pathname}`;
+function resolveBaseUrl(baseUrl) {
+  return normalizeBaseUrl(baseUrl) || getBaseUrl();
 }
 
-function hasPublicAssetBase() {
-  return Boolean(String(env.PUBLIC_BASE_URL || '').trim());
+function getVerificationAssetUrl(pathname, options = {}) {
+  return `${resolveBaseUrl(options.baseUrl)}${pathname}`;
+}
+
+function hasPublicAssetBase(options = {}) {
+  return Boolean(normalizeBaseUrl(options.baseUrl) || normalizeBaseUrl(env.PUBLIC_BASE_URL));
 }
 
 function buildVerifyDescription(guildName) {
   const label = String(guildName || '').trim();
-  const accessLine = label ? `🚨 Access to **${label}** is restricted.` : '🚨 Access to this server is restricted.';
-  return `${accessLine} You must complete profiling before proceeding. Non-compliance will be denied entry.\n\n➡️ Click **Verify** below to continue.`;
+  const accessLine = label ? ` 🚨Access to ${label} is restricted.` : 'Access to this server is restricted.';
+  return `${accessLine} You must complete profiling before proceeding. Non-compliance will be denied entry.\n\n ➡️ Click **Verify** below to continue.`;
 }
 
-function buildVerificationEmbed({ title, guildName }) {
+function buildVerificationEmbed({ title, guildName, baseUrl }) {
   const embed = new EmbedBuilder()
     .setAuthor({
       name: "God's Eye • Watchpoint Verification"
@@ -40,19 +49,20 @@ function buildVerificationEmbed({ title, guildName }) {
     .setDescription(buildVerifyDescription(guildName))
     .setFooter({
       text: 'Rodstarkian Bot Ecosystem • Powered by FrostByte Constructs LLC'
-    });
+    })
+    .setTimestamp();
 
-  if (hasPublicAssetBase()) {
+  if (hasPublicAssetBase({ baseUrl })) {
     embed
       .setAuthor({
         name: "God's Eye • Watchpoint Verification",
-        iconURL: getVerificationAssetUrl(VERIFICATION_ASSET_PATHS.avatar)
+        iconURL: getVerificationAssetUrl(VERIFICATION_ASSET_PATHS.avatar, { baseUrl })
       })
-      .setThumbnail(getVerificationAssetUrl(VERIFICATION_ASSET_PATHS.sigil))
-      .setImage(getVerificationAssetUrl(VERIFICATION_ASSET_PATHS.banner))
+      .setThumbnail(getVerificationAssetUrl(VERIFICATION_ASSET_PATHS.sigil, { baseUrl }))
+      .setImage(getVerificationAssetUrl(VERIFICATION_ASSET_PATHS.banner, { baseUrl }))
       .setFooter({
         text: 'Rodstarkian Bot Ecosystem • Powered by FrostByte Constructs LLC',
-        iconURL: getVerificationAssetUrl(VERIFICATION_ASSET_PATHS.brand)
+        iconURL: getVerificationAssetUrl(VERIFICATION_ASSET_PATHS.brand, { baseUrl })
       });
   }
 
@@ -62,7 +72,8 @@ function buildVerificationEmbed({ title, guildName }) {
 function buildVerifyLinkEmbed(_cfg, options = {}) {
   return buildVerificationEmbed({
     title: 'Verification Required',
-    guildName: options.guildName
+    guildName: options.guildName,
+    baseUrl: options.baseUrl
   });
 }
 
@@ -75,13 +86,14 @@ function buildVerifyLinkRow(url) {
 function buildVerifyPanelEmbed(_cfg, options = {}) {
   return buildVerificationEmbed({
     title: 'Profiling Required!',
-    guildName: options.guildName
+    guildName: options.guildName,
+    baseUrl: options.baseUrl
   });
 }
 
-function buildVerifyPanelRow(guildId) {
+function buildVerifyPanelRow(guildId, options = {}) {
   const id = String(guildId || '').trim();
-  const base = getBaseUrl();
+  const base = resolveBaseUrl(options.baseUrl);
   const url = `${base}/verify/${encodeURIComponent(id)}/start`;
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(url).setLabel('Verify')

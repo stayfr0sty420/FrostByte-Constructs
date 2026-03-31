@@ -13,7 +13,7 @@ async function execute(client, ban) {
   const user = ban.user || null;
   const embed = baseEmbed('Member Unbanned');
   addField(embed, 'User', formatUser(user));
-  setUserIdentity(embed, user);
+  setUserIdentity(embed, user, { thumbnail: true });
 
   await sendLog({
     discordClient: client,

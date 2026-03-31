@@ -80,13 +80,15 @@
 
             <div class="col-12 col-md-4">
               <label class="form-label">Temp Role (Join Gate)</label>
-              <input
-                class="form-control form-control-sm mb-2 select-filter"
-                type="search"
-                placeholder="Search roles..."
-                data-filter-input="tempRoleId"
-              />
-              <select class="form-select role-select" name="tempRoleId" id="tempRoleId" data-role-select>
+              <select
+                class="form-select role-select wick-select-native"
+                name="tempRoleId"
+                id="tempRoleId"
+                data-role-select
+                data-wick-select="role"
+                data-placeholder="Select a temp role"
+                data-search-placeholder="Search roles..."
+              >
                 <option value="">(none)</option>
                 <% roles.forEach(r => { %>
                   <% const colorHex = r.color ? `#${r.color.toString(16).padStart(6, '0')}` : ''; %>
@@ -99,13 +101,15 @@
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label">Verified Role</label>
-              <input
-                class="form-control form-control-sm mb-2 select-filter"
-                type="search"
-                placeholder="Search roles..."
-                data-filter-input="verifiedRoleId"
-              />
-              <select class="form-select role-select" name="verifiedRoleId" id="verifiedRoleId" data-role-select>
+              <select
+                class="form-select role-select wick-select-native"
+                name="verifiedRoleId"
+                id="verifiedRoleId"
+                data-role-select
+                data-wick-select="role"
+                data-placeholder="Select a verified role"
+                data-search-placeholder="Search roles..."
+              >
                 <option value="">(none)</option>
                 <% roles.forEach(r => { %>
                   <% const colorHex = r.color ? `#${r.color.toString(16).padStart(6, '0')}` : ''; %>
@@ -118,13 +122,14 @@
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label">Log Channel (Verification)</label>
-              <input
-                class="form-control form-control-sm mb-2 select-filter"
-                type="search"
-                placeholder="Search channels..."
-                data-filter-input="logChannelId"
-              />
-              <select class="form-select" name="logChannelId" id="logChannelId">
+              <select
+                class="form-select wick-select-native"
+                name="logChannelId"
+                id="logChannelId"
+                data-wick-select="channel"
+                data-placeholder="Select a log channel"
+                data-search-placeholder="Search channels..."
+              >
                 <option value="">(none)</option>
                 <% channels.forEach(c => { %>
                   <option value="<%= c.id %>" <%= cfg.verification.logChannelId === c.id ? 'selected' : '' %>>
@@ -157,13 +162,14 @@
                 </div>
                 <div class="col-12 col-md-8">
                   <label class="form-label">Panel Channel</label>
-                  <input
-                    class="form-control form-control-sm mb-2 select-filter"
-                    type="search"
-                    placeholder="Search channels..."
-                    data-filter-input="panelChannelId"
-                  />
-                  <select class="form-select" name="panelChannelId" id="panelChannelId">
+                  <select
+                    class="form-select wick-select-native"
+                    name="panelChannelId"
+                    id="panelChannelId"
+                    data-wick-select="channel"
+                    data-placeholder="Select a panel channel"
+                    data-search-placeholder="Search channels..."
+                  >
                     <option value="">(select a channel)</option>
                     <% channels.forEach(c => { %>
                       <option value="<%= c.id %>" <%= cfg.verification.panelChannelId === c.id ? 'selected' : '' %>>
