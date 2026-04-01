@@ -2,16 +2,11 @@
 
 const { SlashCommandBuilder } = require('discord.js');
 const { safeReply } = require('../../shared/util/reply');
-const { buildDevProfileEmbed, buildDevProfileRow } = require('../../shared/util/devProfile');
+const { buildDevProfilePayload } = require('../../shared/util/devProfile');
 
 module.exports = {
   data: new SlashCommandBuilder().setName('dev').setDescription('Show the RoBot developer profile.'),
   async execute(_client, interaction) {
-    return await safeReply(interaction, {
-      embeds: [buildDevProfileEmbed('RoBot')],
-      components: [buildDevProfileRow()],
-      ephemeral: false,
-      skipBotBranding: true
-    });
+    return await safeReply(interaction, buildDevProfilePayload('RoBot'));
   }
 };
