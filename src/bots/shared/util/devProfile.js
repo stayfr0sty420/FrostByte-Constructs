@@ -9,31 +9,18 @@ const PRESIDENT_PROFILE_URL = 'https://guns.lol/lucyblocks';
 const CO_FOUNDER_PROFILE_URL = 'https://guns.lol/dfwkito';
 const EXECUTIVE_FOOTER_TEXT = 'Rodstarkian Bot Ecosystem - Executive Profile';
 const DEVELOPER_FOOTER_TEXT = 'Rodstarkian Bot Ecosystem - Developer Profile';
+const DEV_AUTHOR_TEXT = "God's Eye • Head of Development";
+const EXECUTIVE_AUTHOR_TEXT = "God's Eye • Executive Board";
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const DEV_BANNER_PATH = path.join(REPO_ROOT, 'images', 'branding', 'developer', 'architect-dossier-banner.png');
 const RODSTARKIAN_BOT_PATH = path.join(REPO_ROOT, 'images', 'bots', 'Rodstarkian_Bot.png');
-
-const BOT_ICON_PATHS = {
-  "God's Eye": path.join(REPO_ROOT, 'images', 'bots', 'gods-eye.png'),
-  RoBot: path.join(REPO_ROOT, 'images', 'bots', 'robot.png'),
-  'Rodstarkian Vault': path.join(REPO_ROOT, 'images', 'bots', 'vault.png')
-};
-
-function slugifyBotName(botName) {
-  return String(botName || 'bot')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'bot';
-}
+const EXECUTIVE_BANNER_PATH = path.join(REPO_ROOT, 'images', 'branding', 'executive', 'RDSKBots_Background.png');
+const GODS_EYE_ICON_PATH = path.join(REPO_ROOT, 'images', 'branding', 'gods-eye', 'gods-eye-clear.png');
+const EXECUTIVE_THUMBNAIL_PATH = path.join(REPO_ROOT, 'images', 'Shield_Flame_Fusion_Logo_No_BG.png');
 
 function createAttachment(filePath, name) {
   return new AttachmentBuilder(filePath, { name });
-}
-
-function createBotIconAttachment(botName) {
-  const filePath = BOT_ICON_PATHS[botName] || BOT_ICON_PATHS["God's Eye"];
-  return createAttachment(filePath, `${slugifyBotName(botName)}-icon.png`);
 }
 
 function createRodstarkianAttachment() {
@@ -44,16 +31,29 @@ function createDevBannerAttachment() {
   return createAttachment(DEV_BANNER_PATH, 'architect-dossier-banner.png');
 }
 
+function createExecutiveBannerAttachment() {
+  return createAttachment(EXECUTIVE_BANNER_PATH, 'rdskbots-background.png');
+}
+
+function createGodsEyeIconAttachment(name = 'gods-eye-icon.png') {
+  return createAttachment(GODS_EYE_ICON_PATH, name);
+}
+
+function createExecutiveThumbnailAttachment() {
+  return createAttachment(EXECUTIVE_THUMBNAIL_PATH, 'shield-flame-fusion-logo.png');
+}
+
 function createDevProfileParts(botName) {
-  const botIcon = createBotIconAttachment(botName);
+  void botName;
+  const authorIcon = createGodsEyeIconAttachment('gods-eye-dev-icon.png');
   const rodstarkianArt = createRodstarkianAttachment();
   const devBanner = createDevBannerAttachment();
 
   const embed = new EmbedBuilder()
     .setColor(0xe11d48)
     .setAuthor({
-      name: `${botName} • Head of Development`,
-      iconURL: `attachment://${botIcon.name}`
+      name: DEV_AUTHOR_TEXT,
+      iconURL: `attachment://${authorIcon.name}`
     })
     .setDescription(
       [
@@ -67,12 +67,12 @@ function createDevProfileParts(botName) {
     .setImage(`attachment://${devBanner.name}`)
     .setFooter({
       text: DEVELOPER_FOOTER_TEXT,
-      iconURL: `attachment://${botIcon.name}`
+      iconURL: `attachment://${rodstarkianArt.name}`
     });
 
   return {
     embed,
-    files: [botIcon, rodstarkianArt, devBanner]
+    files: [authorIcon, rodstarkianArt, devBanner]
   };
 }
 
@@ -98,14 +98,17 @@ function buildDevProfilePayload(botName) {
 }
 
 function createExecutiveProfileParts(botName) {
-  const botIcon = createBotIconAttachment(botName);
-  const rodstarkianArt = createRodstarkianAttachment();
+  void botName;
+  const authorIcon = createGodsEyeIconAttachment('gods-eye-executive-icon.png');
+  const thumbnail = createExecutiveThumbnailAttachment();
+  const executiveBanner = createExecutiveBannerAttachment();
+  const footerIcon = createRodstarkianAttachment();
 
   const embed = new EmbedBuilder()
     .setColor(0xdc2626)
     .setAuthor({
-      name: `${botName} • Executive Board`,
-      iconURL: `attachment://${botIcon.name}`
+      name: EXECUTIVE_AUTHOR_TEXT,
+      iconURL: `attachment://${authorIcon.name}`
     })
     .setDescription(
       [
@@ -119,16 +122,16 @@ function createExecutiveProfileParts(botName) {
         'Expertise: **Network & Operations**'
       ].join('\n')
     )
-    .setThumbnail(`attachment://${botIcon.name}`)
-    .setImage(`attachment://${rodstarkianArt.name}`)
+    .setThumbnail(`attachment://${thumbnail.name}`)
+    .setImage(`attachment://${executiveBanner.name}`)
     .setFooter({
       text: EXECUTIVE_FOOTER_TEXT,
-      iconURL: `attachment://${botIcon.name}`
+      iconURL: `attachment://${footerIcon.name}`
     });
 
   return {
     embed,
-    files: [botIcon, rodstarkianArt]
+    files: [authorIcon, thumbnail, executiveBanner, footerIcon]
   };
 }
 
