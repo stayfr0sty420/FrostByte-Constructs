@@ -14,6 +14,7 @@ const EXECUTIVE_AUTHOR_TEXT = "God's Eye • Executive Board";
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const DEV_BANNER_PATH = path.join(REPO_ROOT, 'images', 'branding', 'developer', 'architect-dossier-banner.png');
+const DEV_THUMBNAIL_PATH = path.join(REPO_ROOT, 'images', 'branding', 'developer', 'exc-modified.png');
 const RODSTARKIAN_BOT_PATH = path.join(REPO_ROOT, 'images', 'bots', 'Rodstarkian_Bot.png');
 const EXECUTIVE_BANNER_PATH = path.join(REPO_ROOT, 'images', 'branding', 'executive', 'RDSKBots_Background.png');
 const GODS_EYE_ICON_PATH = path.join(REPO_ROOT, 'images', 'branding', 'gods-eye', 'gods-eye-clear.png');
@@ -31,6 +32,10 @@ function createDevBannerAttachment() {
   return createAttachment(DEV_BANNER_PATH, 'architect-dossier-banner.png');
 }
 
+function createDevThumbnailAttachment() {
+  return createAttachment(DEV_THUMBNAIL_PATH, 'developer-exc-modified.png');
+}
+
 function createExecutiveBannerAttachment() {
   return createAttachment(EXECUTIVE_BANNER_PATH, 'rdskbots-background.png');
 }
@@ -46,7 +51,8 @@ function createExecutiveThumbnailAttachment() {
 function createDevProfileParts(botName) {
   void botName;
   const authorIcon = createGodsEyeIconAttachment('gods-eye-dev-icon.png');
-  const rodstarkianArt = createRodstarkianAttachment();
+  const devThumbnail = createDevThumbnailAttachment();
+  const footerIcon = createRodstarkianAttachment();
   const devBanner = createDevBannerAttachment();
 
   const embed = new EmbedBuilder()
@@ -63,16 +69,16 @@ function createDevProfileParts(botName) {
         'Expertise: **Systems Engineering**'
       ].join('\n')
     )
-    .setThumbnail(`attachment://${rodstarkianArt.name}`)
+    .setThumbnail(`attachment://${devThumbnail.name}`)
     .setImage(`attachment://${devBanner.name}`)
     .setFooter({
       text: DEVELOPER_FOOTER_TEXT,
-      iconURL: `attachment://${rodstarkianArt.name}`
+      iconURL: `attachment://${footerIcon.name}`
     });
 
   return {
     embed,
-    files: [authorIcon, rodstarkianArt, devBanner]
+    files: [authorIcon, devThumbnail, devBanner, footerIcon]
   };
 }
 
