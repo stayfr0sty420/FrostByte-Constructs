@@ -54,7 +54,7 @@ const { reviewVerification } = require('../../services/verification/verification
 const { sendLog } = require('../../services/discord/loggingService');
 const { getEconomyAccountGuildId, getEconomyAccountScope } = require('../../services/economy/accountScope');
 const { ensureVoiceConnection, disconnectVoice } = require('../../jobs/voiceScheduler');
-const { buildVerifyPanelEmbed, buildVerifyPanelRow } = require('../../bots/verification/util/verifyMessages');
+const { buildVerifyPanelMessage, buildVerifyPanelRow } = require('../../bots/verification/util/verifyMessages');
 const { createPasskeyRegistrationOptions, verifyPasskeyRegistration } = require('../utils/passkeyService');
 
 const router = express.Router();
@@ -272,7 +272,7 @@ async function upsertVerificationPanel({ discordClient, guildId, cfg, baseUrl = 
   const channel = await guild.channels.fetch(channelId).catch(() => null);
   if (!channel || !channel.isTextBased()) return { ok: false, reason: 'Verification channel is not text-based.' };
 
-  const embed = buildVerifyPanelEmbed(cfg, { guildName: guild.name || '', baseUrl });
+  const panelMessage = buildVerifyPanelMessage(cfg, { guildName: guild.name || '', baseUrl });
   const row = buildVerifyPanelRow(guildId, { baseUrl });
   let msg = null;
   if (messageId) {
@@ -280,9 +280,18 @@ async function upsertVerificationPanel({ discordClient, guildId, cfg, baseUrl = 
   }
 
   if (msg) {
-    await msg.edit({ embeds: [embed], components: [row], skipBotBranding: true }).catch(() => null);
+    await msg.edit({
+      ...panelMessage,
+      attachments: [],
+      components: [row],
+      skipBotBranding: true
+    }).catch(() => null);
   } else {
-    msg = await channel.send({ embeds: [embed], components: [row], skipBotBranding: true }).catch(() => null);
+    msg = await channel.send({
+      ...panelMessage,
+      components: [row],
+      skipBotBranding: true
+    }).catch(() => null);
   }
 
   if (msg?.id) {

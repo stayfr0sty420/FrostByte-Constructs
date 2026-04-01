@@ -1,13 +1,30 @@
 'use strict';
 
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const path = require('path');
+const { AttachmentBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { env } = require('../../../config/env');
 
-const VERIFICATION_ASSET_PATHS = Object.freeze({
-  avatar: '/assets/images/verification/gods-eye-avatar.png',
-  sigil: '/assets/images/verification/winged-eye.png',
-  banner: '/assets/images/verification/watchpoint-banner.png',
-  brand: '/assets/images/verification/rodstark-mark.png'
+const WATCHPOINT_AUTHOR_TEXT = "God's Eye • Watchpoint Verification";
+const WATCHPOINT_FOOTER_TEXT = 'Rodstarkian Bot Ecosystem • Powered by FrostByte Constructs LLC';
+
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+const VERIFICATION_ASSETS = Object.freeze({
+  authorIcon: {
+    filePath: path.join(REPO_ROOT, 'images', 'branding', 'gods-eye', 'gods-eye-clear.png'),
+    name: 'gods-eye-watchpoint-icon.png'
+  },
+  thumbnail: {
+    filePath: path.join(REPO_ROOT, 'images', 'Shield_Flame_Fusion_Logo_No_BG.png'),
+    name: 'watchpoint-shield-fusion-logo.png'
+  },
+  banner: {
+    filePath: path.join(REPO_ROOT, 'images', 'branding', 'watchpoint', 'watchpoint-banner.gif'),
+    name: 'watchpoint-banner.gif'
+  },
+  footerIcon: {
+    filePath: path.join(REPO_ROOT, 'images', 'bots', 'Rodstarkian_Bot.png'),
+    name: 'rodstarkian-bot.png'
+  }
 });
 
 function normalizeBaseUrl(value) {
@@ -29,8 +46,8 @@ function getVerificationAssetUrl(pathname, options = {}) {
   return `${resolveBaseUrl(options.baseUrl)}${pathname}`;
 }
 
-function hasPublicAssetBase(options = {}) {
-  return Boolean(normalizeBaseUrl(options.baseUrl) || normalizeBaseUrl(env.PUBLIC_BASE_URL));
+function createAttachment({ filePath, name }) {
+  return new AttachmentBuilder(filePath, { name });
 }
 
 function buildVerifyDescription(guildName) {
@@ -39,42 +56,39 @@ function buildVerifyDescription(guildName) {
   return `${accessLine} You must complete profiling before proceeding. Non-compliance will be denied entry.\n\n ➡️ Click **Verify** below to continue.`;
 }
 
-function buildVerificationEmbed({ title, guildName, baseUrl }) {
+function createVerificationParts({ title, guildName }) {
+  const authorIcon = createAttachment(VERIFICATION_ASSETS.authorIcon);
+  const thumbnail = createAttachment(VERIFICATION_ASSETS.thumbnail);
+  const banner = createAttachment(VERIFICATION_ASSETS.banner);
+  const footerIcon = createAttachment(VERIFICATION_ASSETS.footerIcon);
+
   const embed = new EmbedBuilder()
     .setAuthor({
-      name: "God's Eye • Watchpoint Verification"
+      name: WATCHPOINT_AUTHOR_TEXT,
+      iconURL: `attachment://${authorIcon.name}`
     })
     .setTitle(title)
     .setColor(0xe11d48)
     .setDescription(buildVerifyDescription(guildName))
     .setFooter({
-      text: 'Rodstarkian Bot Ecosystem • Powered by FrostByte Constructs LLC'
+      text: WATCHPOINT_FOOTER_TEXT,
+      iconURL: `attachment://${footerIcon.name}`
     })
+    .setThumbnail(`attachment://${thumbnail.name}`)
+    .setImage(`attachment://${banner.name}`)
     .setTimestamp();
 
-  if (hasPublicAssetBase({ baseUrl })) {
-    embed
-      .setAuthor({
-        name: "God's Eye • Watchpoint Verification",
-        iconURL: getVerificationAssetUrl(VERIFICATION_ASSET_PATHS.avatar, { baseUrl })
-      })
-      .setThumbnail(getVerificationAssetUrl(VERIFICATION_ASSET_PATHS.sigil, { baseUrl }))
-      .setImage(getVerificationAssetUrl(VERIFICATION_ASSET_PATHS.banner, { baseUrl }))
-      .setFooter({
-        text: 'Rodstarkian Bot Ecosystem • Powered by FrostByte Constructs LLC',
-        iconURL: getVerificationAssetUrl(VERIFICATION_ASSET_PATHS.brand, { baseUrl })
-      });
-  }
-
-  return embed;
+  return {
+    embed,
+    files: [authorIcon, thumbnail, banner, footerIcon]
+  };
 }
 
 function buildVerifyLinkEmbed(_cfg, options = {}) {
-  return buildVerificationEmbed({
+  return createVerificationParts({
     title: 'Verification Required',
-    guildName: options.guildName,
-    baseUrl: options.baseUrl
-  });
+    guildName: options.guildName
+  }).embed;
 }
 
 function buildVerifyLinkRow(url) {
@@ -84,11 +98,10 @@ function buildVerifyLinkRow(url) {
 }
 
 function buildVerifyPanelEmbed(_cfg, options = {}) {
-  return buildVerificationEmbed({
+  return createVerificationParts({
     title: 'Profiling Required!',
-    guildName: options.guildName,
-    baseUrl: options.baseUrl
-  });
+    guildName: options.guildName
+  }).embed;
 }
 
 function buildVerifyPanelRow(guildId, options = {}) {
@@ -100,11 +113,35 @@ function buildVerifyPanelRow(guildId, options = {}) {
   );
 }
 
+function buildVerifyLinkMessage(_cfg, options = {}) {
+  const { embed, files } = createVerificationParts({
+    title: 'Verification Required',
+    guildName: options.guildName
+  });
+  return {
+    embeds: [embed],
+    files
+  };
+}
+
+function buildVerifyPanelMessage(_cfg, options = {}) {
+  const { embed, files } = createVerificationParts({
+    title: 'Profiling Required!',
+    guildName: options.guildName
+  });
+  return {
+    embeds: [embed],
+    files
+  };
+}
+
 module.exports = {
   getBaseUrl,
   getVerificationAssetUrl,
   buildVerifyLinkEmbed,
   buildVerifyLinkRow,
   buildVerifyPanelEmbed,
-  buildVerifyPanelRow
+  buildVerifyPanelRow,
+  buildVerifyLinkMessage,
+  buildVerifyPanelMessage
 };

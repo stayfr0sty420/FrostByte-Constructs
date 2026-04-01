@@ -5,10 +5,10 @@ const { getOrCreateGuildConfig } = require('../../../services/economy/guildConfi
 const { safeReply } = require('../../shared/util/reply');
 const {
   getBaseUrl,
-  buildVerifyLinkEmbed,
   buildVerifyLinkRow,
-  buildVerifyPanelEmbed,
-  buildVerifyPanelRow
+  buildVerifyPanelRow,
+  buildVerifyLinkMessage,
+  buildVerifyPanelMessage
 } = require('../util/verifyMessages');
 
 module.exports = {
@@ -49,7 +49,7 @@ module.exports = {
         }).catch(() => null);
       }
 
-      const embed = buildVerifyPanelEmbed(cfg, { guildName: interaction.guild?.name || '' });
+      const panelMessage = buildVerifyPanelMessage(cfg, { guildName: interaction.guild?.name || '' });
       const row = buildVerifyPanelRow(guildId);
 
       let msg = null;
@@ -63,13 +63,22 @@ module.exports = {
         if (oldChannel?.isTextBased?.()) {
           const oldMsg = await oldChannel.messages.fetch(prevMessageId).catch(() => null);
           if (oldMsg) {
-            msg = await oldMsg.edit({ embeds: [embed], components: [row], skipBotBranding: true }).catch(() => null);
+            msg = await oldMsg.edit({
+              ...panelMessage,
+              attachments: [],
+              components: [row],
+              skipBotBranding: true
+            }).catch(() => null);
           }
         }
       }
 
       if (!msg) {
-        msg = await channel.send({ embeds: [embed], components: [row], skipBotBranding: true }).catch(() => null);
+        msg = await channel.send({
+          ...panelMessage,
+          components: [row],
+          skipBotBranding: true
+        }).catch(() => null);
       }
 
       if (msg?.id) {
@@ -89,8 +98,8 @@ module.exports = {
 
     const baseUrl = getBaseUrl();
     const url = `${baseUrl}/verify/${guildId}/start`;
-    const embed = buildVerifyLinkEmbed(cfg, { guildName: interaction.guild?.name || '' });
+    const linkMessage = buildVerifyLinkMessage(cfg, { guildName: interaction.guild?.name || '' });
     const row = buildVerifyLinkRow(url);
-    return await safeReply(interaction, { embeds: [embed], components: [row], ephemeral: true });
+    return await safeReply(interaction, { ...linkMessage, components: [row], ephemeral: true });
   }
 };

@@ -2725,6 +2725,20 @@ code {
 
 .wick-select {
   position: relative;
+  --wick-surface: linear-gradient(180deg, rgba(24, 8, 12, 0.96), rgba(11, 4, 8, 0.99));
+  --wick-surface-raised: rgba(16, 6, 10, 0.98);
+  --wick-surface-soft: rgba(38, 10, 16, 0.9);
+  --wick-surface-option: rgba(26, 8, 13, 0.82);
+  --wick-surface-option-hover: rgba(58, 14, 22, 0.92);
+  --wick-border: rgba(248, 113, 113, 0.24);
+  --wick-border-strong: rgba(248, 113, 113, 0.42);
+  --wick-glow: rgba(239, 68, 68, 0.16);
+  --wick-text: rgba(255, 241, 242, 0.94);
+  --wick-muted: rgba(251, 207, 232, 0.62);
+  --wick-channel-bg: rgba(239, 68, 68, 0.14);
+  --wick-channel-text: rgba(254, 202, 202, 0.96);
+  --wick-scroll-thumb: rgba(248, 113, 113, 0.55);
+  --wick-scroll-track: rgba(25, 7, 11, 0.8);
 }
 
 .wick-select__control {
@@ -2736,9 +2750,9 @@ code {
   min-height: 52px;
   padding: 0.75rem 3.3rem 0.75rem 0.9rem;
   border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
-  background: linear-gradient(180deg, rgba(18, 10, 16, 0.94), rgba(9, 5, 10, 0.98));
-  color: rgba(248, 250, 252, 0.94);
+  border: 1px solid var(--wick-border);
+  background: var(--wick-surface);
+  color: var(--wick-text);
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.04),
     0 12px 24px rgba(0, 0, 0, 0.12);
@@ -2751,9 +2765,9 @@ code {
 
 .wick-select.is-open .wick-select__trigger,
 .wick-select__trigger:focus {
-  border-color: rgba(96, 165, 250, 0.42);
+  border-color: var(--wick-border-strong);
   box-shadow:
-    0 0 0 3px rgba(96, 165, 250, 0.14),
+    0 0 0 3px var(--wick-glow),
     inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 }
 
@@ -2775,7 +2789,7 @@ code {
 }
 
 .wick-select__placeholder {
-  color: rgba(148, 163, 184, 0.74);
+  color: var(--wick-muted);
 }
 
 .wick-select__token-label {
@@ -2790,8 +2804,8 @@ code {
   height: 12px;
   flex-shrink: 0;
   border-radius: 999px;
-  background: var(--wick-accent, #60a5fa);
-  box-shadow: 0 0 0 2px rgba(3, 7, 18, 0.5);
+  background: var(--wick-accent, #f87171);
+  box-shadow: 0 0 0 2px rgba(14, 3, 6, 0.5);
 }
 
 .wick-select__accent--channel {
@@ -2801,16 +2815,16 @@ code {
   width: 18px;
   height: 18px;
   border-radius: 6px;
-  background: rgba(96, 165, 250, 0.18);
+  background: var(--wick-channel-bg);
   box-shadow: none;
-  color: rgba(147, 197, 253, 0.96);
+  color: var(--wick-channel-text);
   font-size: 0.78rem;
   font-weight: 700;
 }
 
 .wick-select__chevron {
   margin-left: auto;
-  color: rgba(148, 163, 184, 0.7);
+  color: var(--wick-muted);
   font-size: 0.78rem;
   transition: transform 0.18s ease;
 }
@@ -2829,7 +2843,7 @@ code {
   border: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(226, 232, 240, 0.88);
+  color: rgba(255, 228, 230, 0.88);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2837,7 +2851,7 @@ code {
 
 .wick-select__clear:hover,
 .wick-select__clear:focus {
-  background: rgba(96, 165, 250, 0.18);
+  background: rgba(239, 68, 68, 0.18);
   color: #fff;
 }
 
@@ -2847,9 +2861,11 @@ code {
   z-index: 30;
   padding: 0.55rem;
   border-radius: 18px;
-  border: 1px solid rgba(96, 165, 250, 0.24);
-  background: rgba(5, 8, 16, 0.98);
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.34);
+  border: 1px solid var(--wick-border);
+  background: var(--wick-surface-raised);
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(255, 255, 255, 0.02) inset;
 }
 
 .wick-select__search {
@@ -2857,16 +2873,20 @@ code {
   min-height: 38px;
   padding: 0.55rem 0.75rem;
   border-radius: 12px;
-  border: 1px solid rgba(96, 165, 250, 0.16);
-  background: rgba(15, 23, 42, 0.9);
-  color: rgba(248, 250, 252, 0.94);
+  border: 1px solid rgba(248, 113, 113, 0.2);
+  background: var(--wick-surface-soft);
+  color: var(--wick-text);
   margin-bottom: 0.55rem;
+}
+
+.wick-select__search::placeholder {
+  color: var(--wick-muted);
 }
 
 .wick-select__search:focus {
   outline: 0;
-  border-color: rgba(96, 165, 250, 0.46);
-  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.12);
+  border-color: var(--wick-border-strong);
+  box-shadow: 0 0 0 3px var(--wick-glow);
 }
 
 .wick-select__list {
@@ -2875,6 +2895,29 @@ code {
   max-height: 240px;
   overflow-y: auto;
   padding-right: 0.1rem;
+  scrollbar-color: var(--wick-scroll-thumb) var(--wick-scroll-track);
+  scrollbar-width: thin;
+}
+
+.wick-select__list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.wick-select__list::-webkit-scrollbar-track {
+  background: var(--wick-scroll-track);
+  border-radius: 999px;
+}
+
+.wick-select__list::-webkit-scrollbar-thumb {
+  background: var(--wick-scroll-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.wick-select__list::-webkit-scrollbar-thumb:hover {
+  background: rgba(251, 113, 133, 0.78);
+  background-clip: padding-box;
 }
 
 .wick-select__option {
@@ -2882,28 +2925,28 @@ code {
   padding: 0.65rem 0.7rem;
   border: 0;
   border-radius: 12px;
-  background: rgba(15, 23, 42, 0.34);
-  color: rgba(248, 250, 252, 0.94);
+  background: var(--wick-surface-option);
+  color: var(--wick-text);
   text-align: left;
 }
 
 .wick-select__option:hover,
 .wick-select__option:focus,
 .wick-select__option.is-selected {
-  background: rgba(30, 41, 59, 0.84);
+  background: var(--wick-surface-option-hover);
 }
 
 .wick-select__option.is-selected {
-  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.28);
 }
 
 .wick-select__option.is-empty {
-  color: rgba(148, 163, 184, 0.86);
+  color: var(--wick-muted);
 }
 
 .wick-select__empty {
   padding: 0.7rem 0.3rem 0.15rem;
-  color: rgba(148, 163, 184, 0.72);
+  color: var(--wick-muted);
   font-size: 0.88rem;
 }
 
