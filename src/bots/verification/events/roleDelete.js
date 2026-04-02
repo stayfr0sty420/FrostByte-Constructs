@@ -4,11 +4,6 @@ const { sendLog } = require('../../../services/discord/loggingService');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
 const { baseEmbed, addField, formatRoleName } = require('../util/logHelpers');
 
-function roleColor(role) {
-  if (!role || !role.color) return 'Default';
-  return `#${role.color.toString(16).padStart(6, '0')}`;
-}
-
 async function execute(client, role) {
   const guildId = role?.guild?.id;
   if (!guildId) return;
@@ -16,9 +11,8 @@ async function execute(client, role) {
   if (!approved) return;
 
   const embed = baseEmbed('Role Deleted');
-  addField(embed, 'Role', formatRoleName(role, '@'));
+  addField(embed, 'Role', formatRoleName(role, ''));
   addField(embed, 'Role ID', role.id, true);
-  addField(embed, 'Color', roleColor(role), true);
 
   await sendLog({
     discordClient: client,

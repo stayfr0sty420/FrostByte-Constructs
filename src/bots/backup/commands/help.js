@@ -18,7 +18,7 @@ module.exports = {
         },
         { name: 'Templates', value: '`/template save` `/template list` `/template apply`', inline: false },
         { name: 'Voice 24/7', value: '`/voice set` `/voice off` `/voice status`', inline: false },
-        { name: 'Profiles', value: '`/devs` `/exec`', inline: false }
+        { name: 'Profiles', value: '`/dev` `/exec` `/execs`', inline: false }
       )
       .setFooter({ text: 'Note: Restore is best-effort (Discord limitations + rate limits).' })
       .setTimestamp();

@@ -199,6 +199,15 @@ function inlineList(value) {
     .join(', ');
 }
 
+function formatEmojiClipboardValue(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return ':unknown:';
+  const mentionMatch = raw.match(/^<a?:([^:>]+):\d+>$/);
+  const name = mentionMatch ? mentionMatch[1] : raw.replace(/^:+|:+$/g, '').trim();
+  if (!name) return ':unknown:';
+  return `:${name}:`;
+}
+
 function buildAttachmentLinks(rawUrls, rawNames) {
   const urls = listFromMultiline(rawUrls);
   const names = listFromMultiline(rawNames);
@@ -351,15 +360,18 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '', co
         1200
       );
     case 'role_delete':
-      return compactText([detailLine('Role', fields.role || ''), detailLine('Color', fields.color || 'Default', 240)].filter(Boolean).join('\n'), 900);
+      return compactText(detailLine('Role', fields.role || ''), 900);
     case 'role_update':
       return compactText([detailLine('Role', fields.role || 'Role'), detailLine('Changes', changes, 1000)].filter(Boolean).join('\n'), 1200);
     case 'emoji_create':
-      return compactText(`New emoji has been created: ${fields.name || emoji || '(unknown)'}.`, 900);
+      return compactText(`New emoji has been created: ${formatEmojiClipboardValue(fields.name || emoji || '(unknown)')}`, 900);
     case 'emoji_update':
-      return compactText(`${before || '(unknown)'} was changed to ${after || fields.name || '(unknown)'}.`, 900);
+      return compactText(
+        `${formatEmojiClipboardValue(before || '(unknown)')} was changed to ${formatEmojiClipboardValue(after || fields.name || '(unknown)')}`,
+        900
+      );
     case 'emoji_delete':
-      return compactText(`The emoji ${fields.name || emoji || '(unknown)'} has been deleted!`, 900);
+      return compactText(`The emoji ${formatEmojiClipboardValue(fields.name || emoji || '(unknown)')} has been deleted!`, 900);
     case 'member_join':
       return compactText(
         [

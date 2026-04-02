@@ -9,16 +9,27 @@ const PRESIDENT_PROFILE_URL = 'https://guns.lol/lucyblocks';
 const CO_FOUNDER_PROFILE_URL = 'https://guns.lol/dfwkito';
 const EXECUTIVE_FOOTER_TEXT = 'Rodstarkian Bot Ecosystem • Executive Profile';
 const DEVELOPER_FOOTER_TEXT = 'Rodstarkian Bot Ecosystem • Developer Profile';
-const DEV_AUTHOR_TEXT = "God's Eye - Head of Development";
-const EXECUTIVE_AUTHOR_TEXT = "God's Eye - Executive Board";
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const DEV_BANNER_PATH = path.join(REPO_ROOT, 'images', 'branding', 'developer', 'architect-dossier-banner.png');
-const DEV_THUMBNAIL_PATH = path.join(REPO_ROOT, 'images', 'branding', 'developer', 'exc-modified.png');
 const RODSTARKIAN_BOT_PATH = path.join(REPO_ROOT, 'images', 'bots', 'Rodstarkian_Bot.png');
 const EXECUTIVE_BANNER_PATH = path.join(REPO_ROOT, 'images', 'branding', 'executive', 'RDSKBots_Background.png');
-const GODS_EYE_ICON_PATH = path.join(REPO_ROOT, 'images', 'branding', 'gods-eye', 'gods-eye-clear.png');
-const EXECUTIVE_THUMBNAIL_PATH = path.join(REPO_ROOT, 'images', 'Shield_Flame_Fusion_Logo_No_BG.png');
+const BOT_PROFILE_IMAGE_DIR = path.join(REPO_ROOT, 'images', 'bots', 'profiles');
+
+const BOT_PROFILE_ASSETS = Object.freeze({
+  'RoBot': {
+    iconPath: path.join(BOT_PROFILE_IMAGE_DIR, 'robot-clear-profile.png'),
+    attachmentName: 'robot-clear-profile.png'
+  },
+  'Rodstarkian Vault': {
+    iconPath: path.join(BOT_PROFILE_IMAGE_DIR, 'rodstarkian-vault-clear-profile.png'),
+    attachmentName: 'rodstarkian-vault-clear-profile.png'
+  },
+  "God's Eye": {
+    iconPath: path.join(BOT_PROFILE_IMAGE_DIR, 'gods-eye-clear-profile.png'),
+    attachmentName: 'gods-eye-clear-profile.png'
+  }
+});
 
 function createAttachment(filePath, name) {
   return new AttachmentBuilder(filePath, { name });
@@ -32,33 +43,38 @@ function createDevBannerAttachment() {
   return createAttachment(DEV_BANNER_PATH, 'architect-dossier-banner.png');
 }
 
-function createDevThumbnailAttachment() {
-  return createAttachment(DEV_THUMBNAIL_PATH, 'developer-exc-modified.png');
-}
-
 function createExecutiveBannerAttachment() {
   return createAttachment(EXECUTIVE_BANNER_PATH, 'rdskbots-background.png');
 }
 
-function createGodsEyeIconAttachment(name = 'gods-eye-icon.png') {
-  return createAttachment(GODS_EYE_ICON_PATH, name);
+function resolveBotProfileAsset(botName) {
+  const safeBotName = String(botName || '').trim();
+  return BOT_PROFILE_ASSETS[safeBotName] || BOT_PROFILE_ASSETS["God's Eye"];
 }
 
-function createExecutiveThumbnailAttachment() {
-  return createAttachment(EXECUTIVE_THUMBNAIL_PATH, 'shield-flame-fusion-logo.png');
+function createBotProfileIconAttachment(botName, fallbackName) {
+  const asset = resolveBotProfileAsset(botName);
+  return createAttachment(asset.iconPath, fallbackName || asset.attachmentName);
+}
+
+function buildDevAuthorText(botName) {
+  return `${String(botName || "God's Eye").trim() || "God's Eye"} • Head of Development`;
+}
+
+function buildExecutiveAuthorText(botName) {
+  return `${String(botName || "God's Eye").trim() || "God's Eye"} • Executive Board`;
 }
 
 function createDevProfileParts(botName) {
-  void botName;
-  const authorIcon = createGodsEyeIconAttachment('gods-eye-dev-icon.png');
-  const devThumbnail = createDevThumbnailAttachment();
+  const authorIcon = createBotProfileIconAttachment(botName, 'bot-dev-icon.png');
+  const devThumbnail = createBotProfileIconAttachment(botName, 'bot-dev-thumbnail.png');
   const footerIcon = createRodstarkianAttachment();
   const devBanner = createDevBannerAttachment();
 
   const embed = new EmbedBuilder()
     .setColor(0xe11d48)
     .setAuthor({
-      name: DEV_AUTHOR_TEXT,
+      name: buildDevAuthorText(botName),
       iconURL: `attachment://${authorIcon.name}`
     })
     .setDescription(
@@ -104,16 +120,15 @@ function buildDevProfilePayload(botName) {
 }
 
 function createExecutiveProfileParts(botName) {
-  void botName;
-  const authorIcon = createGodsEyeIconAttachment('gods-eye-executive-icon.png');
-  const thumbnail = createExecutiveThumbnailAttachment();
+  const authorIcon = createBotProfileIconAttachment(botName, 'bot-executive-icon.png');
+  const thumbnail = createBotProfileIconAttachment(botName, 'bot-executive-thumbnail.png');
   const executiveBanner = createExecutiveBannerAttachment();
   const footerIcon = createRodstarkianAttachment();
 
   const embed = new EmbedBuilder()
     .setColor(0xdc2626)
     .setAuthor({
-      name: EXECUTIVE_AUTHOR_TEXT,
+      name: buildExecutiveAuthorText(botName),
       iconURL: `attachment://${authorIcon.name}`
     })
     .setDescription(

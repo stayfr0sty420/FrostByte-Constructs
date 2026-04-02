@@ -4,6 +4,8 @@ const { isGuildApproved } = require('../../../services/admin/guildRegistryServic
 const { hasAcceptedEconomyRules, countAcceptedEconomyRules } = require('../../../services/economy/rulesConsentService');
 const { buildRulesPrompt } = require('../rules/rulesPrompt');
 
+const RULES_EXEMPT_COMMANDS = new Set(['help', 'dev', 'exec', 'execs']);
+
 async function execute(client, interaction) {
   try {
     const needsApprovalCheck =
@@ -35,8 +37,8 @@ async function execute(client, interaction) {
       if (!command) return;
 
       // Require rules acceptance for economy commands (except /help).
-      if (interaction.commandName !== 'help') {
-          const accepted = await hasAcceptedEconomyRules(interaction.user.id);
+      if (!RULES_EXEMPT_COMMANDS.has(interaction.commandName)) {
+        const accepted = await hasAcceptedEconomyRules(interaction.user.id);
         if (!accepted) {
           const count = await countAcceptedEconomyRules().catch(() => null);
           const prompt = buildRulesPrompt({ acceptedCount: typeof count === 'number' ? count : null });

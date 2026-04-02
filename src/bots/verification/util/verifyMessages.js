@@ -119,7 +119,8 @@ function buildVerifyLinkMessage(_cfg, options = {}) {
   });
   return {
     embeds: [embed],
-    files
+    files,
+    skipBotBranding: true
   };
 }
 
@@ -130,7 +131,8 @@ function buildVerifyPanelMessage(_cfg, options = {}) {
   });
   return {
     embeds: [embed],
-    files
+    files,
+    skipBotBranding: true
   };
 }
 

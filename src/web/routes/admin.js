@@ -656,7 +656,7 @@ async function sendApprovalNotice({ req, guildId, botName, status, actionLabel, 
     )
     .setTimestamp();
 
-  await target.channel.send({ embeds: [embed] }).catch(() => null);
+  await target.channel.send({ embeds: [embed], skipBotBranding: true }).catch(() => null);
 }
 
 // Home
