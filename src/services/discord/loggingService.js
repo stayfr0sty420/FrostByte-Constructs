@@ -2,6 +2,7 @@ const { EmbedBuilder } = require('discord.js');
 const MessageLog = require('../../db/models/MessageLog');
 const { getOrCreateGuildConfig } = require('../economy/guildConfigService');
 const { sendWebhook } = require('./webhookService');
+const { getLogChannelOverride, isLogTypeEnabled, normalizeTypeKey } = require('./logDefinitions');
 const { logger } = require('../../config/logger');
 const { brandPayload } = require('../../bots/shared/util/branding');
 
@@ -63,59 +64,6 @@ function resolveBotLabel({ discordClient, webhookCategory, type } = {}) {
     return BOT_LABELS.verification;
   }
   return '';
-}
-
-function toggleForType(cfg, type) {
-  const t = String(type || '').toLowerCase();
-  const logs = cfg.logs || {};
-
-  const map = {
-    join: logs.logMemberJoins ?? logs.logJoins,
-    leave: logs.logMemberLeaves ?? logs.logLeaves,
-    delete: logs.logMessageDeletes ?? logs.logDeletes,
-    edit: logs.logMessageEdits ?? logs.logEdits,
-    ban: logs.logMemberBans ?? logs.logBans,
-    nickname: logs.logNicknameChanges ?? logs.logNicknames,
-    verification: logs.logVerifications,
-    backup: logs.logBackups,
-    economy: logs.logEconomy,
-
-    message_delete: logs.logMessageDeletes,
-    message_edit: logs.logMessageEdits,
-    image_delete: logs.logImageDeletes,
-    bulk_message_delete: logs.logBulkMessageDeletes,
-    invite_info: logs.logInviteInfo,
-    moderator_command: logs.logModeratorCommands,
-
-    member_join: logs.logMemberJoins,
-    member_leave: logs.logMemberLeaves,
-    member_kick: logs.logMemberLeaves,
-    member_role_add: logs.logMemberRoleAdds,
-    member_role_remove: logs.logMemberRoleRemoves,
-    member_timeout: logs.logMemberTimeouts,
-    member_ban: logs.logMemberBans,
-    member_unban: logs.logMemberUnbans,
-    nickname_change: logs.logNicknameChanges,
-
-    role_create: logs.logRoleCreates,
-    role_delete: logs.logRoleDeletes,
-    role_update: logs.logRoleUpdates,
-
-    channel_create: logs.logChannelCreates,
-    channel_update: logs.logChannelUpdates,
-    channel_delete: logs.logChannelDeletes,
-
-    emoji_create: logs.logEmojiCreates,
-    emoji_update: logs.logEmojiUpdates,
-    emoji_delete: logs.logEmojiDeletes,
-
-    voice_join: logs.logVoiceJoins,
-    voice_leave: logs.logVoiceLeaves,
-    voice_move: logs.logVoiceMoves
-  };
-
-  if (typeof map[t] === 'boolean') return map[t];
-  return true;
 }
 
 async function writeMessageLog({ guildId, type, botLabel, safeEmbeds, summaryEmbeds = [], content = '', summaryContent = '' }) {
@@ -184,6 +132,70 @@ function listFromMultiline(value) {
     .split('\n')
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+function parseDateValue(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    const numericDate = new Date(numeric);
+    if (!Number.isNaN(numericDate.getTime())) return numericDate;
+  }
+
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function humanizeDurationMs(inputMs) {
+  const totalMs = Math.max(0, Number(inputMs || 0));
+  if (!Number.isFinite(totalMs)) return '';
+  const totalSeconds = Math.max(1, Math.round(totalMs / 1000));
+  const units = [
+    ['year', 365 * 24 * 60 * 60],
+    ['month', 30 * 24 * 60 * 60],
+    ['week', 7 * 24 * 60 * 60],
+    ['day', 24 * 60 * 60],
+    ['hour', 60 * 60],
+    ['minute', 60],
+    ['second', 1]
+  ];
+
+  let remaining = totalSeconds;
+  const parts = [];
+  for (const [label, size] of units) {
+    if (remaining < size) continue;
+    const count = Math.floor(remaining / size);
+    remaining -= count * size;
+    parts.push(`${count} ${label}${count === 1 ? '' : 's'}`);
+    if (parts.length === 2) break;
+  }
+
+  return parts.join(', ') || '0 seconds';
+}
+
+function durationSince(value, reference = new Date()) {
+  const date = parseDateValue(value);
+  const ref = parseDateValue(reference) || new Date();
+  if (!date || Number.isNaN(ref.getTime())) return '';
+  return humanizeDurationMs(ref.getTime() - date.getTime());
+}
+
+function durationUntil(value, reference = new Date()) {
+  const date = parseDateValue(value);
+  const ref = parseDateValue(reference) || new Date();
+  if (!date || Number.isNaN(ref.getTime())) return '';
+  return humanizeDurationMs(date.getTime() - ref.getTime());
+}
+
+function inlineList(value) {
+  return listFromMultiline(value)
+    .map((entry) => compactText(entry, 180))
+    .filter(Boolean)
+    .join(', ');
 }
 
 function buildAttachmentLinks(rawUrls, rawNames) {
@@ -293,7 +305,7 @@ function detailLine(label, value, max = 700) {
   return `**${label}:** ${text}`;
 }
 
-function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
+function buildCompactAuditDescription(type, fields, fallbackDescription = '', context = {}) {
   const user = fields.user || '';
   const channel = fields.channel || '';
   const from = fields.from || '';
@@ -303,29 +315,27 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
   const before = fields.before || '';
   const after = fields.after || '';
   const command = fields.command || '';
-  const options = fields.options || '';
+  const commandOptions = fields.options || '';
   const emoji = fields.emoji || '';
   const content = fields.content || '';
   const count = fields.count || '';
   const code = fields.code || '';
   const reason = fields.reason || '';
+  const accountAge = fields['account age'] || '';
   const accountCreated = fields['account created'] || '';
   const until = fields.until || '';
-  const previous = fields.previous || '';
+  const duration = fields.duration || '';
+  const rolesText = inlineList(roles);
+  const referenceTime = parseDateValue(context.timestamp) || new Date();
   const attachmentLinks = buildAttachmentLinks(fields['attachment urls'] || fields.attachments || '', fields['attachment names'] || '');
 
   switch (type) {
     case 'voice_join':
-      return compactText([`${user || 'Unknown member'} joined a voice channel.`, detailLine('Channel', channel)].filter(Boolean).join('\n'), 1400);
+      return compactText(`${user || 'Unknown member'} joined a voice channel ${channel || '#unknown'}.`, 1400);
     case 'voice_leave':
-      return compactText([`${user || 'Unknown member'} left a voice channel.`, detailLine('Channel', channel)].filter(Boolean).join('\n'), 1400);
+      return compactText(`${user || 'Unknown member'} left a voice channel ${channel || '#unknown'}.`, 1400);
     case 'voice_move':
-      return compactText(
-        [`${user || 'Unknown member'} switched voice channels.`, detailLine('From', from), detailLine('To', to)]
-          .filter(Boolean)
-          .join('\n'),
-        1400
-      );
+      return compactText(`${user || 'Unknown member'} switched voice channels from ${from || '#unknown'} to ${to || '#unknown'}.`, 1400);
     case 'channel_create':
       return compactText(detailLine('Channel', channel), 900);
     case 'channel_delete':
@@ -351,7 +361,11 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
       return compactText([detailLine('Emoji', emoji || fields.name || '(unknown)'), detailLine('Name', fields.name || '')].filter(Boolean).join('\n'), 900);
     case 'member_join':
       return compactText(
-        [`${user || 'Unknown member'} joined the server.`, detailLine('Account Age', accountCreated || '(unknown)'), detailLine('Bot Account', fields.bot || '')]
+        [
+          `${user || 'Unknown member'} joined the server.`,
+          detailLine('Account Age', accountAge || durationSince(accountCreated, referenceTime) || '(unknown)'),
+          detailLine('Bot Account', fields.bot || '')
+        ]
           .filter(Boolean)
           .join('\n'),
         1200
@@ -361,16 +375,17 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
     case 'member_kick':
       return compactText([`${user || 'Unknown member'} was kicked from the server.`, detailLine('Reason', reason || 'No reason provided.')].filter(Boolean).join('\n'), 1200);
     case 'member_role_add':
-      return compactText([`${user || 'Unknown member'} received new role access.`, detailLine('Roles', roles, 1000)].filter(Boolean).join('\n'), 1200);
+      return compactText(`${user || 'Unknown member'} received ${rolesText || '#unknown'} role access.`, 1200);
     case 'member_role_remove':
-      return compactText([`${user || 'Unknown member'} lost role access.`, detailLine('Roles', roles, 1000)].filter(Boolean).join('\n'), 1200);
+      return compactText(`${user || 'Unknown member'} lost ${rolesText || '#unknown'} role access.`, 1200);
     case 'member_timeout':
-      return compactText(
-        [`${user || 'Unknown member'} had timeout status updated.`, until ? detailLine('Until', until) : detailLine('Previous Timeout', previous || 'Removed')]
-          .filter(Boolean)
-          .join('\n'),
-        1200
-      );
+      if (until) {
+        return compactText(
+          `${user || 'Unknown member'} has been timed out for ${duration || durationUntil(until, referenceTime) || 'an unknown duration'}.`,
+          1200
+        );
+      }
+      return compactText(`Timeout for ${user || 'Unknown member'} has been removed.`, 1200);
     case 'member_ban':
       return compactText([`${user || 'Unknown member'} was banned from the server.`, detailLine('Reason', reason || 'No reason provided.')].filter(Boolean).join('\n'), 1200);
     case 'member_unban':
@@ -378,7 +393,12 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '') {
     case 'nickname_change':
       return compactText([`${user || 'Unknown member'} changed nickname.`, detailLine('Before', before || '(none)'), detailLine('After', after || '(none)')].filter(Boolean).join('\n'), 1200);
     case 'moderator_command':
-      return compactText([`${user || 'Unknown moderator'} used ${command || 'a command'}.`, detailLine('Channel', channel), detailLine('Options', options, 1000)].filter(Boolean).join('\n'), 1200);
+      return compactText(
+        [`${user || 'Unknown moderator'} used ${command || 'a command'}.`, detailLine('Channel', channel), detailLine('Options', commandOptions, 1000)]
+          .filter(Boolean)
+          .join('\n'),
+        1200
+      );
     case 'invite_info':
       return compactText([detailLine('Invite Code', code || '(unknown)'), detailLine('Channel', channel), detailLine('Inviter', fields.inviter || '')].filter(Boolean).join('\n'), 1200);
     case 'image_delete':
@@ -419,7 +439,9 @@ function buildCompactAuditEmbed(type, embed) {
 
   const style = getTypeStyle(type);
   const fields = extractFieldMap(normalized);
-  const description = buildCompactAuditDescription(type, fields, normalized.description || '');
+  const description = buildCompactAuditDescription(type, fields, normalized.description || '', {
+    timestamp: normalized.timestamp
+  });
   const entityId = extractAuditId(normalized, fields);
   const titleSource = style.title !== 'Audit Log' ? style.title : (normalized.title || style.title);
   const title = compactText(titleSource || 'Audit Log', 120) || 'Audit Log';
@@ -432,7 +454,7 @@ function buildCompactAuditEmbed(type, embed) {
   const isEmojiAudit = String(type || '').toLowerCase().startsWith('emoji_');
   const thumbnailUrl = shouldShowAuditThumbnail(type)
     ? (normalized.thumbnail?.url || avatarUrl || '')
-    : (isEmojiAudit ? imageUrl : '');
+    : (isEmojiAudit ? (normalized.thumbnail?.url || imageUrl) : '');
 
   if (type === 'image_delete' || type === 'message_delete') {
     if (authorId) footerBits.push(`Author ID: ${authorId}`);
@@ -459,7 +481,7 @@ function buildCompactAuditEmbed(type, embed) {
 
 async function sendLog({ discordClient, guildId, type, content, embeds = [], webhookCategory = '', channelIdOverride = '', skipBotBranding = false }) {
   const cfg = await getOrCreateGuildConfig(guildId);
-  if (!toggleForType(cfg, type)) return { ok: true, skipped: true };
+  if (!isLogTypeEnabled(cfg.logs || {}, type)) return { ok: true, skipped: true };
 
   const isCompact = COMPACT_AUDIT_TYPES.has(String(type || '').toLowerCase());
   const botLabel = resolveBotLabel({ discordClient, webhookCategory, type });
@@ -523,7 +545,7 @@ async function sendLog({ discordClient, guildId, type, content, embeds = [], web
     });
   }
 
-  const typeKey = String(type || '').toLowerCase();
+  const typeKey = normalizeTypeKey(type);
   const prefersVerificationChannel = new Set([
     'join',
     'leave',
@@ -563,6 +585,7 @@ async function sendLog({ discordClient, guildId, type, content, embeds = [], web
 
   const channelId =
     String(channelIdOverride || '').trim() ||
+    getLogChannelOverride(cfg.logs || {}, typeKey) ||
     (prefersVerificationChannel ? cfg.verification?.logChannelId : '') ||
     cfg.logs?.channelId ||
     '';

@@ -28,6 +28,12 @@ function formatChannel(channel) {
   return 'Unknown';
 }
 
+function formatChannelName(channel) {
+  if (!channel) return '#unknown';
+  const name = String(channel.name || '').trim();
+  return name ? `#${name}` : '#unknown';
+}
+
 function formatRole(role) {
   if (!role) return 'Unknown';
   if (role.id) return `<@&${role.id}>`;
@@ -35,11 +41,46 @@ function formatRole(role) {
   return 'Unknown';
 }
 
+function formatRoleName(role, prefix = '#') {
+  if (!role) return `${prefix}unknown`;
+  const name = String(role.name || '').trim();
+  if (name) return `${prefix}${name}`;
+  return `${prefix}${role.id || 'unknown'}`;
+}
+
 function formatDate(value) {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toISOString();
+}
+
+function formatDurationBetween(startValue, endValue = new Date()) {
+  const start = startValue instanceof Date ? startValue : new Date(startValue);
+  const end = endValue instanceof Date ? endValue : new Date(endValue);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '';
+
+  let remainingSeconds = Math.max(1, Math.round((end.getTime() - start.getTime()) / 1000));
+  const units = [
+    ['year', 365 * 24 * 60 * 60],
+    ['month', 30 * 24 * 60 * 60],
+    ['week', 7 * 24 * 60 * 60],
+    ['day', 24 * 60 * 60],
+    ['hour', 60 * 60],
+    ['minute', 60],
+    ['second', 1]
+  ];
+  const parts = [];
+
+  for (const [label, size] of units) {
+    if (remainingSeconds < size) continue;
+    const count = Math.floor(remainingSeconds / size);
+    remainingSeconds -= count * size;
+    parts.push(`${count} ${label}${count === 1 ? '' : 's'}`);
+    if (parts.length === 2) break;
+  }
+
+  return parts.join(', ') || '0 seconds';
 }
 
 function getUserAvatarUrl(user, size = 128) {
@@ -95,8 +136,11 @@ module.exports = {
   truncate,
   formatUser,
   formatChannel,
+  formatChannelName,
   formatRole,
+  formatRoleName,
   formatDate,
+  formatDurationBetween,
   getUserAvatarUrl,
   setUserIdentity,
   setEmojiIdentity,

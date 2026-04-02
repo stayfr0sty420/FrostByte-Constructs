@@ -65,6 +65,11 @@ const GuildConfigSchema = new mongoose.Schema(
 
     logs: {
       channelId: { type: String, default: '' },
+      channelOverrides: {
+        type: Map,
+        of: String,
+        default: {}
+      },
       logJoins: { type: Boolean, default: true },
       logLeaves: { type: Boolean, default: true },
       logDeletes: { type: Boolean, default: true },

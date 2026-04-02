@@ -2,7 +2,7 @@
 
 const { applyJoinGate } = require('../../../services/discord/discordService');
 const { sendLog } = require('../../../services/discord/loggingService');
-const { baseEmbed, addField, formatUser, formatDate, setUserIdentity } = require('../util/logHelpers');
+const { baseEmbed, addField, formatUser, formatDate, formatDurationBetween, setUserIdentity } = require('../util/logHelpers');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
 
 async function execute(client, member) {
@@ -15,6 +15,7 @@ async function execute(client, member) {
   const embed = baseEmbed('Member Joined');
   addField(embed, 'User', formatUser(member.user));
   if (member.user?.createdAt) addField(embed, 'Account Created', formatDate(member.user.createdAt), true);
+  if (member.user?.createdAt) addField(embed, 'Account Age', formatDurationBetween(member.user.createdAt, member.joinedAt || new Date()), true);
   if (typeof member.user?.bot === 'boolean') addField(embed, 'Bot', member.user.bot ? 'Yes' : 'No', true);
   setUserIdentity(embed, member.user);
 

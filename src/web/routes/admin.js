@@ -52,6 +52,7 @@ const { restoreBackup } = require('../../services/backup/restoreService');
 const { removeSchedule, upsertSchedule } = require('../../jobs/backupScheduler');
 const { reviewVerification } = require('../../services/verification/verificationService');
 const { sendLog } = require('../../services/discord/loggingService');
+const { LOG_SECTIONS, assignLogSettings, normalizeChannelOverrides } = require('../../services/discord/logDefinitions');
 const { getEconomyAccountGuildId, getEconomyAccountScope } = require('../../services/economy/accountScope');
 const { ensureVoiceConnection, disconnectVoice } = require('../../jobs/voiceScheduler');
 const { buildVerifyPanelMessage, buildVerifyPanelRow } = require('../../bots/verification/util/verifyMessages');
@@ -280,13 +281,17 @@ async function upsertVerificationPanel({ discordClient, guildId, cfg, baseUrl = 
   }
 
   if (msg) {
-    await msg.edit({
-      ...panelMessage,
-      attachments: [],
-      components: [row],
-      skipBotBranding: true
-    }).catch(() => null);
-  } else {
+    msg = await msg
+      .edit({
+        ...panelMessage,
+        attachments: [],
+        components: [row],
+        skipBotBranding: true
+      })
+      .catch(() => null);
+  }
+
+  if (!msg) {
     msg = await channel.send({
       ...panelMessage,
       components: [row],
@@ -2333,7 +2338,16 @@ router.get('/verification/settings', requireAdmin, requireGuild, async (req, res
   const questions = (baseQuestions.length ? baseQuestions : ['Why do you want to verify?']).slice(0, 3);
   const flash = req.session.flash || null;
   delete req.session.flash;
-  return res.render('pages/admin/verification_settings', { title: 'Verification Settings', cfg, roles, channels, questions, flash });
+  return res.render('pages/admin/verification_settings', {
+    title: 'Verification Settings',
+    cfg,
+    roles,
+    channels,
+    questions,
+    flash,
+    logSections: LOG_SECTIONS,
+    logChannelOverrides: normalizeChannelOverrides(cfg.logs?.channelOverrides)
+  });
 });
 
 router.post('/verification/settings', requireAdmin, requireGuild, async (req, res) => {
@@ -2367,50 +2381,7 @@ router.post('/verification/settings', requireAdmin, requireGuild, async (req, re
   cfg.verification.tempRoleName = roleById.get(cfg.verification.tempRoleId)?.name || '';
   cfg.verification.verifiedRoleName = roleById.get(cfg.verification.verifiedRoleId)?.name || '';
 
-  // Log toggles (checkboxes)
-  cfg.logs.logMessageDeletes = Boolean(req.body.logMessageDeletes);
-  cfg.logs.logMessageEdits = Boolean(req.body.logMessageEdits);
-  cfg.logs.logImageDeletes = Boolean(req.body.logImageDeletes);
-  cfg.logs.logBulkMessageDeletes = Boolean(req.body.logBulkMessageDeletes);
-  cfg.logs.logInviteInfo = Boolean(req.body.logInviteInfo);
-  cfg.logs.logModeratorCommands = Boolean(req.body.logModeratorCommands);
-
-  cfg.logs.logMemberJoins = Boolean(req.body.logMemberJoins);
-  cfg.logs.logMemberLeaves = Boolean(req.body.logMemberLeaves);
-  cfg.logs.logMemberRoleAdds = Boolean(req.body.logMemberRoleAdds);
-  cfg.logs.logMemberRoleRemoves = Boolean(req.body.logMemberRoleRemoves);
-  cfg.logs.logMemberTimeouts = Boolean(req.body.logMemberTimeouts);
-  cfg.logs.logMemberBans = Boolean(req.body.logMemberBans);
-  cfg.logs.logMemberUnbans = Boolean(req.body.logMemberUnbans);
-  cfg.logs.logNicknameChanges = Boolean(req.body.logNicknameChanges);
-
-  cfg.logs.logRoleCreates = Boolean(req.body.logRoleCreates);
-  cfg.logs.logRoleDeletes = Boolean(req.body.logRoleDeletes);
-  cfg.logs.logRoleUpdates = Boolean(req.body.logRoleUpdates);
-
-  cfg.logs.logChannelCreates = Boolean(req.body.logChannelCreates);
-  cfg.logs.logChannelUpdates = Boolean(req.body.logChannelUpdates);
-  cfg.logs.logChannelDeletes = Boolean(req.body.logChannelDeletes);
-
-  cfg.logs.logEmojiCreates = Boolean(req.body.logEmojiCreates);
-  cfg.logs.logEmojiUpdates = Boolean(req.body.logEmojiUpdates);
-  cfg.logs.logEmojiDeletes = Boolean(req.body.logEmojiDeletes);
-
-  cfg.logs.logVoiceJoins = Boolean(req.body.logVoiceJoins);
-  cfg.logs.logVoiceLeaves = Boolean(req.body.logVoiceLeaves);
-  cfg.logs.logVoiceMoves = Boolean(req.body.logVoiceMoves);
-
-  cfg.logs.logVerifications = Boolean(req.body.logVerifications);
-  cfg.logs.logBackups = Boolean(req.body.logBackups);
-  cfg.logs.logEconomy = Boolean(req.body.logEconomy);
-
-  // Keep legacy toggles in sync
-  cfg.logs.logJoins = cfg.logs.logMemberJoins;
-  cfg.logs.logLeaves = cfg.logs.logMemberLeaves;
-  cfg.logs.logDeletes = cfg.logs.logMessageDeletes;
-  cfg.logs.logEdits = cfg.logs.logMessageEdits;
-  cfg.logs.logBans = cfg.logs.logMemberBans;
-  cfg.logs.logNicknames = cfg.logs.logNicknameChanges;
+  assignLogSettings(cfg.logs || (cfg.logs = {}), req.body);
 
   await cfg.save();
 

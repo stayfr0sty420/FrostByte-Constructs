@@ -120,7 +120,7 @@
                 <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" autocomplete="one-time-code" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" required />
               </div>
               <button class="btn btn-primary w-100" type="submit">Verify & Login</button>
-              <a class="btn btn-ghost w-100" href="/admin/login?mode=forgot-password">Forgot Password</a>
+              <a class="auth-inline-link text-center" href="/admin/login?mode=forgot-password">Forgot Password</a>
             </form>
             <form method="post" action="/admin/2fa/backup" class="d-grid gap-3 mt-3 auth-form">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
@@ -224,7 +224,7 @@
               <button class="btn btn-primary w-100" type="submit">Login</button>
               <button class="btn btn-outline-light w-100" type="button" data-passkey-login>Login with Passkey / QR</button>
               <a class="btn btn-outline-light w-100" href="/admin/login?mode=authenticator-start">Login with Authenticator</a>
-              <a class="btn btn-ghost w-100" href="/admin/login?mode=forgot-password">Forgot Password</a>
+              <a class="auth-inline-link text-center" href="/admin/login?mode=forgot-password">Forgot Password</a>
             </form>
           <% } %>
         </aside>

@@ -13,7 +13,7 @@
   const token = String(form.getAttribute('data-token') || '').trim();
 
   const GEO_DESIRED_ACCURACY = 80;
-  const GEO_MIN_ACCEPTED_ACCURACY = 250;
+  const GEO_FAST_ACCEPT_ACCURACY = 250;
   const GEO_MAX_WAIT_MS = 12000;
   const GEO_MAX_AGE_MS = 60000;
   const GEO_PRIMARY_TIMEOUT_MS = 8000;
@@ -168,7 +168,7 @@
         if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_DESIRED_ACCURACY && sampleCount >= 2) {
           return finalize(pos);
         }
-        if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_MIN_ACCEPTED_ACCURACY) {
+        if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_FAST_ACCEPT_ACCURACY) {
           finalize(pos);
         }
       };
@@ -214,7 +214,7 @@
       const lat = Number(pos.coords.latitude);
       const lon = Number(pos.coords.longitude);
       const acc = Number(pos.coords.accuracy);
-      if (!Number.isFinite(acc) || acc > GEO_MIN_ACCEPTED_ACCURACY) {
+      if (!Number.isFinite(acc)) {
         if (await allowIpFallback()) return true;
         setFormError('Verification could not continue. Please refresh and try again.');
         setGeoStatus('');
@@ -269,7 +269,7 @@
       const lat = Number(pos.coords.latitude);
       const lon = Number(pos.coords.longitude);
       const acc = Number(pos.coords.accuracy);
-      if (!Number.isFinite(acc) || acc > GEO_MIN_ACCEPTED_ACCURACY) return;
+      if (!Number.isFinite(acc)) return;
       setValue('geoLat', String(lat));
       setValue('geoLon', String(lon));
       setValue('geoAcc', String(acc));

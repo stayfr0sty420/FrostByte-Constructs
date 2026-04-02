@@ -1,7 +1,7 @@
 'use strict';
 
 const { sendLog } = require('../../../services/discord/loggingService');
-const { baseEmbed, addField, formatUser, formatRole, formatDate, setUserIdentity } = require('../util/logHelpers');
+const { baseEmbed, addField, formatUser, formatRoleName, formatDate, formatDurationBetween, setUserIdentity } = require('../util/logHelpers');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
 
 async function execute(client, oldMember, newMember) {
@@ -39,7 +39,7 @@ async function execute(client, oldMember, newMember) {
   if (addedIds.length) {
     const roles = addedIds
       .map((id) => newMember.roles.cache.get(id) || { id, name: id })
-      .map((role) => formatRole(role))
+      .map((role) => formatRoleName(role))
       .join('\n');
     const embed = baseEmbed('Member Role Added');
     addField(embed, 'User', formatUser(newMember.user));
@@ -58,7 +58,7 @@ async function execute(client, oldMember, newMember) {
   if (removedIds.length) {
     const roles = removedIds
       .map((id) => oldMember.roles.cache.get(id) || { id, name: id })
-      .map((role) => formatRole(role))
+      .map((role) => formatRoleName(role))
       .join('\n');
     const embed = baseEmbed('Member Role Removed');
     addField(embed, 'User', formatUser(newMember.user));
@@ -79,7 +79,10 @@ async function execute(client, oldMember, newMember) {
   if (oldTimeout !== newTimeout) {
     const embed = baseEmbed(newTimeout ? 'Member Timeout Set' : 'Member Timeout Removed');
     addField(embed, 'User', formatUser(newMember.user));
-    if (newTimeout) addField(embed, 'Until', formatDate(newTimeout), true);
+    if (newTimeout) {
+      addField(embed, 'Until', formatDate(newTimeout), true);
+      addField(embed, 'Duration', formatDurationBetween(Date.now(), newTimeout), true);
+    }
     if (!newTimeout && oldTimeout) addField(embed, 'Previous', formatDate(oldTimeout), true);
     setUserIdentity(embed, newMember.user);
     await sendLog({

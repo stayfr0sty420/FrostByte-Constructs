@@ -113,7 +113,7 @@ async function createWebApp({ economyClient, backupClient, verificationClient })
     return `${datePart} ${timePart}`;
   };
 
-  const formatAdminRole = (value) => (String(value || '').trim().toLowerCase() === 'owner' ? 'Prime' : 'Administrator');
+  const formatAdminRole = (value) => (String(value || '').trim().toLowerCase() === 'owner' ? 'Prime 👑' : 'Administrator');
 
   app.use((req, res, next) => {
     res.locals.discordUser = req.user || null;

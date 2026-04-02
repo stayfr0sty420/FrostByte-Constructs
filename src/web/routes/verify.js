@@ -341,7 +341,7 @@ router.post('/:guildId', async (req, res) => {
     sessionGeo.lat !== null &&
     sessionGeo.lon !== null &&
     sessionGeo.accuracy !== null;
-  const geoPayload = parsedGeo.ok ? parsedGeo.geo : sessionGeo;
+  const geoPayload = parsedGeo.ok ? parsedGeo.geo : sessionGeoOk ? sessionGeo : null;
   const geoCaptured = sessionGeoOk || parsedGeo.ok;
 
   const publicIpFromBody = String(req.body.publicIp || '').trim();
@@ -366,7 +366,7 @@ router.post('/:guildId', async (req, res) => {
       $set: {
         ip,
         userAgent,
-        ...(geoPayload ? { geo: geoPayload, geoCapturedAt: new Date() } : {}),
+        ...(geoCaptured && geoPayload ? { geo: geoPayload, geoCapturedAt: new Date() } : {}),
         ...(publicIpFinal ? { publicIp: publicIpFinal, publicIpUpdatedAt: new Date() } : {}),
         answers: {
           a1Hash: sha256(answer1),

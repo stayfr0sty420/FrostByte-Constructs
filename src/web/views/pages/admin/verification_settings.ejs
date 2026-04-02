@@ -6,6 +6,10 @@
   <body class="app admin-page">
     <%- include('../../partials/nav') %>
     <main class="container py-4">
+      <%
+        const logConfigSections = Array.isArray(logSections) ? logSections : [];
+        const logChannelMap = logChannelOverrides || {};
+      %>
       <h1 class="h4 mb-3">Verification Settings</h1>
 
       <% if (flash) { %>
@@ -137,6 +141,7 @@
                   </option>
                 <% }) %>
               </select>
+              <div class="form-text">Default audit destination for verification logs. You can override each action below.</div>
             </div>
 
             <div class="col-12"><hr /></div>
@@ -211,221 +216,48 @@
 
             <div class="col-12">
               <h2 class="h6 mb-2">Log Toggles</h2>
-              <div class="log-section">
-                <div class="log-section-title">Message Events</div>
-                <div class="row g-2 log-grid">
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logMessageDeletes" value="1" <%= cfg.logs.logMessageDeletes ? 'checked' : '' %> />
-                      <label class="form-check-label">Message Delete</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logMessageEdits" value="1" <%= cfg.logs.logMessageEdits ? 'checked' : '' %> />
-                      <label class="form-check-label">Message Edit</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logImageDeletes" value="1" <%= cfg.logs.logImageDeletes ? 'checked' : '' %> />
-                      <label class="form-check-label">Image Delete</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logBulkMessageDeletes" value="1" <%= cfg.logs.logBulkMessageDeletes ? 'checked' : '' %> />
-                      <label class="form-check-label">Bulk Message Delete</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logInviteInfo" value="1" <%= cfg.logs.logInviteInfo ? 'checked' : '' %> />
-                      <label class="form-check-label">Invites/Invite Info</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logModeratorCommands" value="1" <%= cfg.logs.logModeratorCommands ? 'checked' : '' %> />
-                      <label class="form-check-label">Moderator Commands</label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="log-section">
-                <div class="log-section-title">Member Events</div>
-                <div class="row g-2 log-grid">
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberJoins" value="1" <%= cfg.logs.logMemberJoins ? 'checked' : '' %> />
-                      <label class="form-check-label">Member Join</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberLeaves" value="1" <%= cfg.logs.logMemberLeaves ? 'checked' : '' %> />
-                      <label class="form-check-label">Member Leave</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberRoleAdds" value="1" <%= cfg.logs.logMemberRoleAdds ? 'checked' : '' %> />
-                      <label class="form-check-label">Member Role Add</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberRoleRemoves" value="1" <%= cfg.logs.logMemberRoleRemoves ? 'checked' : '' %> />
-                      <label class="form-check-label">Member Role Remove</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberTimeouts" value="1" <%= cfg.logs.logMemberTimeouts ? 'checked' : '' %> />
-                      <label class="form-check-label">Member Timeout</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberBans" value="1" <%= cfg.logs.logMemberBans ? 'checked' : '' %> />
-                      <label class="form-check-label">Member Ban</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logMemberUnbans" value="1" <%= cfg.logs.logMemberUnbans ? 'checked' : '' %> />
-                      <label class="form-check-label">Member Unban</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logNicknameChanges" value="1" <%= cfg.logs.logNicknameChanges ? 'checked' : '' %> />
-                      <label class="form-check-label">Nickname Change</label>
-                    </div>
+              <div class="text-muted small mb-3">Each event can now be routed to its own channel. Leave the selector empty to keep using the default verification log channel above.</div>
+              <% logConfigSections.forEach((section) => { %>
+                <div class="log-section">
+                  <div class="log-section-title"><%= section.title %></div>
+                  <div class="row g-2 log-grid">
+                    <% section.items.forEach((item) => { %>
+                      <% const selectedChannelId = logChannelMap[item.key] || ''; %>
+                      <div class="col-12">
+                        <div class="log-item log-item--channel">
+                          <div class="form-check form-switch log-item-toggle">
+                            <input
+                              class="form-check-input"
+                              type="checkbox"
+                              role="switch"
+                              name="<%= item.toggleField %>"
+                              value="1"
+                              <%= cfg.logs[item.toggleField] ? 'checked' : '' %>
+                            />
+                            <label class="form-check-label"><%= item.label %></label>
+                          </div>
+                          <div class="log-item-channel">
+                            <select
+                              class="form-select wick-select-native"
+                              name="channelOverride_<%= item.key %>"
+                              data-wick-select="channel"
+                              data-placeholder="Use default verification log channel"
+                              data-search-placeholder="Search channels..."
+                            >
+                              <option value="">Use default verification log channel</option>
+                              <% channels.forEach((channel) => { %>
+                                <option value="<%= channel.id %>" <%= selectedChannelId === channel.id ? 'selected' : '' %>>
+                                  <%= channel.name %>
+                                </option>
+                              <% }) %>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    <% }) %>
                   </div>
                 </div>
-              </div>
-
-              <div class="log-section">
-                <div class="log-section-title">Role Events</div>
-                <div class="row g-2 log-grid">
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logRoleCreates" value="1" <%= cfg.logs.logRoleCreates ? 'checked' : '' %> />
-                      <label class="form-check-label">Role Create</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logRoleDeletes" value="1" <%= cfg.logs.logRoleDeletes ? 'checked' : '' %> />
-                      <label class="form-check-label">Role Delete</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logRoleUpdates" value="1" <%= cfg.logs.logRoleUpdates ? 'checked' : '' %> />
-                      <label class="form-check-label">Role Update</label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="log-section">
-                <div class="log-section-title">Channel Events</div>
-                <div class="row g-2 log-grid">
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logChannelCreates" value="1" <%= cfg.logs.logChannelCreates ? 'checked' : '' %> />
-                      <label class="form-check-label">Channel Create</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logChannelUpdates" value="1" <%= cfg.logs.logChannelUpdates ? 'checked' : '' %> />
-                      <label class="form-check-label">Channel Update</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logChannelDeletes" value="1" <%= cfg.logs.logChannelDeletes ? 'checked' : '' %> />
-                      <label class="form-check-label">Channel Delete</label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="log-section">
-                <div class="log-section-title">Emoji Events</div>
-                <div class="row g-2 log-grid">
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logEmojiCreates" value="1" <%= cfg.logs.logEmojiCreates ? 'checked' : '' %> />
-                      <label class="form-check-label">Emoji Create</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logEmojiUpdates" value="1" <%= cfg.logs.logEmojiUpdates ? 'checked' : '' %> />
-                      <label class="form-check-label">Emoji Name Change</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logEmojiDeletes" value="1" <%= cfg.logs.logEmojiDeletes ? 'checked' : '' %> />
-                      <label class="form-check-label">Emoji Delete</label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="log-section">
-                <div class="log-section-title">Voice Events</div>
-                <div class="row g-2 log-grid">
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logVoiceJoins" value="1" <%= cfg.logs.logVoiceJoins ? 'checked' : '' %> />
-                      <label class="form-check-label">Voice Channel Join</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logVoiceLeaves" value="1" <%= cfg.logs.logVoiceLeaves ? 'checked' : '' %> />
-                      <label class="form-check-label">Voice Channel Leave</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logVoiceMoves" value="1" <%= cfg.logs.logVoiceMoves ? 'checked' : '' %> />
-                      <label class="form-check-label">Voice Channel Move</label>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="log-section">
-                <div class="log-section-title">System Events</div>
-                <div class="row g-2 log-grid">
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logVerifications" value="1" <%= cfg.logs.logVerifications ? 'checked' : '' %> />
-                      <label class="form-check-label">Verifications</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logBackups" value="1" <%= cfg.logs.logBackups ? 'checked' : '' %> />
-                      <label class="form-check-label">Backups</label>
-                    </div>
-                  </div>
-                  <div class="col-12 col-md-4">
-                    <div class="form-check form-switch log-item">
-                      <input class="form-check-input" type="checkbox" role="switch" name="logEconomy" value="1" <%= cfg.logs.logEconomy ? 'checked' : '' %> />
-                      <label class="form-check-label">Economy</label>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <% }) %>
             </div>
 
             <div class="col-12 d-flex">

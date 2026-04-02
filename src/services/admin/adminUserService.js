@@ -14,7 +14,7 @@ function toBase64Url(value) {
 }
 
 function getAdminRoleLabel(role) {
-  return String(role || '').trim().toLowerCase() === 'owner' ? 'Prime' : 'Administrator';
+  return String(role || '').trim().toLowerCase() === 'owner' ? 'Prime 👑' : 'Administrator';
 }
 
 function normalizeEmail(email) {

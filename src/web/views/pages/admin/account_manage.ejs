@@ -37,7 +37,7 @@
                   <label class="form-label">Role</label>
                   <select class="form-select" name="role" <%= String(user._id) === meId ? 'disabled' : '' %>>
                     <option value="admin" <%= user.role === 'admin' ? 'selected' : '' %>>Administrator</option>
-                    <option value="owner" <%= user.role === 'owner' ? 'selected' : '' %>>Prime</option>
+                    <option value="owner" <%= user.role === 'owner' ? 'selected' : '' %>>Prime 👑</option>
                   </select>
                   <% if (String(user._id) === meId) { %>
                     <div class="form-text">You cannot change your own role.</div>

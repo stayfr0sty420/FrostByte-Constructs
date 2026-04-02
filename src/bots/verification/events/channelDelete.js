@@ -3,7 +3,7 @@
 const { ChannelType } = require('discord.js');
 const { sendLog } = require('../../../services/discord/loggingService');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
-const { baseEmbed, addField, formatChannel } = require('../util/logHelpers');
+const { baseEmbed, addField, formatChannelName } = require('../util/logHelpers');
 
 function channelTypeLabel(channel) {
   if (!channel) return 'Unknown';
@@ -17,7 +17,7 @@ async function execute(client, channel) {
   if (!approved) return;
 
   const embed = baseEmbed('Channel Deleted');
-  addField(embed, 'Channel', formatChannel(channel));
+  addField(embed, 'Channel', formatChannelName(channel));
   addField(embed, 'Type', channelTypeLabel(channel), true);
   addField(embed, 'Channel ID', channel.id, true);
 

@@ -46,6 +46,100 @@ function roleKey(name) {
   return String(name || '').toLowerCase();
 }
 
+async function downloadRemoteAsset(url, { timeoutMs = 20000, maxBytes = 25 * 1024 * 1024 } = {}) {
+  const source = String(url || '').trim();
+  if (!source || typeof fetch !== 'function') return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(source, { signal: controller.signal });
+    if (!response.ok) return null;
+
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) return null;
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length || buffer.length > maxBytes) return null;
+    return buffer;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function buildRestoredFiles(attachments = [], limit = 3) {
+  const files = [];
+  const unresolvedUrls = [];
+  for (const [index, attachment] of attachments.slice(0, limit).entries()) {
+    const url = String(attachment?.url || '').trim();
+    if (!url) continue;
+
+    const name = String(attachment?.name || `attachment-${index + 1}`).trim() || `attachment-${index + 1}`;
+    const downloaded = await downloadRemoteAsset(url);
+    if (downloaded) {
+      files.push({ attachment: downloaded, name });
+    } else {
+      unresolvedUrls.push(url);
+    }
+  }
+  return { files, unresolvedUrls };
+}
+
+async function syncRolePositions(guild, rolesData, roleIdMap) {
+  const positions = rolesData
+    .map((role) => ({ id: roleIdMap.get(role.id), position: role.position }))
+    .filter((entry) => entry.id);
+
+  if (!positions.length) return;
+  await guild.roles.setPositions(positions).catch((err) => {
+    logger.warn({ err }, 'Role position sync failed');
+  });
+}
+
+async function pruneDuplicateRolesAfterRestore(guild, rolesData, roleIdMap) {
+  const desiredCounts = new Map();
+  for (const role of rolesData) {
+    const key = roleKey(role.name);
+    desiredCounts.set(key, (desiredCounts.get(key) || 0) + 1);
+  }
+
+  const keepIds = new Set(Array.from(roleIdMap.values()).filter(Boolean));
+  const existing = await guild.roles.fetch().catch(() => null);
+  if (!existing) return;
+
+  const grouped = new Map();
+  for (const role of existing.values()) {
+    if (role.managed) continue;
+    if (role.id === guild.id) continue;
+    const key = roleKey(role.name);
+    const list = grouped.get(key) || [];
+    list.push(role);
+    grouped.set(key, list);
+  }
+
+  for (const [key, roles] of grouped.entries()) {
+    const desiredCount = desiredCounts.get(key) || 0;
+    if (roles.length <= desiredCount) continue;
+
+    roles.sort((a, b) => {
+      const keepDelta = Number(keepIds.has(a.id)) - Number(keepIds.has(b.id));
+      if (keepDelta !== 0) return -keepDelta;
+      return (b.position || 0) - (a.position || 0);
+    });
+
+    for (const role of roles.slice(desiredCount)) {
+      try {
+        await role.delete('Remove duplicate role after restore');
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
 async function restoreRoles(guild, rolesData, options = {}) {
   const roleIdMap = new Map();
   const reuseExisting = Boolean(options.reuseExisting);
@@ -83,7 +177,7 @@ async function restoreRoles(guild, rolesData, options = {}) {
     try {
       const icon = r.iconURL || '';
       const unicodeEmoji = r.unicodeEmoji || '';
-      const iconPayload = icon ? { icon } : unicodeEmoji ? { unicodeEmoji } : {};
+      const iconAsset = icon ? await downloadRemoteAsset(icon) : null;
       const existing = reuseExisting ? takeExisting(roleKey(r.name)) : null;
       if (existing) {
         await existing
@@ -93,20 +187,23 @@ async function restoreRoles(guild, rolesData, options = {}) {
             hoist: r.hoist,
             mentionable: r.mentionable,
             permissions: toBigIntOrNull(r.permissions) ?? undefined,
-            ...iconPayload
+            ...(iconAsset ? { icon: iconAsset, unicodeEmoji: null } : { icon: null, unicodeEmoji: unicodeEmoji || null })
           })
           .catch(() => null);
         roleIdMap.set(r.id, existing.id);
       } else {
-        const created = await guild.roles.create({
+        const payload = {
           name: r.name,
           color: r.color,
           hoist: r.hoist,
           mentionable: r.mentionable,
           permissions: toBigIntOrNull(r.permissions) ?? undefined,
-          ...iconPayload,
           reason: 'Restore from backup'
-        });
+        };
+        if (iconAsset) payload.icon = iconAsset;
+        else if (unicodeEmoji) payload.unicodeEmoji = unicodeEmoji;
+
+        const created = await guild.roles.create(payload);
         roleIdMap.set(r.id, created.id);
       }
     } catch (err) {
@@ -115,12 +212,10 @@ async function restoreRoles(guild, rolesData, options = {}) {
   }
 
   if (roles.length) {
-    const positions = roles
-      .map((r) => ({ id: roleIdMap.get(r.id), position: r.position }))
-      .filter((p) => p.id);
-    if (positions.length) {
-      await guild.roles.setPositions(positions).catch(() => null);
+    if (reuseExisting) {
+      await pruneDuplicateRolesAfterRestore(guild, roles, roleIdMap);
     }
+    await syncRolePositions(guild, roles, roleIdMap);
   }
 
   return roleIdMap;
@@ -137,7 +232,10 @@ async function restoreServerSettings(guild, serverData, channelIdMap = new Map()
   const payload = {};
 
   if (serverData.name) payload.name = String(serverData.name).slice(0, 100);
-  if (serverData.iconURL) payload.icon = serverData.iconURL;
+  if (serverData.iconURL) {
+    const iconAsset = await downloadRemoteAsset(serverData.iconURL);
+    if (iconAsset) payload.icon = iconAsset;
+  }
   if (serverData.verificationLevel !== null && serverData.verificationLevel !== undefined) {
     payload.verificationLevel = serverData.verificationLevel;
   }
@@ -354,7 +452,12 @@ async function restoreEmojis(guild, emojisData, delayMs = 250) {
     if (!url) continue;
     if (existingByName.has(name.toLowerCase())) continue;
     try {
-      await guild.emojis.create({ attachment: url, name, reason: 'Restore from backup' });
+      const attachment = await downloadRemoteAsset(url);
+      if (!attachment) {
+        logger.warn({ emojiName: name }, 'Emoji asset download failed during restore');
+        continue;
+      }
+      await guild.emojis.create({ attachment, name, reason: 'Restore from backup' });
       existingByName.set(name.toLowerCase(), 'created');
       count += 1;
       if (safeDelay > 0 && count % 3 === 0) await sleep(safeDelay);
@@ -543,11 +646,12 @@ async function restoreMessages({ guild, backupDir, channelIdMap, maxPerChannel =
     for (const m of msgs) {
       const content = (m.content || '').slice(0, 1800);
       const header = m.authorUsername ? `**${m.authorUsername}**:` : '**Unknown**:';
-      const text = `${header} ${content}`.slice(0, 2000);
       try {
         const attachments = Array.isArray(m.attachments) ? m.attachments : [];
-        const files = attachments.map((a) => a.url).filter(Boolean).slice(0, 3);
+        const { files, unresolvedUrls } = await buildRestoredFiles(attachments, 3);
         const embeds = Array.isArray(m.embeds) ? m.embeds.slice(0, 3) : [];
+        const linkSuffix = unresolvedUrls.length ? `\n${unresolvedUrls.join('\n')}` : '';
+        const text = `${header} ${content}${linkSuffix}`.slice(0, 2000);
         const payload = {
           content: text,
           embeds: embeds.length ? embeds : undefined,

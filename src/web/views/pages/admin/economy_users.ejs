@@ -40,13 +40,15 @@
                     placeholder="Discord ID or username…"
                     autocomplete="off"
                   />
-                  <div class="form-text">Tip: paste a Discord ID for exact match.</div>
                 </div>
                 <div class="col-12 col-lg-auto">
                   <div class="economy-search-actions">
                     <button class="btn btn-outline-primary" type="submit">Search</button>
                     <a class="btn btn-outline-secondary" href="/admin/economy/users">Clear</a>
                   </div>
+                </div>
+                <div class="col-12">
+                  <div class="form-text">Tip: paste a Discord ID for exact match.</div>
                 </div>
               </form>
             </div>
@@ -128,10 +130,12 @@
             <div class="col-12 col-lg">
               <label class="form-label">Discord ID</label>
               <input class="form-control" name="discordId" placeholder="123456789012345678" required />
-              <div class="form-text">Tip: enable Developer Mode in Discord to copy user IDs.</div>
             </div>
             <div class="col-12 col-lg-auto d-grid align-self-end whitelist-submit-col">
               <button class="btn btn-outline-warning whitelist-submit-btn" type="submit">Add to Whitelist</button>
+            </div>
+            <div class="col-12">
+              <div class="form-text">Tip: enable Developer Mode in Discord to copy user IDs.</div>
             </div>
           </form>
 

@@ -9,8 +9,8 @@ const PRESIDENT_PROFILE_URL = 'https://guns.lol/lucyblocks';
 const CO_FOUNDER_PROFILE_URL = 'https://guns.lol/dfwkito';
 const EXECUTIVE_FOOTER_TEXT = 'Rodstarkian Bot Ecosystem - Executive Profile';
 const DEVELOPER_FOOTER_TEXT = 'Rodstarkian Bot Ecosystem - Developer Profile';
-const DEV_AUTHOR_TEXT = "God's Eye • Head of Development";
-const EXECUTIVE_AUTHOR_TEXT = "God's Eye • Executive Board";
+const DEV_AUTHOR_TEXT = "God's Eye - Head of Development";
+const EXECUTIVE_AUTHOR_TEXT = "God's Eye - Executive Board";
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const DEV_BANNER_PATH = path.join(REPO_ROOT, 'images', 'branding', 'developer', 'architect-dossier-banner.png');
