@@ -150,10 +150,11 @@ function parseDateValue(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function humanizeDurationMs(inputMs) {
+function humanizeDurationMs(inputMs, options = {}) {
   const totalMs = Math.max(0, Number(inputMs || 0));
   if (!Number.isFinite(totalMs)) return '';
   const totalSeconds = Math.max(1, Math.round(totalMs / 1000));
+  const maxParts = Math.max(1, Math.floor(Number(options.maxParts) || 2));
   const units = [
     ['year', 365 * 24 * 60 * 60],
     ['month', 30 * 24 * 60 * 60],
@@ -171,7 +172,7 @@ function humanizeDurationMs(inputMs) {
     const count = Math.floor(remaining / size);
     remaining -= count * size;
     parts.push(`${count} ${label}${count === 1 ? '' : 's'}`);
-    if (parts.length === 2) break;
+    if (parts.length === maxParts) break;
   }
 
   return parts.join(', ') || '0 seconds';
@@ -354,11 +355,11 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '', co
     case 'role_update':
       return compactText([detailLine('Role', fields.role || 'Role'), detailLine('Changes', changes, 1000)].filter(Boolean).join('\n'), 1200);
     case 'emoji_create':
-      return compactText([detailLine('Emoji', emoji || fields.name || '(unknown)'), detailLine('Name', fields.name || '')].filter(Boolean).join('\n'), 900);
+      return compactText(`New emoji has been created: ${fields.name || emoji || '(unknown)'}.`, 900);
     case 'emoji_update':
-      return compactText([detailLine('Before', before || '(unknown)'), detailLine('After', after || '(unknown)')].filter(Boolean).join('\n'), 900);
+      return compactText(`${before || '(unknown)'} was changed to ${after || fields.name || '(unknown)'}.`, 900);
     case 'emoji_delete':
-      return compactText([detailLine('Emoji', emoji || fields.name || '(unknown)'), detailLine('Name', fields.name || '')].filter(Boolean).join('\n'), 900);
+      return compactText(`The emoji ${fields.name || emoji || '(unknown)'} has been deleted!`, 900);
     case 'member_join':
       return compactText(
         [
@@ -375,13 +376,18 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '', co
     case 'member_kick':
       return compactText([`${user || 'Unknown member'} was kicked from the server.`, detailLine('Reason', reason || 'No reason provided.')].filter(Boolean).join('\n'), 1200);
     case 'member_role_add':
-      return compactText(`${user || 'Unknown member'} received ${rolesText || '#unknown'} role access.`, 1200);
+      return compactText(`${user || 'Unknown member'} received ${rolesText || 'unknown role'} role access.`, 1200);
     case 'member_role_remove':
-      return compactText(`${user || 'Unknown member'} lost ${rolesText || '#unknown'} role access.`, 1200);
+      return compactText(`${user || 'Unknown member'} lost ${rolesText || 'unknown role'} role access.`, 1200);
     case 'member_timeout':
       if (until) {
+        const untilDate = parseDateValue(until);
+        const timeoutDuration =
+          duration ||
+          (untilDate ? humanizeDurationMs(untilDate.getTime() - referenceTime.getTime(), { maxParts: 1 }) : '') ||
+          'an unknown duration';
         return compactText(
-          `${user || 'Unknown member'} has been timed out for ${duration || durationUntil(until, referenceTime) || 'an unknown duration'}.`,
+          `${user || 'Unknown member'} received a timeout for ${timeoutDuration}.`,
           1200
         );
       }

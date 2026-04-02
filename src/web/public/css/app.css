@@ -1076,6 +1076,10 @@ code {
   color: rgba(255, 228, 230, 0.7);
 }
 
+.verify-status-text:not(:empty) {
+  margin-top: -0.1rem;
+}
+
 .verify-inline-error {
   display: none;
   margin-top: -0.35rem;
@@ -1765,6 +1769,9 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+  padding: 0;
   font-weight: 700;
 }
 
@@ -2134,6 +2141,17 @@ code {
   min-height: 42px;
 }
 
+.economy-search-actions .btn,
+.approval-channel-btn,
+.whitelist-submit-btn {
+  white-space: nowrap;
+}
+
+.approval-channel-btn,
+[data-passkey-register] {
+  min-height: 42px;
+}
+
 .economy-search-form .btn {
   min-height: 42px;
 }
@@ -2157,6 +2175,10 @@ code {
   display: grid;
   align-self: flex-end;
   min-width: 190px;
+}
+
+.approval-channel-action-col {
+  align-self: flex-end;
 }
 
 .bulk-aid-stack {

@@ -250,7 +250,7 @@ async function leaveGuildIfPresent(client, guildId) {
   return true;
 }
 
-async function upsertVerificationPanel({ discordClient, guildId, cfg, baseUrl = '' }) {
+async function upsertVerificationPanel({ discordClient, guildId, cfg, baseUrl = '', forceRepost = false }) {
   const enabled = Boolean(cfg?.verification?.panelEnabled);
   const channelId = String(cfg?.verification?.panelChannelId || '').trim();
   const messageId = String(cfg?.verification?.panelMessageId || '').trim();
@@ -272,31 +272,56 @@ async function upsertVerificationPanel({ discordClient, guildId, cfg, baseUrl = 
   if (!guild) return { ok: false, reason: 'Guild not found for verification bot.' };
   const channel = await guild.channels.fetch(channelId).catch(() => null);
   if (!channel || !channel.isTextBased()) return { ok: false, reason: 'Verification channel is not text-based.' };
+  const me = await guild.members.fetchMe().catch(() => null);
+  const perms = channel.permissionsFor?.(me || discordClient.user?.id);
+  if (!perms?.has?.(['ViewChannel', 'SendMessages', 'EmbedLinks'])) {
+    return {
+      ok: false,
+      reason: 'Verification bot needs View Channel, Send Messages, and Embed Links in the selected channel.'
+    };
+  }
 
   const panelMessage = buildVerifyPanelMessage(cfg, { guildName: guild.name || '', baseUrl });
   const row = buildVerifyPanelRow(guildId, { baseUrl });
   let msg = null;
-  if (messageId) {
+  if (messageId && !forceRepost) {
     msg = await channel.messages.fetch(messageId).catch(() => null);
+  }
+  if (messageId && forceRepost) {
+    const existing = await channel.messages.fetch(messageId).catch(() => null);
+    if (existing) await existing.delete().catch(() => null);
   }
 
   if (msg) {
+    let editError = '';
     msg = await msg
       .edit({
         ...panelMessage,
+        files: panelMessage.files,
         attachments: [],
-        components: [row],
-        skipBotBranding: true
+        components: [row]
       })
-      .catch(() => null);
+      .catch((err) => {
+        editError = String(err?.message || err || 'Failed to update panel message.');
+        return null;
+      });
+    if (!msg) {
+      return { ok: false, reason: editError || 'Failed to update panel message.' };
+    }
   }
 
   if (!msg) {
+    let sendError = '';
     msg = await channel.send({
       ...panelMessage,
-      components: [row],
-      skipBotBranding: true
-    }).catch(() => null);
+      components: [row]
+    }).catch((err) => {
+      sendError = String(err?.message || err || 'Failed to create panel message.');
+      return null;
+    });
+    if (!msg) {
+      return { ok: false, reason: sendError || 'Failed to create panel message.' };
+    }
   }
 
   if (msg?.id) {
@@ -535,29 +560,76 @@ async function purgeGuildData({ discord, guildId }) {
   };
 }
 
-async function sendApprovalNotice({ req, guildId, botName, status, actionLabel, actionType = '', cfg }) {
-  const discordClient = req.app.locals.discord?.verification;
-  if (!discordClient) return;
-  const reviewer = adminDisplayName(req.adminUser);
+function orderedDiscordClients(discord, preferredClientKey = '') {
+  const orderedKeys = [preferredClientKey, 'verification', 'economy', 'backup'];
+  const seen = new Set();
+  const clients = [];
 
-  const guild = await discordClient.guilds.fetch(guildId).catch(() => null);
-  if (!guild) return;
+  for (const rawKey of orderedKeys) {
+    const key = String(rawKey || '').trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const client = discord?.[key];
+    if (client?.guilds) clients.push({ key, client });
+  }
 
-  const channels = await guild.channels.fetch().catch(() => null);
+  return clients;
+}
+
+async function resolveApprovalNoticeDestination({ discord, guildId, preferredChannelId = '', preferredClientKey = '' }) {
+  const clients = orderedDiscordClients(discord, preferredClientKey);
+
+  for (const entry of clients) {
+    const guild = await entry.client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) continue;
+
+    const me = await guild.members.fetchMe().catch(() => null);
+    const channels = await guild.channels.fetch().catch(() => null);
+    if (!channels) continue;
+
+    const candidateIds = [];
+    const pushCandidate = (channelId) => {
+      const safeId = String(channelId || '').trim();
+      if (safeId) candidateIds.push(safeId);
+    };
+
+    pushCandidate(preferredChannelId);
+    pushCandidate(guild.systemChannelId);
+    pushCandidate(guild.rulesChannelId);
+    channels.forEach((channel, channelId) => {
+      if (channel?.isTextBased?.() && !channel.isDMBased?.()) pushCandidate(channelId);
+    });
+
+    const seen = new Set();
+    for (const channelId of candidateIds) {
+      if (seen.has(channelId)) continue;
+      seen.add(channelId);
+
+      const channel = channels.get(channelId);
+      if (!channel?.isTextBased?.() || channel.isDMBased?.()) continue;
+
+      const perms = channel.permissionsFor?.(me || entry.client.user?.id);
+      if (!perms?.has?.(['ViewChannel', 'SendMessages', 'EmbedLinks'])) continue;
+
+      return { client: entry.client, guild, channel };
+    }
+  }
+
+  return null;
+}
+
+async function sendApprovalNotice({ req, guildId, botName, status, actionLabel, actionType = '', cfg, preferredClientKey = '' }) {
+  const discord = req.app.locals.discord;
   const preferredChannelId = String(cfg?.approval?.notificationChannelId || '').trim();
-  const targetChannel =
-    (preferredChannelId ? channels?.get(preferredChannelId) : null) ||
-    (guild.systemChannelId ? channels?.get(guild.systemChannelId) : null) ||
-    (guild.rulesChannelId ? channels?.get(guild.rulesChannelId) : null) ||
-    channels
-      ?.filter((channel) => channel?.isTextBased?.() && !channel.isDMBased?.())
-      ?.find((channel) => {
-        const perms = channel.permissionsFor?.(guild.members.me || discordClient.user?.id);
-        return perms?.has?.(['ViewChannel', 'SendMessages', 'EmbedLinks']);
-      }) ||
-    null;
+  const target = await resolveApprovalNoticeDestination({
+    discord,
+    guildId,
+    preferredChannelId,
+    preferredClientKey
+  });
+  if (!target) return;
 
-  if (!targetChannel?.isTextBased?.()) return;
+  const reviewer = adminDisplayName(req.adminUser);
 
   const { EmbedBuilder } = require('discord.js');
   const normalizedAction = String(actionType || '').trim().toLowerCase();
@@ -580,11 +652,11 @@ async function sendApprovalNotice({ req, guildId, botName, status, actionLabel, 
     .addFields(
       { name: 'Sanctioned By', value: reviewer, inline: true },
       { name: 'Action', value: actionLabel || (isDelete ? 'Delete + Reject' : status), inline: true },
-      { name: 'Channel', value: targetChannel ? `<#${targetChannel.id}>` : 'Unavailable', inline: true }
+      { name: 'Channel', value: target?.channel ? `<#${target.channel.id}>` : 'Unavailable', inline: true }
     )
     .setTimestamp();
 
-  await targetChannel.send({ embeds: [embed], skipBotBranding: true }).catch(() => null);
+  await target.channel.send({ embeds: [embed] }).catch(() => null);
 }
 
 // Home
@@ -1259,7 +1331,8 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
     status: statusLabel,
     actionLabel: action === 'delete' ? 'Delete + Reject' : statusLabel,
     actionType: action,
-    cfg: refreshedConfig
+    cfg: refreshedConfig,
+    preferredClientKey: def?.clientKey || botKey
   });
 
   if (action === 'delete' && discordClient) {
@@ -2395,7 +2468,8 @@ router.post('/verification/settings', requireAdmin, requireGuild, async (req, re
         discordClient: req.app.locals.discord.verification,
         guildId,
         cfg,
-        baseUrl: resolveRequestBaseUrl(req)
+        baseUrl: resolveRequestBaseUrl(req),
+        forceRepost: panelPostRequested
       }).catch((err) => ({ ok: false, reason: String(err?.message || err || 'Failed') }));
   if (panelResult?.ok && cfg.isModified()) {
     await cfg.save();
@@ -2420,7 +2494,13 @@ router.post('/verification/settings', requireAdmin, requireGuild, async (req, re
   }
 
   if (wantsJson) {
-    return res.json({ ok: true, warning, panel: panelResult?.ok ? 'ok' : 'error', panelMessageId: cfg.verification.panelMessageId || '' });
+    return res.json({
+      ok: true,
+      warning,
+      panel: panelResult?.ok ? 'ok' : 'error',
+      panelMessageId: cfg.verification.panelMessageId || '',
+      panelReason: panelResult?.reason || ''
+    });
   }
 
   if (warning) {

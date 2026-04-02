@@ -7,8 +7,8 @@ const DEV_PROFILE_URL = 'https://guns.lol/_zevexclsv';
 const DEV_DISPLAY_NAME = '𝐙𝐞𝐯𝐞𝐱𝐜𝐥𝐬𝐯';
 const PRESIDENT_PROFILE_URL = 'https://guns.lol/lucyblocks';
 const CO_FOUNDER_PROFILE_URL = 'https://guns.lol/dfwkito';
-const EXECUTIVE_FOOTER_TEXT = 'Rodstarkian Bot Ecosystem - Executive Profile';
-const DEVELOPER_FOOTER_TEXT = 'Rodstarkian Bot Ecosystem - Developer Profile';
+const EXECUTIVE_FOOTER_TEXT = 'Rodstarkian Bot Ecosystem • Executive Profile';
+const DEVELOPER_FOOTER_TEXT = 'Rodstarkian Bot Ecosystem • Developer Profile';
 const DEV_AUTHOR_TEXT = "God's Eye - Head of Development";
 const EXECUTIVE_AUTHOR_TEXT = "God's Eye - Executive Board";
 

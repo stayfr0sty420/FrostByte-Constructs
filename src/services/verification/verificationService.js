@@ -300,15 +300,21 @@ function buildVerificationEmbed({ user, attempt, riskScore, status, noteLines = 
 
   const userLabel = userId ? `${safeText(username, 60)} [${userId}]` : safeText(username, 60);
   const statusCopy = buildVerificationStatusCopy({ status, username, noteLines });
+  const fields = [
+    { name: 'Member', value: userLabel || '(unknown)', inline: false },
+    { name: 'Creation', value: formatDiscordDate(accountCreatedAt), inline: true },
+    { name: 'Risk Score', value: typeof riskScore === 'number' ? String(riskScore) : 'Unknown', inline: true }
+  ];
+  const locationText = verificationLocationText(attempt?.geo, attempt?.ipGeo);
+  if (locationText && locationText !== '(none)') {
+    fields.push({ name: 'Location', value: locationText, inline: false });
+  }
+  fields.push({ name: 'Status', value: statusCopy, inline: false });
+
   const embed = new EmbedBuilder()
     .setTitle(`${safeText(username, 60)}'s Verification Result`)
     .setColor(color)
-    .addFields(
-      { name: 'Member', value: userLabel || '(unknown)', inline: false },
-      { name: 'Creation', value: formatDiscordDate(accountCreatedAt), inline: true },
-      { name: 'Risk Score', value: typeof riskScore === 'number' ? String(riskScore) : 'Unknown', inline: true },
-      { name: 'Status', value: statusCopy, inline: false }
-    )
+    .addFields(fields)
     .setFooter({ text: attemptId ? `Verification ID: ${attemptId}` : 'Verification Result' })
     .setTimestamp();
 
@@ -361,17 +367,11 @@ async function submitVerification({
 
   const geoCheck = normalizeGeo(geo);
   let geoFinal = geoCheck.ok ? geoCheck.geo : null;
-  let geoFallback = false;
+  const autoApprove = cfg.verification?.autoApprove !== false;
+  const status = autoApprove ? 'approved' : 'pending';
 
-  if (cfg.verification?.requireLocation !== false) {
-    if (!geoFinal) {
-      if (parsedIpGeo.ok && parsedIpGeo.ipGeo && typeof parsedIpGeo.ipGeo.lat === 'number' && typeof parsedIpGeo.ipGeo.lon === 'number') {
-        geoFinal = { lat: parsedIpGeo.ipGeo.lat, lon: parsedIpGeo.ipGeo.lon, accuracy: 50000 };
-        geoFallback = true;
-      } else {
-        return { ok: false, reason: 'Location is required to verify.' };
-      }
-    }
+  if (cfg.verification?.requireLocation !== false && !geoFinal) {
+    return { ok: false, reason: 'Precise device location is required to verify.' };
   }
 
   const observedIpFinal = observedIp || publicIpValid || '';
@@ -384,23 +384,23 @@ async function submitVerification({
     ip: observedIpFinal,
     userAgent,
     geo: geoFinal,
-    verified: true,
+    verified: autoApprove,
     ...(publicIpValid ? { publicIp: publicIpValid } : {}),
     ...(parsedIpGeo.ok && parsedIpGeo.ipGeo ? { ipGeo: parsedIpGeo.ipGeo } : {})
   });
 
   const userEmail = String(user.email || '').trim();
-  const verifiedUpdate = {
-    username: user.username || user.globalName || '',
-    verifiedAt: new Date()
-  };
-  if (userEmail) verifiedUpdate.email = userEmail;
-  await IpLog.updateMany({ guildId, discordId: user.id }, { $set: verifiedUpdate }).catch(() => null);
+  if (autoApprove) {
+    const verifiedUpdate = {
+      username: user.username || user.globalName || '',
+      verifiedAt: new Date()
+    };
+    if (userEmail) verifiedUpdate.email = userEmail;
+    await IpLog.updateMany({ guildId, discordId: user.id }, { $set: verifiedUpdate }).catch(() => null);
+  }
 
   const risk = await computeRiskScore({ guildId, discordId: user.id, ip: ipForDecision || observedIpFinal, email: user.email || '' });
   const decision = riskDecision(risk);
-  const autoApprove = true;
-  const status = 'approved';
 
   const hashes = (() => {
     if (answerHashes && typeof answerHashes === 'object') {
@@ -449,9 +449,14 @@ async function submitVerification({
     },
     riskScore: risk,
     riskDecision: decision,
-    autoApproved: true,
+    autoApproved: autoApprove,
     status
   });
+
+  const locationNote =
+    geoFinal && Number.isFinite(Number(geoFinal.accuracy))
+      ? `Device location captured at ±${Math.round(Number(geoFinal.accuracy))}m accuracy.`
+      : '';
 
   if (status === 'approved') {
     const roleClientList = roleClients || discordClient;
@@ -462,7 +467,7 @@ async function submitVerification({
       riskScore: risk,
       status,
       noteLines: [
-        geoFallback ? 'Used IP-based location fallback because GPS was unavailable.' : '',
+        locationNote,
         roleResult.ok ? 'Auto roles have been assigned as well.' : `Role sync failed: ${roleResult.reason || 'unknown'}`
       ]
     });
@@ -477,19 +482,20 @@ async function submitVerification({
     return { ok: true, status, riskScore: risk, attemptId: attempt.verificationId, roleResult };
   }
 
-  const embed = buildVerificationEmbed({
-    user,
-    attempt,
-    riskScore: risk,
-    status
-  });
-
   await sendLog({
     discordClient,
     guildId,
     type: 'verification',
     webhookCategory: 'verification',
-    embeds: [embed],
+    embeds: [
+      buildVerificationEmbed({
+        user,
+        attempt,
+        riskScore: risk,
+        status,
+        noteLines: [locationNote]
+      })
+    ],
     skipBotBranding: true
   });
 

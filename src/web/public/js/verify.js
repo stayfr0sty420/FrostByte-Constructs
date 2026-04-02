@@ -12,11 +12,12 @@
   const csrfToken = String(form.getAttribute('data-csrf') || '').trim();
   const token = String(form.getAttribute('data-token') || '').trim();
 
-  const GEO_DESIRED_ACCURACY = 80;
-  const GEO_FAST_ACCEPT_ACCURACY = 250;
-  const GEO_MAX_WAIT_MS = 12000;
-  const GEO_MAX_AGE_MS = 60000;
-  const GEO_PRIMARY_TIMEOUT_MS = 8000;
+  const GEO_DESIRED_ACCURACY = 65;
+  const GEO_GOOD_ACCEPT_ACCURACY = 120;
+  const GEO_MAX_ACCEPT_ACCURACY = 200;
+  const GEO_MAX_WAIT_MS = 18000;
+  const GEO_MAX_AGE_MS = 0;
+  const GEO_PRIMARY_TIMEOUT_MS = 12000;
 
   let publicIpPostedOk = false;
   let publicIpValue = '';
@@ -63,17 +64,6 @@
     const value = String(text || '').trim();
     formError.textContent = value;
     formError.classList.toggle('d-none', !value);
-  };
-
-  const allowIpFallback = async () => {
-    await ensurePublicIp().catch(() => null);
-    if (publicIpValue) {
-      setFormError('');
-      setGeoStatus('Secure session ready');
-      clearLocationError();
-      return true;
-    }
-    return false;
   };
 
   const clearLocationError = () => {
@@ -141,6 +131,38 @@
 
   setIpStatus('');
 
+  const createGeoFailure = (code, message = code) => {
+    const error = new Error(String(message || code || 'geo_failed'));
+    error.code = String(code || 'geo_failed');
+    return error;
+  };
+
+  const formatAccuracy = (accuracy) => {
+    const value = Number(accuracy);
+    return Number.isFinite(value) ? `±${Math.round(value)}m` : '';
+  };
+
+  const describeGeoFailure = (code) => {
+    const normalized = String(code || '').trim().toLowerCase();
+    if (!window.isSecureContext) {
+      return 'Precise location requires HTTPS. Open the secure site URL and try again.';
+    }
+    switch (normalized) {
+      case 'permission_denied':
+        return 'Location access is required to verify. Allow browser or device location, then try again.';
+      case 'position_unavailable':
+        return 'Precise location is unavailable right now. Turn on GPS or high-accuracy location, then try again.';
+      case 'timeout':
+        return 'We could not lock a precise location in time. Keep location services on and try again.';
+      case 'low_accuracy':
+        return 'Location was detected but it is still too broad. Turn on GPS or high-accuracy mode, then try again.';
+      case 'unsupported':
+        return 'This browser cannot provide device location for verification.';
+      default:
+        return 'Precise device location is required to verify. Enable location services and try again.';
+    }
+  };
+
   const captureBestLocation = () =>
     new Promise((resolve, reject) => {
       let best = null;
@@ -164,18 +186,30 @@
         if (!best || pos.coords.accuracy < best.coords.accuracy) {
           best = pos;
         }
-        setGeoStatus('Preparing secure session…');
+        const accuracyText = formatAccuracy(pos.coords.accuracy);
+        setGeoStatus(accuracyText ? `Locking precise location… (${accuracyText})` : 'Locking precise location…');
         if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_DESIRED_ACCURACY && sampleCount >= 2) {
           return finalize(pos);
         }
-        if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_FAST_ACCEPT_ACCURACY) {
-          finalize(pos);
+        if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_GOOD_ACCEPT_ACCURACY && sampleCount >= 3) {
+          return finalize(pos);
         }
       };
 
       const onErr = (err) => {
-        if (best) return finalize(best);
-        return finalize(null, err);
+        const bestAccuracy = Number(best?.coords?.accuracy);
+        if (best && Number.isFinite(bestAccuracy) && bestAccuracy <= GEO_MAX_ACCEPT_ACCURACY) {
+          return finalize(best);
+        }
+        const reason =
+          err?.code === 1
+            ? 'permission_denied'
+            : err?.code === 2
+              ? 'position_unavailable'
+              : err?.code === 3
+                ? 'timeout'
+                : 'geo_failed';
+        return finalize(null, createGeoFailure(reason, err?.message || reason));
       };
 
       try {
@@ -194,36 +228,44 @@
 
       setTimeout(() => {
         if (done) return;
-        if (best) return finalize(best);
-        return finalize(null, new Error('geo_timeout'));
+        const bestAccuracy = Number(best?.coords?.accuracy);
+        if (best && Number.isFinite(bestAccuracy) && bestAccuracy <= GEO_MAX_ACCEPT_ACCURACY) {
+          return finalize(best);
+        }
+        return finalize(null, createGeoFailure(best ? 'low_accuracy' : 'timeout'));
       }, GEO_MAX_WAIT_MS);
     });
 
   const ensureGeo = async () => {
     if (!requireGeo) return true;
     if (hasGeo()) return true;
+    if (!window.isSecureContext) {
+      setGeoStatus('');
+      setFormError(describeGeoFailure('insecure_context'));
+      return false;
+    }
     if (!navigator.geolocation) {
-      if (await allowIpFallback()) return true;
-      setFormError('Verification could not continue. Please refresh and try again.');
+      setGeoStatus('');
+      setFormError(describeGeoFailure('unsupported'));
       return false;
     }
 
-    setGeoStatus('Preparing secure session…');
+    setGeoStatus('Requesting precise location…');
     try {
       const pos = await captureBestLocation();
       const lat = Number(pos.coords.latitude);
       const lon = Number(pos.coords.longitude);
       const acc = Number(pos.coords.accuracy);
       if (!Number.isFinite(acc)) {
-        if (await allowIpFallback()) return true;
-        setFormError('Verification could not continue. Please refresh and try again.');
         setGeoStatus('');
+        setFormError(describeGeoFailure('position_unavailable'));
         return false;
       }
       setValue('geoLat', String(lat));
       setValue('geoLon', String(lon));
       setValue('geoAcc', String(acc));
-      setGeoStatus('Secure session ready');
+      const accuracyText = formatAccuracy(acc);
+      setGeoStatus(accuracyText ? `Precise location locked (${accuracyText})` : 'Precise location locked');
       clearLocationError();
 
       if (guildId && csrfToken && token) {
@@ -243,9 +285,9 @@
         }).catch(() => null);
       }
       return true;
-    } catch {
-      if (await allowIpFallback()) return true;
-      setFormError('Verification could not continue. Please refresh and try again.');
+    } catch (error) {
+      setGeoStatus('');
+      setFormError(describeGeoFailure(error?.code));
       if (guildId && csrfToken && token) {
         fetch(`/verify/${encodeURIComponent(guildId)}/geo/denied`, {
           method: 'POST',
@@ -253,7 +295,7 @@
             'content-type': 'application/json',
             'csrf-token': csrfToken
           },
-          body: JSON.stringify({ t: token, reason: 'geo_denied', publicIp: publicIpValue || undefined })
+          body: JSON.stringify({ t: token, reason: error?.code || 'geo_denied', publicIp: publicIpValue || undefined })
         }).catch(() => null);
       }
       return false;
@@ -262,8 +304,9 @@
 
   let warmGeoStarted = false;
   const warmGeo = async () => {
-    if (!requireGeo || warmGeoStarted || hasGeo() || !navigator.geolocation) return;
+    if (!requireGeo || warmGeoStarted || hasGeo() || !navigator.geolocation || !window.isSecureContext) return;
     warmGeoStarted = true;
+    setGeoStatus('Requesting precise location…');
     try {
       const pos = await captureBestLocation();
       const lat = Number(pos.coords.latitude);
@@ -273,10 +316,11 @@
       setValue('geoLat', String(lat));
       setValue('geoLon', String(lon));
       setValue('geoAcc', String(acc));
-      setGeoStatus('Secure session ready');
+      const accuracyText = formatAccuracy(acc);
+      setGeoStatus(accuracyText ? `Precise location locked (${accuracyText})` : 'Precise location locked');
       clearLocationError();
     } catch {
-      // ignore warm-up errors
+      setGeoStatus('');
     }
   };
 

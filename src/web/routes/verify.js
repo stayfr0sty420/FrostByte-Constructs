@@ -488,10 +488,12 @@ router.get('/:guildId/complete', requireAuth, async (req, res) => {
     answerHashes
   });
 
-  await VerificationSession.updateOne(
-    { sessionId: session.sessionId },
-    { $set: { status: 'completed', completedAt: new Date() } }
-  ).catch(() => null);
+  if (result?.ok) {
+    await VerificationSession.updateOne(
+      { sessionId: session.sessionId },
+      { $set: { status: 'completed', completedAt: new Date() } }
+    ).catch(() => null);
+  }
 
   return res.render('pages/verify_result', {
     title: 'Verification Result',

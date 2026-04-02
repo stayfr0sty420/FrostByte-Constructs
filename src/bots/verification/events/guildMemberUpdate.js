@@ -1,8 +1,119 @@
 'use strict';
 
 const { sendLog } = require('../../../services/discord/loggingService');
-const { baseEmbed, addField, formatUser, formatRoleName, formatDate, formatDurationBetween, setUserIdentity } = require('../util/logHelpers');
+const {
+  baseEmbed,
+  addField,
+  formatUser,
+  formatRoleName,
+  formatDate,
+  formatDurationBetween,
+  setUserIdentity
+} = require('../util/logHelpers');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
+
+const ROLE_LOG_BUFFER_MS = 900;
+const pendingRoleLogs = new Map();
+
+function roleBufferKey(guildId, userId) {
+  const safeGuildId = String(guildId || '').trim();
+  const safeUserId = String(userId || '').trim();
+  return safeGuildId && safeUserId ? `${safeGuildId}:${safeUserId}` : '';
+}
+
+function normalizeRoleLabel(role) {
+  return formatRoleName(role, '').trim() || String(role?.id || 'unknown');
+}
+
+async function flushRoleLogs(key) {
+  const entry = pendingRoleLogs.get(key);
+  if (!entry) return;
+  pendingRoleLogs.delete(key);
+  if (entry.timer) clearTimeout(entry.timer);
+
+  const user = entry.user;
+  const userLabel = user?.tag || user?.username || user?.id || 'Unknown member';
+  const addedRoles = [...entry.added.values()].filter(Boolean);
+  const removedRoles = [...entry.removed.values()].filter(Boolean);
+
+  if (addedRoles.length) {
+    const embed = baseEmbed('Member Role Added');
+    addField(embed, 'User', formatUser(user));
+    addField(embed, 'Roles', addedRoles.join('\n') || '(unknown)');
+    setUserIdentity(embed, user);
+    await sendLog({
+      discordClient: entry.client,
+      guildId: entry.guildId,
+      type: 'member_role_add',
+      webhookCategory: 'verification',
+      content: `Role added: ${userLabel}${addedRoles[0] ? ` -> ${addedRoles[0]}` : ''}`,
+      embeds: [embed]
+    }).catch(() => null);
+  }
+
+  if (removedRoles.length) {
+    const embed = baseEmbed('Member Role Removed');
+    addField(embed, 'User', formatUser(user));
+    addField(embed, 'Roles', removedRoles.join('\n') || '(unknown)');
+    setUserIdentity(embed, user);
+    await sendLog({
+      discordClient: entry.client,
+      guildId: entry.guildId,
+      type: 'member_role_remove',
+      webhookCategory: 'verification',
+      content: `Role removed: ${userLabel}${removedRoles[0] ? ` -> ${removedRoles[0]}` : ''}`,
+      embeds: [embed]
+    }).catch(() => null);
+  }
+}
+
+function queueRoleLog({ client, guildId, member, addedIds = [], removedIds = [], addedRoleMap = new Map(), removedRoleMap = new Map() }) {
+  const key = roleBufferKey(guildId, member?.id || member?.user?.id);
+  if (!key) return;
+
+  let entry = pendingRoleLogs.get(key);
+  if (!entry) {
+    entry = {
+      client,
+      guildId,
+      user: member?.user || null,
+      added: new Map(),
+      removed: new Map(),
+      timer: null
+    };
+    pendingRoleLogs.set(key, entry);
+  }
+
+  entry.client = client;
+  entry.guildId = guildId;
+  entry.user = member?.user || entry.user;
+
+  for (const roleId of addedIds) {
+    const safeId = String(roleId || '').trim();
+    if (!safeId) continue;
+    if (entry.removed.has(safeId)) {
+      entry.removed.delete(safeId);
+      continue;
+    }
+    entry.added.set(safeId, String(addedRoleMap.get(safeId) || safeId).trim());
+  }
+
+  for (const roleId of removedIds) {
+    const safeId = String(roleId || '').trim();
+    if (!safeId) continue;
+    if (entry.added.has(safeId)) {
+      entry.added.delete(safeId);
+      continue;
+    }
+    entry.removed.set(safeId, String(removedRoleMap.get(safeId) || safeId).trim());
+  }
+
+  if (entry.timer) clearTimeout(entry.timer);
+  entry.timer = setTimeout(() => {
+    flushRoleLogs(key).catch(() => null);
+  }, ROLE_LOG_BUFFER_MS);
+  entry.timer.unref?.();
+}
 
 async function execute(client, oldMember, newMember) {
   const guildId = newMember?.guild?.id;
@@ -36,42 +147,29 @@ async function execute(client, oldMember, newMember) {
   const addedIds = [...newRoles].filter((id) => !oldRoles.has(id));
   const removedIds = [...oldRoles].filter((id) => !newRoles.has(id));
 
-  if (addedIds.length) {
-    const roles = addedIds
-      .map((id) => newMember.roles.cache.get(id) || { id, name: id })
-      .map((role) => formatRoleName(role))
-      .join('\n');
-    const embed = baseEmbed('Member Role Added');
-    addField(embed, 'User', formatUser(newMember.user));
-    addField(embed, 'Roles', roles || '(unknown)');
-    setUserIdentity(embed, newMember.user);
-    await sendLog({
-      discordClient: client,
-      guildId,
-      type: 'member_role_add',
-      webhookCategory: 'verification',
-      content: `Role added: ${userLabel}${roles ? ` → ${roles.split('\n')[0]}` : ''}`,
-      embeds: [embed]
-    }).catch(() => null);
-  }
+  if (addedIds.length || removedIds.length) {
+    const addedRoleMap = new Map(
+      addedIds.map((id) => {
+        const role = newMember.roles.cache.get(id) || { id, name: id };
+        return [id, normalizeRoleLabel(role)];
+      })
+    );
+    const removedRoleMap = new Map(
+      removedIds.map((id) => {
+        const role = oldMember.roles.cache.get(id) || { id, name: id };
+        return [id, normalizeRoleLabel(role)];
+      })
+    );
 
-  if (removedIds.length) {
-    const roles = removedIds
-      .map((id) => oldMember.roles.cache.get(id) || { id, name: id })
-      .map((role) => formatRoleName(role))
-      .join('\n');
-    const embed = baseEmbed('Member Role Removed');
-    addField(embed, 'User', formatUser(newMember.user));
-    addField(embed, 'Roles', roles || '(unknown)');
-    setUserIdentity(embed, newMember.user);
-    await sendLog({
-      discordClient: client,
+    queueRoleLog({
+      client,
       guildId,
-      type: 'member_role_remove',
-      webhookCategory: 'verification',
-      content: `Role removed: ${userLabel}${roles ? ` → ${roles.split('\n')[0]}` : ''}`,
-      embeds: [embed]
-    }).catch(() => null);
+      member: newMember,
+      addedIds,
+      removedIds,
+      addedRoleMap,
+      removedRoleMap
+    });
   }
 
   const oldTimeout = oldMember.communicationDisabledUntilTimestamp || 0;
@@ -97,5 +195,3 @@ async function execute(client, oldMember, newMember) {
 }
 
 module.exports = { name: 'guildMemberUpdate', execute };
-
-
