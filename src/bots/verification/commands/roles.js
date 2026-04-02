@@ -6,7 +6,7 @@ const { safeReply } = require('../../shared/util/reply');
 const DESCRIPTION_LIMIT = 3800;
 const MAX_VISIBLE_LINES = 80;
 
-function trimRoleLines(lines = []) {
+function trimLines(lines = []) {
   const visible = [];
   let totalLength = 0;
 
@@ -17,57 +17,89 @@ function trimRoleLines(lines = []) {
     totalLength = nextLength;
   }
 
-  const hiddenCount = Math.max(0, lines.length - visible.length);
   return {
     description: visible.join('\n'),
-    hiddenCount
+    hiddenCount: Math.max(0, lines.length - visible.length)
   };
+}
+
+function extractRoleSearchTokens(search = '') {
+  const trimmed = String(search || '').trim();
+  const normalized = trimmed.toLowerCase();
+  const mentionMatch = trimmed.match(/^<@&(\d+)>$/);
+  const numericId = mentionMatch?.[1] || (/^\d+$/.test(trimmed) ? trimmed : '');
+
+  return {
+    trimmed,
+    normalized,
+    numericId
+  };
+}
+
+function sortRoles(roles = [], guildId = '') {
+  return [...roles].sort((a, b) => {
+    const positionDelta = (b.position || 0) - (a.position || 0);
+    if (positionDelta) return positionDelta;
+    if (a.id === guildId) return 1;
+    if (b.id === guildId) return -1;
+    return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+  });
+}
+
+function filterRoles(roles = [], search = '') {
+  const { trimmed, normalized, numericId } = extractRoleSearchTokens(search);
+  if (!trimmed) return roles;
+
+  return roles.filter((role) => {
+    if (numericId && role.id === numericId) return true;
+    return String(role.name || '').toLowerCase().includes(normalized);
+  });
+}
+
+function getEmbedColor(guild, roles) {
+  const firstColoredRole = roles.find((role) => Number(role.color) > 0);
+  if (firstColoredRole) return firstColoredRole.color;
+  const iconHash = guild.icon;
+  if (iconHash) return 0x5865f2;
+  return 0xe11d48;
 }
 
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('roles')
-    .setDescription('List the roles assigned to a member.')
+    .setDescription('Get a list of server roles.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDMPermission(false)
-    .addUserOption((option) => option.setName('user').setDescription('Member to inspect').setRequired(false)),
+    .addStringOption((option) => option.setName('search').setDescription('Filter roles by name or ID').setRequired(false)),
   async execute(_client, interaction) {
-    const targetUser = interaction.options.getUser('user') || interaction.user;
     const guild = interaction.guild;
-    if (!guild || !targetUser) {
+    if (!guild) {
       return await safeReply(interaction, { content: 'Guild only.', ephemeral: true });
     }
 
-    const member =
-      interaction.options.getMember('user') ||
-      guild.members.cache.get(targetUser.id) ||
-      (await guild.members.fetch(targetUser.id).catch(() => null));
+    const search = interaction.options.getString('search')?.trim() || '';
+    const allRoles = sortRoles(Array.from(guild.roles.cache.values()), guild.id);
+    const matchedRoles = filterRoles(allRoles, search);
 
-    if (!member) {
-      return await safeReply(interaction, { content: 'I could not find that member in this server.', ephemeral: true });
-    }
-
-    const roles = Array.from(member.roles.cache.values())
-      .filter((role) => role.id !== guild.id)
-      .sort((a, b) => (b.position || 0) - (a.position || 0) || String(a.name || '').localeCompare(String(b.name || '')));
-
-    if (!roles.length) {
+    if (!matchedRoles.length) {
       return await safeReply(interaction, {
-        content: `${member} has no server roles beyond @everyone.`,
+        content: `No server roles matched \`${search}\`.`,
         ephemeral: true
       });
     }
 
-    const { description, hiddenCount } = trimRoleLines(roles.map((role) => role.toString()));
+    const { description, hiddenCount } = trimLines(matchedRoles.map((role) => role.toString()));
     const embed = new EmbedBuilder()
-      .setColor(member.displayColor || 0xe11d48)
-      .setTitle(`Roles [${roles.length}]`)
+      .setColor(getEmbedColor(guild, matchedRoles))
+      .setTitle(`Roles [${matchedRoles.length}]`)
       .setDescription(hiddenCount ? `${description}\n\n+${hiddenCount} more role(s)` : description)
       .setAuthor({
-        name: member.displayName || targetUser.globalName || targetUser.username,
-        iconURL: targetUser.displayAvatarURL({ extension: 'png', size: 256 })
+        name: guild.name,
+        iconURL: guild.iconURL({ extension: 'png', size: 256 }) || undefined
       })
-      .setFooter({ text: `User ID: ${member.id}` });
+      .setFooter({
+        text: search ? `Search: ${search}` : `Server ID: ${guild.id}`
+      });
 
     return await safeReply(interaction, { embeds: [embed] });
   }

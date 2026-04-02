@@ -27,10 +27,10 @@ function trimMemberLines(lines = []) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('members')
-    .setDescription('List the members who currently have a role.')
+    .setDescription('Get members in a server role.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .setDMPermission(false)
-    .addRoleOption((option) => option.setName('role').setDescription('Role to inspect').setRequired(true)),
+    .addRoleOption((option) => option.setName('role').setDescription('Role to list members of').setRequired(true)),
   async execute(_client, interaction) {
     const guild = interaction.guild;
     const role = interaction.options.getRole('role');
