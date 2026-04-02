@@ -75,8 +75,7 @@ function createVerificationParts({ title, guildName }) {
       iconURL: `attachment://${footerIcon.name}`
     })
     .setThumbnail(`attachment://${thumbnail.name}`)
-    .setImage(`attachment://${banner.name}`)
-    .setTimestamp();
+    .setImage(`attachment://${banner.name}`);
 
   return {
     embed,

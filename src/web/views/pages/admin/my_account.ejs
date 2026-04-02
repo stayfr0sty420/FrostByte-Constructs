@@ -11,7 +11,7 @@
           <h1 class="h4 m-0">My Account</h1>
           <div class="text-muted small">Manage your admin profile, password, authenticator, and recovery access.</div>
         </div>
-        <a href="/admin/dashboard" class="btn btn-outline-secondary btn-sm btn-with-icon" data-icon="↩">Back to Dashboard</a>
+        <a href="/admin/dashboard" class="btn btn-outline-secondary btn-sm">Back to Dashboard</a>
       </div>
 
       <% if (flash) { %>
@@ -60,7 +60,7 @@
                   <input class="form-control" type="text" name="name" value="<%= accountUser.name || '' %>" placeholder="Account display name" />
                 </div>
                 <div class="col-12 d-grid d-sm-flex justify-content-sm-end">
-                  <button class="btn btn-primary btn-with-icon" type="submit" data-icon="💾">Save Profile</button>
+                  <button class="btn btn-primary" type="submit">Save Profile</button>
                 </div>
               </form>
             </div>
@@ -86,7 +86,7 @@
                   <input class="form-control" type="password" name="confirmPassword" required />
                 </div>
                 <div class="col-12 d-grid d-sm-flex justify-content-sm-end">
-                  <button class="btn btn-primary btn-with-icon" type="submit" data-icon="🔒">Update Password</button>
+                  <button class="btn btn-primary" type="submit">Update Password</button>
                 </div>
               </form>
             </div>
@@ -124,18 +124,18 @@
                       <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
                     </div>
                     <div class="col-12 d-grid gap-2">
-                      <button class="btn btn-primary btn-with-icon" type="submit" data-icon="🛡">Enable Authenticator</button>
+                      <button class="btn btn-primary" type="submit">Enable Authenticator</button>
                     </div>
                   </form>
                   <form method="post" action="/admin/account/2fa/cancel" class="mt-2">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                    <button class="btn btn-outline-light w-100 btn-with-icon" type="submit" data-icon="↩">Cancel Setup</button>
+                    <button class="btn btn-outline-light w-100" type="submit">Cancel Setup</button>
                   </form>
                 <% } else { %>
                   <p class="text-muted small">Start setup to scan a QR code or use the manual setup key in Google Authenticator.</p>
                   <form method="post" action="/admin/account/2fa/start">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                    <button class="btn btn-primary w-100 btn-with-icon" type="submit" data-icon="📲">Set Up Authenticator</button>
+                    <button class="btn btn-primary w-100" type="submit">Set Up Authenticator</button>
                   </form>
                 <% } %>
               <% } else { %>
@@ -157,7 +157,7 @@
                         <input class="form-control" type="text" name="backupCode" placeholder="ABCD-EFGH" />
                       </div>
                       <div class="col-12 d-grid">
-                        <button class="btn btn-outline-warning btn-with-icon" type="submit" data-icon="⏸">Disable Authenticator</button>
+                        <button class="btn btn-outline-warning" type="submit">Disable Authenticator</button>
                       </div>
                     </form>
                   </div>
@@ -194,7 +194,7 @@
                         <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
                       </div>
                       <div class="col-12 col-md-5 d-grid align-self-end">
-                        <button class="btn btn-outline-light btn-with-icon" type="submit" data-icon="👁">View Backup Codes</button>
+                        <button class="btn btn-outline-light" type="submit">View Backup Codes</button>
                       </div>
                     </form>
                   </div>
@@ -203,7 +203,7 @@
                     <div class="text-muted small">Backup codes are temporarily visible for this session.</div>
                     <form method="post" action="/admin/account/backup-codes/hide">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                      <button class="btn btn-outline-secondary btn-sm btn-with-icon" type="submit" data-icon="🙈">Hide Codes</button>
+                      <button class="btn btn-outline-secondary btn-sm" type="submit">Hide Codes</button>
                     </form>
                   </div>
                   <div class="row g-3 mb-3">
@@ -231,7 +231,7 @@
                     <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required />
                   </div>
                   <div class="col-12 col-md-4 d-grid align-self-end">
-                    <button class="btn btn-outline-light btn-with-icon" type="submit" data-icon="♻">Generate New Backup Codes</button>
+                    <button class="btn btn-outline-light" type="submit">Generate New Backup Codes</button>
                   </div>
                 </form>
               <% } %>
@@ -256,7 +256,7 @@
                   <input class="form-control" type="text" name="passkeyName" data-passkey-name placeholder="MacBook Passkey" maxlength="60" />
                 </div>
                 <div class="col-12 col-lg-5 d-grid align-self-end">
-                  <button class="btn btn-primary btn-with-icon" type="button" data-passkey-register data-icon="🗝">Add Security Passkey</button>
+                  <button class="btn btn-primary" type="button" data-passkey-register>Add Security Passkey</button>
                 </div>
                 <div class="col-12">
                   <div class="form-text">Optional label so you know which passkey belongs to which device.</div>
@@ -305,7 +305,7 @@
                           </div>
                         <% } %>
                         <div class="col-12 d-grid">
-                          <button class="btn btn-outline-danger btn-with-icon" type="submit" data-icon="🗑" data-confirm="Remove this security passkey from your account?" data-confirm-title="Remove passkey?" data-confirm-ok="Remove" data-confirm-cancel="Cancel">Remove Passkey</button>
+                          <button class="btn btn-outline-danger" type="submit" data-confirm="Remove this security passkey from your account?" data-confirm-title="Remove passkey?" data-confirm-ok="Remove" data-confirm-cancel="Cancel">Remove Passkey</button>
                         </div>
                       </form>
                     </div>
@@ -348,7 +348,7 @@
                           </div>
                         <% } %>
                         <div class="col-12 d-grid">
-                          <button class="btn btn-outline-warning btn-with-icon" type="submit" data-icon="⏸" data-confirm="Disable your own account and sign out now?" data-confirm-title="Disable account?" data-confirm-ok="Disable" data-confirm-cancel="Cancel">Disable My Account</button>
+                          <button class="btn btn-outline-warning" type="submit" data-confirm="Disable your own account and sign out now?" data-confirm-title="Disable account?" data-confirm-ok="Disable" data-confirm-cancel="Cancel">Disable My Account</button>
                         </div>
                       </form>
                     </div>
@@ -376,7 +376,7 @@
                           </div>
                         <% } %>
                         <div class="col-12 d-grid">
-                          <button class="btn btn-outline-danger btn-with-icon" type="submit" data-icon="🗑" data-confirm="Delete your account from the database and sign out?" data-confirm-title="Delete account?" data-confirm-ok="Delete" data-confirm-cancel="Cancel">Delete My Account</button>
+                          <button class="btn btn-outline-danger" type="submit" data-confirm="Delete your account from the database and sign out?" data-confirm-title="Delete account?" data-confirm-ok="Delete" data-confirm-cancel="Cancel">Delete My Account</button>
                         </div>
                       </form>
                     </div>

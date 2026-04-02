@@ -1960,8 +1960,22 @@ code {
   gap: 0.55rem;
 }
 
+.accounts-actions-icons {
+  gap: 0.45rem;
+}
+
 .accounts-actions form {
   margin: 0;
+}
+
+.accounts-action-btn {
+  padding: 0;
+}
+
+.accounts-action-btn svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  display: block;
 }
 
 .accounts-activity-list {
@@ -2091,6 +2105,16 @@ code {
   .accounts-actions form,
   .accounts-actions .btn {
     width: 100%;
+  }
+
+  .accounts-actions-icons {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .accounts-actions-icons form,
+  .accounts-actions-icons .btn {
+    width: auto;
   }
 }
 

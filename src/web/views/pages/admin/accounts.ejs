@@ -149,39 +149,64 @@
                         </td>
                         <td class="text-end accounts-actions-cell" data-label="Actions">
                           <% if (isOwner && String(u._id) !== meId) { %>
-                            <div class="accounts-actions">
-                              <a class="btn btn-outline-light btn-sm" href="/admin/accounts/<%= u._id %>">Manage</a>
+                            <div class="accounts-actions accounts-actions-icons">
+                              <a
+                                class="btn btn-outline-light btn-sm icon-btn accounts-action-btn"
+                                href="/admin/accounts/<%= u._id %>"
+                                title="Manage account"
+                                aria-label="Manage account"
+                              >
+                                <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                  <path d="M7.25 1a.75.75 0 0 1 1.5 0v.72a5.9 5.9 0 0 1 1.34.55l.51-.51a.75.75 0 1 1 1.06 1.06l-.51.51c.22.42.41.86.55 1.34H13a.75.75 0 0 1 0 1.5h-.72a5.9 5.9 0 0 1-.55 1.34l.51.51a.75.75 0 1 1-1.06 1.06l-.51-.51a5.9 5.9 0 0 1-1.34.55V13a.75.75 0 0 1-1.5 0v-.72a5.9 5.9 0 0 1-1.34-.55l-.51.51a.75.75 0 1 1-1.06-1.06l.51-.51a5.9 5.9 0 0 1-.55-1.34H3a.75.75 0 0 1 0-1.5h.72c.14-.48.33-.92.55-1.34l-.51-.51a.75.75 0 0 1 1.06-1.06l.51.51c.42-.22.86-.41 1.34-.55V1ZM8 5.25A2.75 2.75 0 1 0 8 10.75A2.75 2.75 0 1 0 8 5.25Z" fill="currentColor" />
+                                </svg>
+                                <span class="visually-hidden">Manage</span>
+                              </a>
                               <% if (u.disabled) { %>
                                 <form method="post" action="/admin/accounts/enable/<%= u._id %>">
                                   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                                  <button class="btn btn-outline-success btn-sm" type="submit">Enable</button>
+                                  <button class="btn btn-outline-success btn-sm icon-btn accounts-action-btn" type="submit" title="Enable account" aria-label="Enable account">
+                                    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                      <path d="M8 1.25A6.75 6.75 0 1 1 1.25 8A6.76 6.76 0 0 1 8 1.25Zm2.78 4.22-3.53 3.54-1.5-1.5a.75.75 0 0 0-1.06 1.06l2.03 2.03a.75.75 0 0 0 1.06 0l4.06-4.07a.75.75 0 1 0-1.06-1.06Z" fill="currentColor" />
+                                    </svg>
+                                    <span class="visually-hidden">Enable</span>
+                                  </button>
                                 </form>
                               <% } else { %>
                                 <form method="post" action="/admin/accounts/disable/<%= u._id %>">
                                   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                                   <button
-                                    class="btn btn-outline-warning btn-sm"
+                                    class="btn btn-outline-warning btn-sm icon-btn accounts-action-btn"
                                     type="submit"
+                                    title="Disable account"
+                                    aria-label="Disable account"
                                     data-confirm="Disable this account?"
                                     data-confirm-title="Disable account?"
                                     data-confirm-ok="Disable"
                                     data-confirm-cancel="Cancel"
                                   >
-                                    Disable
+                                    <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                      <path d="M8 1.25A6.75 6.75 0 1 1 1.25 8A6.76 6.76 0 0 1 8 1.25Zm3.25 7.5a.75.75 0 0 0 0-1.5h-6.5a.75.75 0 0 0 0 1.5h6.5Z" fill="currentColor" />
+                                    </svg>
+                                    <span class="visually-hidden">Disable</span>
                                   </button>
                                 </form>
                               <% } %>
                               <form method="post" action="/admin/accounts/delete/<%= u._id %>">
                                 <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                                 <button
-                                  class="btn btn-outline-danger btn-sm"
+                                  class="btn btn-outline-danger btn-sm icon-btn accounts-action-btn"
                                   type="submit"
+                                  title="Delete account"
+                                  aria-label="Delete account"
                                   data-confirm="Delete this account from the database? This admin will lose login access immediately."
                                   data-confirm-title="Delete account?"
                                   data-confirm-ok="Delete"
                                   data-confirm-cancel="Cancel"
                                 >
-                                  Delete
+                                  <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                                    <path d="M6.5 1.75h3a1 1 0 0 1 1 1v.5H13a.75.75 0 0 1 0 1.5h-.44l-.58 8.1A1.75 1.75 0 0 1 10.23 14.5H5.77a1.75 1.75 0 0 1-1.75-1.65l-.58-8.1H3a.75.75 0 0 1 0-1.5h2.5v-.5a1 1 0 0 1 1-1Zm2.5 1.5v-.5h-2v.5h2Zm-2.2 3.1a.65.65 0 0 0-1.3.08l.3 4.75a.65.65 0 1 0 1.3-.08l-.3-4.75Zm3.05-.57a.65.65 0 0 0-.69.61l-.3 4.75a.65.65 0 1 0 1.3.08l.3-4.75a.65.65 0 0 0-.61-.69Z" fill="currentColor" />
+                                  </svg>
+                                  <span class="visually-hidden">Delete</span>
                                 </button>
                               </form>
                             </div>
