@@ -14,6 +14,7 @@ module.exports = {
         { name: 'Member', value: '`/verify` or click the **Verify** button in the channel.', inline: false },
         { name: 'Admin', value: '`/verify` (posts the verify panel)', inline: false },
         { name: 'Quick lookups', value: '`/roles [search]` `/member <role>` `/members <role>`', inline: false },
+        { name: 'Profiles', value: '`/devs` `/exec`', inline: false },
         { name: 'Show settings', value: '`/config show`', inline: false },
         { name: 'Roles', value: '`/config temp-role` `/config verified-role`', inline: false },
         { name: 'Log channels', value: '`/config log-channel` `/config verification-log-channel`', inline: false },

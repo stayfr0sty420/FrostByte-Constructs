@@ -24,7 +24,8 @@ module.exports = {
         { name: 'Daily / Bank', value: '`/daily` `/balance` `/deposit` `/withdraw` `/leaderboard`', inline: false },
         { name: 'Shop / Items', value: '`/shop` `/buy` `/sell` `/inventory` `/use` `/equip`', inline: false },
         { name: 'Gambling', value: '`/coinflip` `/slots` `/dice` `/blackjack` `/crash` `/color` `/colorgame`', inline: false },
-        { name: 'RPG / Social', value: '`/hunt` `/stats` `/levelup` `/refine` `/gacha` `/profile` `/marry` `/divorce` `/pvp`', inline: false }
+        { name: 'RPG / Social', value: '`/hunt` `/stats` `/levelup` `/refine` `/gacha` `/profile` `/marry` `/divorce` `/pvp`', inline: false },
+        { name: 'Profiles', value: '`/devs` `/exec`', inline: false }
       )
       .setFooter({ text: 'Tip: If you see “not approved”, ask the dashboard owner to approve the server.' })
       .setTimestamp();

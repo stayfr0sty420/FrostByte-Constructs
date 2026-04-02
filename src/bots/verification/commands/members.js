@@ -5,6 +5,7 @@ const { safeReply } = require('../../shared/util/reply');
 
 const DESCRIPTION_LIMIT = 3800;
 const MAX_VISIBLE_LINES = 80;
+const BRANDLESS_REPLY = { skipBotBranding: true };
 
 function trimMemberLines(lines = []) {
   const visible = [];
@@ -35,19 +36,24 @@ module.exports = {
     const guild = interaction.guild;
     const role = interaction.options.getRole('role');
     if (!guild || !role) {
-      return await safeReply(interaction, { content: 'Guild only.', ephemeral: true });
+      return await safeReply(interaction, { content: 'Guild only.', ephemeral: true, ...BRANDLESS_REPLY });
     }
 
     if (role.id === guild.id) {
       return await safeReply(interaction, {
         content: 'Pick a specific role instead of @everyone so the list stays useful.',
-        ephemeral: true
+        ephemeral: true,
+        ...BRANDLESS_REPLY
       });
     }
 
     const members = await guild.members.fetch().catch(() => null);
     if (!members) {
-      return await safeReply(interaction, { content: 'I could not load the server member list right now.', ephemeral: true });
+      return await safeReply(interaction, {
+        content: 'I could not load the server member list right now.',
+        ephemeral: true,
+        ...BRANDLESS_REPLY
+      });
     }
 
     const matched = Array.from(members.values())
@@ -57,7 +63,8 @@ module.exports = {
     if (!matched.length) {
       return await safeReply(interaction, {
         content: `No members currently have ${role.toString()}.`,
-        ephemeral: true
+        ephemeral: true,
+        ...BRANDLESS_REPLY
       });
     }
 
@@ -65,9 +72,8 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setColor(role.color || 0xe11d48)
       .setTitle(`Members in ${role.name} [${matched.length}]`)
-      .setDescription(hiddenCount ? `${description}\n\n+${hiddenCount} more member(s)` : description)
-      .setFooter({ text: `Role ID: ${role.id}` });
+      .setDescription(hiddenCount ? `${description}\n\n+${hiddenCount} more member(s)` : description);
 
-    return await safeReply(interaction, { embeds: [embed] });
+    return await safeReply(interaction, { embeds: [embed], ...BRANDLESS_REPLY });
   }
 };

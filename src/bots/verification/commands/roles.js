@@ -5,6 +5,7 @@ const { safeReply } = require('../../shared/util/reply');
 
 const DESCRIPTION_LIMIT = 3800;
 const MAX_VISIBLE_LINES = 80;
+const BRANDLESS_REPLY = { skipBotBranding: true };
 
 function trimLines(lines = []) {
   const visible = [];
@@ -74,7 +75,7 @@ module.exports = {
   async execute(_client, interaction) {
     const guild = interaction.guild;
     if (!guild) {
-      return await safeReply(interaction, { content: 'Guild only.', ephemeral: true });
+      return await safeReply(interaction, { content: 'Guild only.', ephemeral: true, ...BRANDLESS_REPLY });
     }
 
     const search = interaction.options.getString('search')?.trim() || '';
@@ -84,7 +85,8 @@ module.exports = {
     if (!matchedRoles.length) {
       return await safeReply(interaction, {
         content: `No server roles matched \`${search}\`.`,
-        ephemeral: true
+        ephemeral: true,
+        ...BRANDLESS_REPLY
       });
     }
 
@@ -96,11 +98,8 @@ module.exports = {
       .setAuthor({
         name: guild.name,
         iconURL: guild.iconURL({ extension: 'png', size: 256 }) || undefined
-      })
-      .setFooter({
-        text: search ? `Search: ${search}` : `Server ID: ${guild.id}`
       });
 
-    return await safeReply(interaction, { embeds: [embed] });
+    return await safeReply(interaction, { embeds: [embed], ...BRANDLESS_REPLY });
   }
 };
