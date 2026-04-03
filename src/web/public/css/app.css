@@ -308,9 +308,48 @@ h3,
     padding-inline: 0.9rem;
   }
 
+  .navbar-minimal__collapse {
+    padding: 0.9rem;
+    border-radius: 18px;
+  }
+
   .navbar-minimal .brand-title {
     font-size: 0.78rem;
     letter-spacing: 0.12em;
+  }
+
+  .navbar-minimal__primary,
+  .navbar-minimal__secondary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+
+  .navbar-minimal__primary > .dropdown,
+  .navbar-user-item,
+  .navbar-logout-item {
+    grid-column: 1 / -1;
+  }
+
+  .navbar-minimal .nav-link,
+  .navbar-minimal .btn {
+    min-height: 42px;
+    padding: 0.72rem 0.85rem;
+  }
+
+  .navbar-minimal .nav-link {
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+  }
+
+  .navbar-minimal__secondary {
+    margin-top: 0.7rem;
+    padding-top: 0.7rem;
+  }
+
+  .navbar-server-pill,
+  .navbar-user-pill {
+    padding: 0.75rem 0.85rem;
   }
 }
 
@@ -4405,16 +4444,47 @@ code {
     padding: 0.95rem;
   }
 
+  .backups-table tbody td,
+  .backup-schedule-table tbody td {
+    grid-template-columns: minmax(4.9rem, auto) minmax(0, 1fr);
+    align-items: start;
+    column-gap: 0.7rem;
+    row-gap: 0.18rem;
+  }
+
+  .backups-table tbody td::before,
+  .backup-schedule-table tbody td::before {
+    margin-bottom: 0;
+    align-self: center;
+  }
+
+  .backups-table tbody td > *,
+  .backup-schedule-table tbody td > * {
+    grid-column: 2;
+  }
+
+  .backups-table tbody td[data-label='Actions'],
+  .backup-schedule-table tbody td[data-label='Actions'] {
+    grid-template-columns: 1fr;
+    gap: 0.55rem;
+  }
+
+  .backups-table tbody td[data-label='Actions'] .backup-actions,
+  .backup-schedule-table tbody td[data-label='Actions'] form {
+    grid-column: 1;
+  }
+
   .backup-actions {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: stretch;
+    grid-template-columns: repeat(3, 2.6rem);
+    justify-content: start;
+    align-items: start;
     gap: 0.55rem;
   }
 
   .backup-actions .btn,
   .backup-actions form {
-    width: 100%;
+    width: 2.6rem;
   }
 
   .backup-actions form {
@@ -4422,6 +4492,8 @@ code {
   }
 
   .backup-actions .icon-btn {
+    width: 2.6rem;
+    min-width: 2.6rem;
     min-height: 42px;
     border-radius: 12px;
   }

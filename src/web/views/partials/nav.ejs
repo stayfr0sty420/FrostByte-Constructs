@@ -99,7 +99,7 @@
             <span class="user-email"><%= safeAdminUser.email %></span>
           </span>
         </li>
-        <li class="nav-item">
+        <li class="nav-item navbar-logout-item">
           <form method="post" action="/admin/logout" class="d-inline">
             <input type="hidden" name="_csrf" value="<%= safeCsrfToken %>" />
             <button
@@ -121,7 +121,7 @@
             <span class="user-email"><%= safeDiscordUser.username %></span>
           </span>
         </li>
-        <li class="nav-item">
+        <li class="nav-item navbar-logout-item">
           <form method="post" action="/auth/logout" class="d-inline">
             <input type="hidden" name="_csrf" value="<%= safeCsrfToken %>" />
             <button
