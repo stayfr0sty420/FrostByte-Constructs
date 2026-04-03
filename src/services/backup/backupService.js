@@ -414,7 +414,7 @@ async function fetchGuildChannels(guild) {
 
 async function fetchArchivedThreads(channel, options = {}) {
   const type = String(options.type || 'public');
-  const fetchAll = Boolean(options.fetchAll);
+  const onBatch = typeof options.onBatch === 'function' ? options.onBatch : null;
   const results = [];
   const seen = new Set();
   let before = options.before;
@@ -424,7 +424,6 @@ async function fetchArchivedThreads(channel, options = {}) {
     // eslint-disable-next-line no-await-in-loop
     const batch = await channel.threads.fetchArchived({
       type,
-      fetchAll,
       before,
       limit: 100
     }).catch(() => null);
@@ -439,6 +438,16 @@ async function fetchArchivedThreads(channel, options = {}) {
     }
 
     hasMore = Boolean(batch.hasMore);
+    if (onBatch) {
+      // eslint-disable-next-line no-await-in-loop
+      await onBatch({
+        channelId: channel?.id || '',
+        type,
+        added: addedThisBatch,
+        total: results.length,
+        hasMore
+      }).catch(() => null);
+    }
     const lastThread = results.at(-1) || Array.from(batch.threads.values()).at(-1);
     if (!lastThread || addedThisBatch === 0) break;
     before = lastThread;
@@ -623,16 +632,64 @@ function serializeChannel(channel, sortIndex = 0) {
   };
 }
 
-async function collectThreadsFromChannels(channels, { includeMessages = false, messageLimit = 1000 } = {}) {
+async function collectThreadsFromChannels(channels, { includeMessages = false, messageLimit = 1000, onProgress = null } = {}) {
   const threads = [];
   const threadMessages = {};
   const seenThreadIds = new Set();
-  for (const ch of channels) {
-    if (!ch?.isTextBased?.()) continue;
-    if (!ch.threads) continue;
+  const eligibleChannels = Array.isArray(channels) ? channels.filter((ch) => ch?.isTextBased?.() && ch?.threads) : [];
+  const totalChannels = eligibleChannels.length;
+  let processedChannels = 0;
+  let processedThreads = 0;
+  let lastProgressAt = 0;
+  const emitProgress = async (message, { force = false, partial = 0 } = {}) => {
+    if (!onProgress) return;
+    const now = Date.now();
+    if (!force && now - lastProgressAt < 1200) return;
+    lastProgressAt = now;
+    const channelRatio = totalChannels ? Math.min(1, (processedChannels + Math.max(0, Math.min(0.95, Number(partial) || 0))) / totalChannels) : 0;
+    const progress = 56 + Math.min(9, Math.round(channelRatio * 9));
+    await onProgress({
+      progress,
+      message: String(message || '').trim()
+    }).catch(() => null);
+  };
+
+  if (totalChannels) {
+    await emitProgress(includeMessages ? 'Scanning channels for threads and forum posts' : 'Scanning channels for threads', {
+      force: true
+    });
+  }
+
+  for (const ch of eligibleChannels) {
+    const channelLabel = String(ch?.name || 'channel').trim() || 'channel';
+    await emitProgress(
+      includeMessages ? `Scanning ${channelLabel} for threads and forum posts` : `Scanning ${channelLabel} for threads`,
+      { force: true, partial: 0.1 }
+    );
+
     const active = await ch.threads.fetchActive().catch(() => null);
-    const archivedPublic = await fetchArchivedThreads(ch, { type: 'public' }).catch(() => []);
-    const archivedPrivate = await fetchArchivedThreads(ch, { type: 'private', fetchAll: true }).catch(() => []);
+    const archivedPublic = await fetchArchivedThreads(ch, {
+      type: 'public',
+      onBatch: async ({ total }) => {
+        await emitProgress(
+          includeMessages
+            ? `Fetching archived threads from ${channelLabel} (${total} found)`
+            : `Fetching archived threads from ${channelLabel} (${total} found)`,
+          { partial: 0.35 }
+        );
+      }
+    }).catch(() => []);
+    const archivedPrivate = await fetchArchivedThreads(ch, {
+      type: 'private',
+      onBatch: async ({ total }) => {
+        await emitProgress(
+          includeMessages
+            ? `Fetching private threads from ${channelLabel} (${total} found)`
+            : `Fetching private threads from ${channelLabel} (${total} found)`,
+          { partial: 0.5 }
+        );
+      }
+    }).catch(() => []);
     const all = [
       ...(active?.threads?.values?.() ? Array.from(active.threads.values()) : []),
       ...archivedPublic,
@@ -686,7 +743,25 @@ async function collectThreadsFromChannels(channels, { includeMessages = false, m
       if (includeMessages && messageLimit > 0) {
         threadMessages[t.id] = serializedThreadMessages;
       }
+
+      processedThreads += 1;
+      if (processedThreads === 1 || processedThreads % 10 === 0) {
+        await emitProgress(
+          includeMessages
+            ? `Captured ${processedThreads} threads and forum posts so far`
+            : `Captured ${processedThreads} threads so far`,
+          { partial: 0.75 }
+        );
+      }
     }
+
+    processedChannels += 1;
+    await emitProgress(
+      includeMessages
+        ? `Finished ${channelLabel}. Captured ${threads.length} threads and forum posts so far`
+        : `Finished ${channelLabel}. Captured ${threads.length} threads so far`,
+      { force: true }
+    );
   }
   return { threads, threadMessages };
 }
@@ -821,7 +896,8 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
     await checkpoint(56, options.includeMessages ? 'Capturing threads and forum posts' : 'Capturing threads');
     threadBundle = await collectThreadsFromChannels(channels, {
       includeMessages: options.includeMessages,
-      messageLimit
+      messageLimit,
+      onProgress: checkpoint
     });
   }
 

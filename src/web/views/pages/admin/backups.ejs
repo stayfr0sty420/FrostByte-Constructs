@@ -512,6 +512,10 @@
 
         let stream = null;
         let pollTimer = null;
+        let pollRequest = null;
+        let pollRequestOperationId = '';
+        let pollAbortController = null;
+        let pollRepeatRequested = false;
         let watchdogTimer = null;
         let discoveryTimer = null;
         let discoveryAttempts = 0;
@@ -812,15 +816,35 @@
           }
         };
 
+        const abortPollRequest = (reason = '') => {
+          if (!pollAbortController) return;
+          pollAbortController.__reason = String(reason || '').trim();
+          pollAbortController.abort();
+        };
+
+        const queueNextPoll = (operationId, delayMs = 900) => {
+          if (!pollRepeatRequested || !operationId) return;
+          if (pollTimer) {
+            window.clearTimeout(pollTimer);
+            pollTimer = null;
+          }
+          pollTimer = window.setTimeout(() => {
+            pollTimer = null;
+            void pollOperation(operationId, { repeat: true });
+          }, Math.max(300, Number(delayMs) || 0));
+        };
+
         const closeLiveUpdates = () => {
           if (stream) {
             stream.close();
             stream = null;
           }
+          pollRepeatRequested = false;
           if (pollTimer) {
             window.clearTimeout(pollTimer);
             pollTimer = null;
           }
+          abortPollRequest('shutdown');
           if (watchdogTimer) {
             window.clearInterval(watchdogTimer);
             watchdogTimer = null;
@@ -1065,29 +1089,62 @@
 
         const pollOperation = async (operationId, { repeat = false, suppressReconnect = false } = {}) => {
           if (!operationId) return;
-          try {
-            const response = await fetch(`/admin/backups/operations/${encodeURIComponent(operationId)}`, {
-              headers: { Accept: 'application/json' },
-              credentials: 'same-origin'
-            });
-            if (!response.ok) throw new Error('poll_failed');
-            const payload = await response.json();
-            if (!payload?.ok || !payload.operation) throw new Error('invalid_payload');
-            updateOperationCard(payload.operation, {
-              source: 'poll',
-              contactAt: payload.serverTime || Date.now()
-            });
-            if (repeat && String(payload.operation.status || '').toLowerCase() === 'running') {
-              pollTimer = window.setTimeout(() => pollOperation(operationId, { repeat: true }), 900);
+          if (repeat) pollRepeatRequested = true;
+          if (pollRequest && pollRequestOperationId === operationId) return pollRequest;
+
+          const controller = typeof window.AbortController === 'function' ? new window.AbortController() : null;
+          const requestPromise = (async () => {
+            let shouldRepeat = false;
+            let repeatDelay = 900;
+            const timeoutId = window.setTimeout(() => {
+              controller?.abort();
+            }, 6500);
+
+            try {
+              pollRequestOperationId = operationId;
+              pollAbortController = controller;
+              const response = await fetch(`/admin/backups/operations/${encodeURIComponent(operationId)}`, {
+                headers: { Accept: 'application/json' },
+                credentials: 'same-origin',
+                cache: 'no-store',
+                signal: controller?.signal
+              });
+              if (!response.ok) throw new Error('poll_failed');
+              const payload = await response.json();
+              if (!payload?.ok || !payload.operation) throw new Error('invalid_payload');
+              updateOperationCard(payload.operation, {
+                source: 'poll',
+                contactAt: payload.serverTime || Date.now()
+              });
+              shouldRepeat =
+                pollRepeatRequested &&
+                activeOperationId === operationId &&
+                String(payload.operation.status || '').toLowerCase() === 'running';
+              repeatDelay = 900;
+              return payload;
+            } catch (_error) {
+              const isIntentionalAbort = Boolean(controller?.signal?.aborted && controller?.__reason === 'shutdown');
+              if (!isIntentionalAbort && !suppressReconnect) {
+                setConnectionState('reconnecting', { mode: 'poll' });
+              }
+              shouldRepeat =
+                pollRepeatRequested &&
+                !isIntentionalAbort &&
+                activeOperationId === operationId &&
+                String(currentOperation?.status || 'running').toLowerCase() === 'running';
+              repeatDelay = 1500;
+              return null;
+            } finally {
+              window.clearTimeout(timeoutId);
+              if (pollAbortController === controller) pollAbortController = null;
+              if (pollRequest === requestPromise) pollRequest = null;
+              if (pollRequestOperationId === operationId) pollRequestOperationId = '';
+              if (shouldRepeat) queueNextPoll(operationId, repeatDelay);
             }
-          } catch (_error) {
-            if (!suppressReconnect) {
-              setConnectionState('reconnecting', { mode: 'poll' });
-            }
-            if (repeat) {
-              pollTimer = window.setTimeout(() => pollOperation(operationId, { repeat: true }), 1500);
-            }
-          }
+          })();
+
+          pollRequest = requestPromise;
+          return requestPromise;
         };
 
         const startWatchdog = (operationId) => {
@@ -1115,6 +1172,7 @@
           clearDiscoveryTimer();
           closeLiveUpdates();
           activeOperationId = operationId;
+          pollRepeatRequested = false;
           setConnectionState('connecting', { mode: 'stream' });
           startSectionHeartbeat();
           void pollOperation(operationId, { suppressReconnect: true });
