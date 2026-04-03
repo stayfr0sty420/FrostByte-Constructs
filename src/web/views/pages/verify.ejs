@@ -3,7 +3,7 @@
   <head>
     <%- include('../partials/head', { title }) %>
   </head>
-  <body class="app verify-page">
+  <body class="app verify-page verify-entry-page">
     <%- include('../partials/nav') %>
     <main class="container py-4 py-lg-5">
       <% const needsGeo = (typeof requireLocation !== 'undefined' && requireLocation) ? true : false; %>
@@ -39,18 +39,20 @@
         </section>
 
         <section class="card shadow-sm verify-card">
-          <div class="card-body p-4 p-lg-5">
+          <div class="card-body p-4 p-lg-5 verify-card-body">
             <div class="verify-card-head">
-              <div>
+              <div class="verify-card-head-copy">
                 <p class="verify-card-eyebrow">Verification Sequence</p>
                 <h2 class="h4 mb-2">Complete The Required Profiling</h2>
               </div>
-              <img
-                src="/assets/images/verification/core-guardian.png"
-                alt="Verification sigil"
-                class="verify-card-mark"
-                loading="lazy"
-              />
+              <div class="verify-card-head-actions">
+                <img
+                  src="/assets/images/verification/core-guardian.png"
+                  alt="Verification sigil"
+                  class="verify-card-mark"
+                  loading="lazy"
+                />
+              </div>
             </div>
 
             <% if (error === 'location_required') { %>
@@ -91,7 +93,7 @@
                 <div class="verify-question-block">
                   <label class="form-label verify-question-label"><%= q %></label>
                   <input
-                    class="form-control form-control-lg"
+                    class="form-control form-control-lg verify-question-input"
                     name="answer<%= idx + 1 %>"
                     placeholder="Type your answer"
                     autocomplete="off"
@@ -101,7 +103,7 @@
               <div class="verify-submit-row">
                 <button class="btn btn-primary btn-lg verify-submit-btn" type="submit" id="submitBtn">Verify</button>
               </div>
-              <div class="verify-inline-error" id="ipStatus"></div>
+              <div class="verify-inline-error" id="ipStatus" role="status" aria-live="polite"></div>
             </form>
           </div>
         </section>

@@ -6,9 +6,12 @@
   <body class="app admin-page backups-page">
     <%- include('../../partials/nav') %>
     <main class="container py-4">
-      <% if (flash) { %>
-        <div class="alert alert-<%= flash.type %>"><%= flash.message %></div>
-      <% } %>
+      <div id="backupsFlashMount">
+        <% if (flash) { %>
+          <div class="alert alert-<%= flash.type %>"><%= flash.message %></div>
+        <% } %>
+      </div>
+      <div id="backupPageStatusMount" aria-live="polite"></div>
 
       <div id="backupOperationMount">
         <% if (activeOperation) { %>
@@ -116,7 +119,7 @@
                       </div>
                       <div class="form-text">Select one or more. If <strong>full</strong> is checked, it overrides the other types automatically.</div>
                     </div>
-                    <div class="col-12 col-md-5 d-flex align-items-center">
+                    <div class="col-12 col-md-5 d-flex align-items-center backup-archive-col">
                       <div class="form-check">
                         <input class="form-check-input" type="checkbox" value="1" id="archiveBackup" name="archive" />
                         <label class="form-check-label" for="archiveBackup">Archive</label>
@@ -227,7 +230,7 @@
                         <% }) %>
                       </select>
                     </div>
-                    <div class="col-12 col-md-6 d-flex align-items-center gap-3">
+                    <div class="col-12 col-md-6 d-flex align-items-center gap-3 backup-schedule-switches">
                       <div class="form-check form-switch mt-3">
                         <input class="form-check-input" type="checkbox" name="enabled" value="1" checked />
                         <label class="form-check-label">Enabled</label>
@@ -243,8 +246,8 @@
                   </div>
                 </form>
 
-                <div class="table-responsive mt-3">
-                  <table class="table table-sm align-middle mb-0">
+                <div class="table-responsive mt-3 backup-schedule-table-wrap">
+                  <table class="table table-sm align-middle mb-0 backup-schedule-table">
                     <thead>
                       <tr>
                         <th>Schedule</th>
@@ -262,16 +265,16 @@
                       <% } %>
                       <% (schedules || []).forEach(s => { %>
                         <tr>
-                          <td>
-                            <div class="fw-semibold"><%= s.label || 'Custom' %></div>
+                          <td data-label="Schedule">
+                            <div class="fw-semibold backup-cell-text"><%= s.label || 'Custom' %></div>
                             <div class="text-muted small"><code><%= s.interval || s.cron %></code></div>
                           </td>
-                          <td><%= s.backupType %></td>
-                          <td class="text-muted small"><%= formatDate(s.nextRun) || '—' %></td>
-                          <td class="text-muted small"><%= channelNameById.get(s.channelId) || s.channelId || '—' %></td>
-                          <td><%= s.enabled ? 'yes' : 'no' %></td>
-                          <td><%= s.replacePrevious ? 'yes' : 'no' %></td>
-                          <td class="text-end">
+                          <td data-label="Type"><span class="backup-cell-text"><%= s.backupType %></span></td>
+                          <td data-label="Next Run" class="text-muted small"><span class="backup-cell-text"><%= formatDate(s.nextRun) || '—' %></span></td>
+                          <td data-label="Notify" class="text-muted small"><span class="backup-cell-text"><%= channelNameById.get(s.channelId) || s.channelId || '—' %></span></td>
+                          <td data-label="Enabled"><span class="backup-cell-text"><%= s.enabled ? 'yes' : 'no' %></span></td>
+                          <td data-label="Latest Only"><span class="backup-cell-text"><%= s.replacePrevious ? 'yes' : 'no' %></span></td>
+                          <td data-label="Actions" class="text-end">
                             <form method="post" action="/admin/backups/schedules/<%= s.scheduleId %>/delete" class="d-inline">
                               <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                               <button class="btn btn-outline-danger btn-sm icon-btn" type="submit" title="Delete schedule" aria-label="Delete schedule">🗑️</button>
@@ -288,10 +291,10 @@
         </div>
       </section>
 
-      <section class="card shadow-sm mb-4">
+      <section class="card shadow-sm mb-4 backup-retention-card">
         <div class="card-body">
           <h2 class="h6 text-uppercase text-muted">Retention Policy</h2>
-          <form method="post" action="/admin/backups/retention" class="row g-2">
+          <form method="post" action="/admin/backups/retention" class="row g-2 backup-retention-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
             <div class="col-12 col-md-4">
               <label class="form-label">Keep last (count)</label>
@@ -301,7 +304,7 @@
               <label class="form-label">Delete older than (days)</label>
               <input class="form-control" name="retentionDays" type="number" min="1" step="1" value="<%= cfg?.backup?.retentionDays ?? 30 %>" />
             </div>
-            <div class="col-12 col-md-4 d-grid align-self-end">
+            <div class="col-12 col-md-4 d-grid align-self-end backup-retention-action">
               <button class="btn btn-outline-secondary" type="submit">Save Retention</button>
             </div>
           </form>
@@ -385,9 +388,9 @@
 
       <section class="card backup-table-card">
         <div class="card-body">
-          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3 backup-table-head">
             <h2 class="h5 m-0">Latest Backups</h2>
-            <span class="text-muted small"><%= backups.length %> total</span>
+            <span class="text-muted small backup-table-meta"><%= backups.length %> total</span>
           </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle backups-table">
@@ -491,6 +494,8 @@
       (() => {
         const mount = document.getElementById('backupOperationMount');
         const initialOperationEl = document.getElementById('backupOperationInitialData');
+        const flashMount = document.getElementById('backupsFlashMount');
+        const statusMount = document.getElementById('backupPageStatusMount');
         const contentMount = document.getElementById('backupsPageContent');
         const createFormSelector = 'form[action="/admin/backups/create"]';
         const restoreFormSelector = 'form[action="/admin/backups/restore"], form[action^="/admin/backups/restore/"]';
@@ -512,6 +517,7 @@
         let discoveryAttempts = 0;
         let refreshTimer = null;
         let refreshRequest = null;
+        let sectionHeartbeatTimer = null;
         let activeOperationId = '';
         let liveTicker = null;
         let currentOperation = initialOperation && typeof initialOperation === 'object' ? initialOperation : null;
@@ -527,6 +533,15 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+
+        const parseOperationPayload = (node) => {
+          if (!node) return null;
+          try {
+            return JSON.parse(node.textContent || 'null');
+          } catch (_error) {
+            return null;
+          }
+        };
 
         const statusClass = (status) => {
           const normalized = String(status || 'running').toLowerCase();
@@ -601,6 +616,7 @@
           const contactMs = timestampToMs(touchAt);
           if (contactMs) lastContactAt = contactMs;
           renderOperationHealth();
+          renderStatusNotice();
         };
 
         const touchConnection = (mode = '', value = Date.now()) => {
@@ -608,6 +624,7 @@
           connectionState = 'live';
           lastContactAt = timestampToMs(value) || Date.now();
           renderOperationHealth();
+          renderStatusNotice();
         };
 
         const renderOperationHealth = () => {
@@ -730,12 +747,62 @@
 
         const getRestoreForms = () => Array.from(document.querySelectorAll(restoreFormSelector));
 
+        const clearStatusNotice = () => {
+          if (!statusMount) return;
+          statusMount.innerHTML = '';
+        };
+
+        const renderStatusNotice = () => {
+          if (!statusMount) return;
+
+          const normalizedStatus = String(currentOperation?.status || '').toLowerCase();
+          if (normalizedStatus !== 'running') {
+            clearStatusNotice();
+            return;
+          }
+
+          const actionLabel = currentOperation?.action === 'restore' ? 'restore' : 'backup';
+          const liveLabel =
+            connectionState === 'live'
+              ? 'Live updates are active.'
+              : connectionState === 'reconnecting'
+                ? 'Reconnecting live updates...'
+                : 'Connecting live updates...';
+          const detail = String(currentOperation?.message || '').trim();
+
+          statusMount.innerHTML = `
+            <div class="alert alert-warning backup-live-alert" data-alert-persist="1">
+              <div class="backup-live-alert__title">A ${escapeHtml(actionLabel)} operation is already running for this server.</div>
+              <div class="backup-live-alert__copy">
+                ${escapeHtml(liveLabel)}
+                ${detail ? ` ${escapeHtml(detail)}` : ''}
+                No full-page refresh needed.
+              </div>
+            </div>
+          `;
+        };
+
         const setControlsDisabled = (disabled) => {
           [getCreateForm(), ...getRestoreForms()].filter(Boolean).forEach((form) => {
             form.querySelectorAll('button[type="submit"]').forEach((button) => {
               button.disabled = Boolean(disabled);
             });
           });
+        };
+
+        const stopSectionHeartbeat = () => {
+          if (sectionHeartbeatTimer) {
+            window.clearInterval(sectionHeartbeatTimer);
+            sectionHeartbeatTimer = null;
+          }
+        };
+
+        const startSectionHeartbeat = () => {
+          if (sectionHeartbeatTimer) return;
+          sectionHeartbeatTimer = window.setInterval(() => {
+            if (document.visibilityState === 'hidden') return;
+            scheduleSectionRefresh(250);
+          }, 12000);
         };
 
         const clearDiscoveryTimer = () => {
@@ -767,6 +834,51 @@
           }
         };
 
+        const clearOperationCard = ({ resetCurrent = false } = {}) => {
+          mount.innerHTML = '';
+          activeOperationId = '';
+          closeLiveUpdates();
+          stopSectionHeartbeat();
+          if (resetCurrent) {
+            currentOperation = null;
+            connectionState = 'idle';
+            transportMode = '';
+            lastContactAt = 0;
+          }
+          setControlsDisabled(false);
+          renderStatusNotice();
+        };
+
+        const syncFlashMount = (parsed) => {
+          if (!flashMount || !parsed) return;
+          const nextFlashMount = parsed.getElementById('backupsFlashMount');
+          if (!nextFlashMount) return;
+          flashMount.innerHTML = nextFlashMount.innerHTML;
+        };
+
+        const syncOperationFromDocument = (parsed) => {
+          if (!parsed) return;
+          const nextOperation = parseOperationPayload(parsed.getElementById('backupOperationInitialData'));
+          const nextStatus = String(nextOperation?.status || '').toLowerCase();
+          const nextOperationId = String(nextOperation?.operationId || '').trim();
+
+          if (nextOperation && nextOperationId) {
+            updateOperationCard(nextOperation, {
+              source: 'refresh',
+              touch: false,
+              contactAt: nextOperation.updatedAt || Date.now()
+            });
+            if (nextStatus === 'running' && activeOperationId !== nextOperationId) {
+              subscribeToOperation(nextOperationId);
+            }
+            return;
+          }
+
+          if (String(currentOperation?.status || '').toLowerCase() !== 'running') {
+            clearOperationCard({ resetCurrent: true });
+          }
+        };
+
         const refreshBackupSections = async () => {
           if (typeof window.fetch !== 'function' || typeof window.DOMParser !== 'function') return false;
           if (refreshRequest) return refreshRequest;
@@ -791,9 +903,12 @@
                 const nextContent = parsed.getElementById('backupsPageContent');
                 if (!nextContent) throw new Error('refresh_fragment_missing');
 
+                syncFlashMount(parsed);
                 contentMount.innerHTML = nextContent.innerHTML;
+                syncOperationFromDocument(parsed);
                 setControlsDisabled(String(currentOperation?.status || '').toLowerCase() === 'running');
                 renderOperationHealth();
+                renderStatusNotice();
                 return true;
               } catch (_error) {
                 if (attempt >= 2) return false;
@@ -810,12 +925,12 @@
           return refreshRequest;
         };
 
-        const scheduleSectionRefresh = () => {
+        const scheduleSectionRefresh = (delayMs = 1400) => {
           if (refreshTimer) return;
           refreshTimer = window.setTimeout(async () => {
             refreshTimer = null;
             await refreshBackupSections();
-          }, 1400);
+          }, Math.max(150, Number(delayMs) || 0));
         };
 
         const scheduleOperationDiscovery = (delayMs = 1800) => {
@@ -824,6 +939,10 @@
             discoveryTimer = null;
             if (String(currentOperation?.status || '').toLowerCase() === 'running') return;
             if (typeof window.fetch !== 'function') return;
+            if (document.visibilityState === 'hidden') {
+              scheduleOperationDiscovery(15000);
+              return;
+            }
 
             try {
               const response = await fetch(activeOperationEndpoint, {
@@ -835,8 +954,12 @@
               const payload = await response.json();
               if (!payload?.ok) throw new Error('active_operation_invalid');
               if (!payload.operation) {
-                discoveryAttempts += 1;
-                if (discoveryAttempts < 6) scheduleOperationDiscovery(4500);
+                if (currentOperation && String(currentOperation.status || '').toLowerCase() !== 'running') {
+                  clearOperationCard({ resetCurrent: true });
+                }
+                discoveryAttempts = Math.min(discoveryAttempts + 1, 20);
+                renderStatusNotice();
+                scheduleOperationDiscovery(Math.min(16000, 4500 + discoveryAttempts * 800));
                 return;
               }
 
@@ -845,13 +968,16 @@
                 source: 'poll',
                 contactAt: payload.serverTime || Date.now()
               });
+              scheduleSectionRefresh(250);
 
               if (String(payload.operation.status || '').toLowerCase() === 'running' && payload.operation.operationId) {
                 subscribeToOperation(payload.operation.operationId);
+                return;
               }
+              scheduleOperationDiscovery(8000);
             } catch (_error) {
-              discoveryAttempts += 1;
-              if (discoveryAttempts < 6) scheduleOperationDiscovery(6000);
+              discoveryAttempts = Math.min(discoveryAttempts + 1, 20);
+              scheduleOperationDiscovery(Math.min(20000, 6000 + discoveryAttempts * 1000));
             }
           }, Math.max(250, Number(delayMs) || 0));
         };
@@ -860,6 +986,7 @@
           if (!operation) return;
           const incomingOperationId = String(operation.operationId || '').trim();
           const currentOperationId = String(currentOperation?.operationId || '').trim();
+          const operationChanged = Boolean(incomingOperationId && incomingOperationId !== currentOperationId);
           const incomingStatus = String(operation.status || 'running').toLowerCase();
           const incomingProgress = Math.max(0, Math.min(100, Number(operation.progress || 0)));
           const currentProgress = Math.max(0, Math.min(100, Number(currentOperation?.progress || 0)));
@@ -922,10 +1049,16 @@
           }
 
           renderOperationHealth();
+          renderStatusNotice();
           setControlsDisabled(normalizedStatus === 'running');
+          if (normalizedStatus === 'running') {
+            startSectionHeartbeat();
+            if (operationChanged) scheduleSectionRefresh(250);
+          }
           if (normalizedStatus === 'completed' || normalizedStatus === 'failed') {
             closeLiveUpdates();
-            scheduleSectionRefresh();
+            stopSectionHeartbeat();
+            scheduleSectionRefresh(900);
             scheduleOperationDiscovery(4000);
           }
         };
@@ -983,6 +1116,7 @@
           closeLiveUpdates();
           activeOperationId = operationId;
           setConnectionState('connecting', { mode: 'stream' });
+          startSectionHeartbeat();
           void pollOperation(operationId, { suppressReconnect: true });
 
           if (typeof window.EventSource !== 'function') {
@@ -1057,7 +1191,7 @@
                 touch: false
               });
               subscribeToOperation(payload.operation.operationId);
-              scheduleOperationDiscovery(3000);
+              scheduleSectionRefresh(250);
               return;
             }
             if (!response.ok || !payload?.ok || !payload.operation) {
@@ -1069,7 +1203,7 @@
               touch: false
             });
             subscribeToOperation(payload.operation.operationId);
-            scheduleOperationDiscovery(3000);
+            scheduleSectionRefresh(250);
           } catch (error) {
             updateOperationCard({
               action: form.action.includes('/restore') ? 'restore' : 'create',
@@ -1134,6 +1268,18 @@
         } else {
           scheduleOperationDiscovery(800);
         }
+
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState !== 'visible') return;
+          if (String(currentOperation?.status || '').toLowerCase() === 'running') {
+            scheduleSectionRefresh(200);
+            if (activeOperationId && !stream) {
+              subscribeToOperation(activeOperationId);
+              return;
+            }
+          }
+          scheduleOperationDiscovery(350);
+        });
       })();
     </script>
     <%- include('../../partials/footer') %>
