@@ -57,6 +57,15 @@ const GuildConfigSchema = new mongoose.Schema(
       panelEnabled: { type: Boolean, default: false },
       panelChannelId: { type: String, default: '' },
       panelMessageId: { type: String, default: '' },
+      questionConfigs: {
+        type: [
+          {
+            prompt: { type: String, default: '' },
+            acceptableAnswers: { type: [String], default: [] }
+          }
+        ],
+        default: []
+      },
       questions: { type: [String], default: [] },
       question1: { type: String, default: 'What is your favorite color?' },
       question2: { type: String, default: 'What is your favorite food?' },

@@ -55,12 +55,13 @@ function formatDate(value) {
   return date.toISOString();
 }
 
-function formatDurationBetween(startValue, endValue = new Date()) {
+function formatDurationBetween(startValue, endValue = new Date(), options = {}) {
   const start = startValue instanceof Date ? startValue : new Date(startValue);
   const end = endValue instanceof Date ? endValue : new Date(endValue);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '';
 
   let remainingSeconds = Math.max(1, Math.round((end.getTime() - start.getTime()) / 1000));
+  const maxParts = Math.max(1, Math.floor(Number(options.maxParts) || 2));
   const units = [
     ['year', 365 * 24 * 60 * 60],
     ['month', 30 * 24 * 60 * 60],
@@ -77,7 +78,7 @@ function formatDurationBetween(startValue, endValue = new Date()) {
     const count = Math.floor(remainingSeconds / size);
     remainingSeconds -= count * size;
     parts.push(`${count} ${label}${count === 1 ? '' : 's'}`);
-    if (parts.length === 2) break;
+    if (parts.length >= maxParts) break;
   }
 
   return parts.join(', ') || '0 seconds';

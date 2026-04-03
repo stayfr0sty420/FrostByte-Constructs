@@ -29,6 +29,7 @@ module.exports = {
               { name: 'Bans', value: 'bans' },
               { name: 'Webhooks', value: 'webhooks' },
               { name: 'Emojis', value: 'emojis' },
+              { name: 'Stickers', value: 'stickers' },
               { name: 'Threads', value: 'threads' },
               { name: 'Nicknames', value: 'nicknames' },
               { name: 'Bots', value: 'bots' }
@@ -145,8 +146,13 @@ module.exports = {
 
     if (sub === 'restore') {
       const id = interaction.options.getString('id', true);
-      const restoreMessages = Boolean(interaction.options.getBoolean('messages'));
-      const restoreBans = Boolean(interaction.options.getBoolean('bans'));
+      const backup = await Backup.findOne({ guildId, backupId: id }).select('type').lean();
+      if (!backup) return await safeReply(interaction, { content: 'Backup not found.', ephemeral: true });
+      const restoreMessagesOpt = interaction.options.getBoolean('messages');
+      const restoreBansOpt = interaction.options.getBoolean('bans');
+      const backupType = String(backup.type || '').trim().toLowerCase();
+      const restoreMessages = restoreMessagesOpt === null ? ['full', 'messages'].includes(backupType) : Boolean(restoreMessagesOpt);
+      const restoreBans = restoreBansOpt === null ? ['full', 'bans'].includes(backupType) : Boolean(restoreBansOpt);
       const wipe = Boolean(interaction.options.getBoolean('wipe'));
       const pruneOpt = interaction.options.getBoolean('prune');
       const pruneChannels = pruneOpt === null ? true : Boolean(pruneOpt);

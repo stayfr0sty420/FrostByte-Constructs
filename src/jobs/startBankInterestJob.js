@@ -62,7 +62,14 @@ async function applyInterestOnce() {
   }
 
   const guilds = await GuildConfig.find({
-    $or: [{ 'botApprovals.economy.status': 'approved' }, { 'approval.status': 'approved' }]
+    $or: [
+      { 'botApprovals.economy.status': 'approved' },
+      {
+        'botApprovals.economy': { $exists: false },
+        'bots.economy': true,
+        'approval.status': 'approved'
+      }
+    ]
   });
   for (const cfg of guilds) {
     const last = cfg.economy?.interestLastAppliedAt ? new Date(cfg.economy.interestLastAppliedAt) : null;

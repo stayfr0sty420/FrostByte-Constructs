@@ -1071,13 +1071,11 @@ code {
 }
 
 .verify-status-text {
-  min-height: 1.4rem;
-  font-size: 0.88rem;
-  color: rgba(255, 228, 230, 0.7);
+  display: none;
 }
 
 .verify-status-text:not(:empty) {
-  margin-top: -0.1rem;
+  display: none;
 }
 
 .verify-inline-error {

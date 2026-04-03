@@ -41,6 +41,7 @@ const {
   buildAuthenticatorForPasskey
 } = require('../../services/admin/adminUserService');
 const { createAdminLog } = require('../../services/admin/adminLogService');
+const { clearApprovalCache } = require('../../services/admin/guildRegistryService');
 const {
   listRoles,
   listChannels,
@@ -340,8 +341,13 @@ async function handleBackupRestore(req, res, backupId) {
     return res.redirect('/admin/backups');
   }
 
-  const restoreMessages = Boolean(req.body.restoreMessages);
-  const restoreBans = Boolean(req.body.restoreBans);
+  const backupMeta = await Backup.findOne({ guildId, backupId }).select('type').lean().catch(() => null);
+  const restoreMessages = typeof req.body.restoreMessages === 'undefined'
+    ? ['full', 'messages'].includes(String(backupMeta?.type || '').trim().toLowerCase())
+    : Boolean(req.body.restoreMessages);
+  const restoreBans = typeof req.body.restoreBans === 'undefined'
+    ? ['full', 'bans'].includes(String(backupMeta?.type || '').trim().toLowerCase())
+    : Boolean(req.body.restoreBans);
   const wipe = Boolean(req.body.wipe);
   const pruneOpt = req.body.prune;
   const pruneChannels = typeof pruneOpt === 'undefined' ? true : Boolean(pruneOpt);
@@ -383,6 +389,53 @@ async function handleBackupRestore(req, res, backupId) {
     });
   }
   return res.redirect('/admin/backups');
+}
+
+function normalizeQuestionPrompt(value) {
+  return String(value || '').trim();
+}
+
+function parseAcceptableAnswersInput(value) {
+  return String(value || '')
+    .split(/\r?\n|,/)
+    .map((entry) => String(entry || '').trim())
+    .filter(Boolean);
+}
+
+function buildVerificationQuestionConfigs(cfg) {
+  const configured = Array.isArray(cfg?.verification?.questionConfigs) ? cfg.verification.questionConfigs : [];
+  const normalized = configured
+    .map((entry) => ({
+      prompt: normalizeQuestionPrompt(entry?.prompt || ''),
+      acceptableAnswers: Array.isArray(entry?.acceptableAnswers)
+        ? entry.acceptableAnswers.map((answer) => String(answer || '').trim()).filter(Boolean)
+        : []
+    }))
+    .filter((entry) => entry.prompt)
+    .slice(0, 3);
+
+  if (normalized.length) return normalized;
+
+  return [cfg?.verification?.question1, cfg?.verification?.question2, cfg?.verification?.question3]
+    .map((prompt) => normalizeQuestionPrompt(prompt))
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((prompt) => ({ prompt, acceptableAnswers: [] }));
+}
+
+function buildVerificationQuestionConfigsFromBody(body) {
+  const promptPayload = body.questionPrompt || body['questionPrompt[]'] || body.questions || body['questions[]'];
+  const answerPayload = body.questionAcceptableAnswers || body['questionAcceptableAnswers[]'];
+  const rawPrompts = Array.isArray(promptPayload) ? promptPayload : [promptPayload || ''];
+  const rawAnswers = Array.isArray(answerPayload) ? answerPayload : [answerPayload || ''];
+
+  return rawPrompts
+    .map((prompt, index) => ({
+      prompt: normalizeQuestionPrompt(prompt),
+      acceptableAnswers: parseAcceptableAnswersInput(rawAnswers[index] || '')
+    }))
+    .filter((entry) => entry.prompt)
+    .slice(0, 3);
 }
 
 function escapeRegex(input) {
@@ -478,28 +531,38 @@ function guildIconUrl(discord, guildId, fallback = '') {
 function botApprovalStatusFromConfig(cfg, botKey) {
   const key = String(botKey || '').trim();
   if (!key) return cfg?.approval?.status || 'pending';
-  return cfg?.botApprovals?.[key]?.status || cfg?.approval?.status || 'pending';
+  const explicitStatus = String(cfg?.botApprovals?.[key]?.status || '').trim().toLowerCase();
+  if (explicitStatus === 'approved' || explicitStatus === 'rejected' || explicitStatus === 'pending') {
+    return explicitStatus;
+  }
+  if (cfg?.bots?.[key]) {
+    const aggregateStatus = String(cfg?.approval?.status || '').trim().toLowerCase();
+    if (aggregateStatus === 'approved' || aggregateStatus === 'rejected') return aggregateStatus;
+  }
+  return 'pending';
 }
 
-function normalizeApprovalStatus(entryStatus, fallbackStatus) {
-  const status = String(entryStatus || '').trim().toLowerCase();
-  const fallback = String(fallbackStatus || '').trim().toLowerCase() || 'pending';
-  if (!status || status === 'pending') return fallback;
-  return status;
-}
-
-function buildBotApprovals(cfg) {
+function buildBotApprovals(cfg, presence = {}) {
   const fallbackStatus = cfg?.approval?.status || 'pending';
   const fallbackBy = cfg?.approval?.reviewedBy || '';
   const fallbackAt = cfg?.approval?.reviewedAt || null;
+  const defaultsFor = (key) => {
+    if (presence?.[key] && fallbackStatus !== 'pending') {
+      return { status: fallbackStatus, sanctionedBy: fallbackBy, sanctionedAt: fallbackAt };
+    }
+    return { status: 'pending', sanctionedBy: '', sanctionedAt: null };
+  };
 
   const result = {};
   for (const def of BOT_DEFS) {
     const entry = cfg?.botApprovals?.[def.key] || {};
+    const defaults = defaultsFor(def.key);
+    const status = String(entry.status || '').trim().toLowerCase();
+    const normalizedStatus = ['approved', 'rejected', 'pending'].includes(status) ? status : defaults.status;
     result[def.key] = {
-      status: normalizeApprovalStatus(entry.status, fallbackStatus),
-      sanctionedBy: entry.sanctionedBy || fallbackBy,
-      sanctionedAt: entry.sanctionedAt || fallbackAt
+      status: normalizedStatus,
+      sanctionedBy: normalizedStatus === 'pending' ? '' : (entry.sanctionedBy || defaults.sanctionedBy || ''),
+      sanctionedAt: normalizedStatus === 'pending' ? null : (entry.sanctionedAt || defaults.sanctionedAt || null)
     };
   }
   return result;
@@ -1128,7 +1191,7 @@ router.get('/servers', requireAdmin, async (req, res) => {
     const guildId = String(cfg.guildId || '').trim();
     if (!guildId) continue;
     const presence = { ...(cfg.bots || {}), ...(await resolvePresenceFromClients(discord, guildId)) };
-    const botApprovals = buildBotApprovals(cfg);
+    const botApprovals = buildBotApprovals(cfg, presence);
     if (!shouldAutoCleanupGuild(botApprovals, presence)) continue;
     staleGuildIds.push(guildId);
     // eslint-disable-next-line no-await-in-loop
@@ -1156,7 +1219,7 @@ router.get('/servers', requireAdmin, async (req, res) => {
         guildFromClients(discord, guildId)?.name ||
         guildId;
 
-      const botApprovals = buildBotApprovals(cfg);
+      const botApprovals = buildBotApprovals(cfg, presence);
       const status = aggregateApprovalStatus(botApprovals);
       const bots = BOT_DEFS.map((def) => {
         const present = Boolean(presence?.[def.key]);
@@ -1209,7 +1272,7 @@ router.get('/servers/:guildId/approvals', requireAdmin, async (req, res) => {
 
   const discord = req.app.locals.discord;
   const presence = { ...(cfg.bots || {}), ...(await resolvePresenceFromClients(discord, guildId)) };
-  const botApprovals = buildBotApprovals(cfg);
+  const botApprovals = buildBotApprovals(cfg, presence);
   if (shouldAutoCleanupGuild(botApprovals, presence)) {
     await purgeGuildData({ discord, guildId });
     if (req.session.activeGuildId === guildId) delete req.session.activeGuildId;
@@ -1295,14 +1358,10 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
 
   const discord = req.app.locals.discord;
   const presence = { ...(cfg.bots || {}), ...(await resolvePresenceFromClients(discord, guildId)) };
-  if (!presence?.[botKey]) {
-    setFlash(req, { type: 'warning', message: 'This bot is absent from the server. No action can be applied.' });
-    return res.redirect(`/admin/servers/${guildId}/approvals`);
-  }
 
   const now = new Date();
   const status = action === 'approve' ? 'approved' : 'rejected';
-  const botApprovals = buildBotApprovals(cfg);
+  const botApprovals = buildBotApprovals(cfg, presence);
   const reviewer = adminDisplayName(req.adminUser);
   botApprovals[botKey] = { status, sanctionedBy: reviewer, sanctionedAt: now };
   const aggregateStatus = aggregateApprovalStatus(botApprovals);
@@ -1320,6 +1379,7 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
       }
     }
   );
+  clearApprovalCache(guildId);
 
   const def = BOT_DEFS.find((b) => b.key === botKey);
   const discordClient = def ? req.app.locals.discord?.[def.clientKey] : null;
@@ -1341,7 +1401,7 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
   }
 
   const cleanupPresence = { ...(refreshedConfig?.bots || {}), ...(await resolvePresenceFromClients(discord, guildId)) };
-  const cleanupApprovals = buildBotApprovals(refreshedConfig || cfg);
+  const cleanupApprovals = buildBotApprovals(refreshedConfig || cfg, cleanupPresence);
   if (shouldAutoCleanupGuild(cleanupApprovals, cleanupPresence)) {
     const cleanup = await purgeGuildData({ discord, guildId });
     if (req.session.activeGuildId === guildId) delete req.session.activeGuildId;
@@ -1417,6 +1477,7 @@ router.post('/servers/approve/:guildId', requireAdmin, async (req, res) => {
       }
     }
   );
+  clearApprovalCache(guildId);
 
   setFlash(req, {
     type: missingBots ? 'warning' : 'success',
@@ -1453,8 +1514,9 @@ router.post('/servers/reject/:guildId', requireAdmin, async (req, res) => {
       }
     }
   );
+  clearApprovalCache(guildId);
   const refreshedConfig = await GuildConfig.findOne({ guildId }).select('approval botApprovals bots').lean();
-  const cleanupApprovals = buildBotApprovals(refreshedConfig);
+  const cleanupApprovals = buildBotApprovals(refreshedConfig, presence);
   if (shouldAutoCleanupGuild(cleanupApprovals, presence)) {
     const cleanup = await purgeGuildData({ discord, guildId });
     if (req.session.activeGuildId === guildId) delete req.session.activeGuildId;
@@ -1735,7 +1797,7 @@ router.get('/dashboard', requireAdmin, requireGuild, async (req, res) => {
     verification: cfg.bots?.verification ?? false,
     ...livePresence
   };
-  const botApprovals = buildBotApprovals(cfg);
+  const botApprovals = buildBotApprovals(cfg, presence);
   const bots = BOT_DEFS.map((def) => {
     const present = Boolean(presence?.[def.key]);
     const approvalStatus = botApprovals[def.key]?.status || 'pending';
@@ -2417,10 +2479,7 @@ router.get('/verification/settings', requireAdmin, requireGuild, async (req, res
   ]);
   roles.sort((a, b) => (b.position || 0) - (a.position || 0) || String(a.name || '').localeCompare(String(b.name || '')));
   channels.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-  const baseQuestions = Array.isArray(cfg.verification?.questions) && cfg.verification.questions.length
-    ? cfg.verification.questions
-    : [cfg.verification?.question1, cfg.verification?.question2, cfg.verification?.question3].filter(Boolean);
-  const questions = (baseQuestions.length ? baseQuestions : ['Why do you want to verify?']).slice(0, 3);
+  const questionConfigs = buildVerificationQuestionConfigs(cfg);
   const flash = req.session.flash || null;
   delete req.session.flash;
   return res.render('pages/admin/verification_settings', {
@@ -2428,7 +2487,7 @@ router.get('/verification/settings', requireAdmin, requireGuild, async (req, res
     cfg,
     roles,
     channels,
-    questions,
+    questionConfigs,
     flash,
     logSections: LOG_SECTIONS,
     logChannelOverrides: normalizeChannelOverrides(cfg.logs?.channelOverrides)
@@ -2449,17 +2508,13 @@ router.post('/verification/settings', requireAdmin, requireGuild, async (req, re
   cfg.verification.panelEnabled = Boolean(req.body.panelEnabled || panelPostRequested);
   cfg.verification.panelChannelId = String(req.body.panelChannelId || '');
 
-  const questionPayload = req.body.questions || req.body['questions[]'];
-  const rawQuestions = Array.isArray(questionPayload) ? questionPayload : [questionPayload || ''];
-  const cleanedQuestions = rawQuestions.map((q) => String(q || '').trim()).filter(Boolean);
-  const questions = cleanedQuestions.length
-    ? cleanedQuestions
-    : [cfg.verification.question1, cfg.verification.question2, cfg.verification.question3].filter(Boolean);
-  const limitedQuestions = questions.slice(0, 3);
-  cfg.verification.questions = limitedQuestions;
-  cfg.verification.question1 = limitedQuestions[0] || cfg.verification.question1;
-  cfg.verification.question2 = limitedQuestions[1] || cfg.verification.question2;
-  cfg.verification.question3 = limitedQuestions[2] || '';
+  const questionConfigs = buildVerificationQuestionConfigsFromBody(req.body);
+  const questionPrompts = questionConfigs.map((entry) => entry.prompt);
+  cfg.verification.questionConfigs = questionConfigs;
+  cfg.verification.questions = questionPrompts;
+  cfg.verification.question1 = questionPrompts[0] || '';
+  cfg.verification.question2 = questionPrompts[1] || '';
+  cfg.verification.question3 = questionPrompts[2] || '';
 
   const roles = await listRoles(req.app.locals.discord.verification, guildId).catch(() => []);
   const roleById = new Map(roles.map((r) => [r.id, r]));

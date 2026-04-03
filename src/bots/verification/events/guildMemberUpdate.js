@@ -12,8 +12,10 @@ const {
 } = require('../util/logHelpers');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
 
-const ROLE_LOG_BUFFER_MS = 900;
+const ROLE_LOG_BUFFER_MS = 1500;
+const ROLE_LOG_DEDUPE_MS = 5000;
 const pendingRoleLogs = new Map();
+const recentRoleLogFingerprints = new Map();
 
 function roleBufferKey(guildId, userId) {
   const safeGuildId = String(guildId || '').trim();
@@ -23,6 +25,23 @@ function roleBufferKey(guildId, userId) {
 
 function normalizeRoleLabel(role) {
   return formatRoleName(role, '').trim() || String(role?.id || 'unknown');
+}
+
+function buildRoleLogFingerprint(guildId, userId, type, roles = []) {
+  const safeGuildId = String(guildId || '').trim();
+  const safeUserId = String(userId || '').trim();
+  const normalizedRoles = roles.map((role) => String(role || '').trim()).filter(Boolean).sort().join('|');
+  if (!safeGuildId || !safeUserId || !type || !normalizedRoles) return '';
+  return `${safeGuildId}:${safeUserId}:${type}:${normalizedRoles}`;
+}
+
+function shouldSkipRoleLog(guildId, userId, type, roles = []) {
+  const key = buildRoleLogFingerprint(guildId, userId, type, roles);
+  if (!key) return false;
+  const expiresAt = recentRoleLogFingerprints.get(key) || 0;
+  if (expiresAt > Date.now()) return true;
+  recentRoleLogFingerprints.set(key, Date.now() + ROLE_LOG_DEDUPE_MS);
+  return false;
 }
 
 async function flushRoleLogs(key) {
@@ -36,7 +55,7 @@ async function flushRoleLogs(key) {
   const addedRoles = [...entry.added.values()].filter(Boolean);
   const removedRoles = [...entry.removed.values()].filter(Boolean);
 
-  if (addedRoles.length) {
+  if (addedRoles.length && !shouldSkipRoleLog(entry.guildId, user?.id, 'add', addedRoles)) {
     const embed = baseEmbed('Member Role Added');
     addField(embed, 'User', formatUser(user));
     addField(embed, 'Roles', addedRoles.join('\n') || '(unknown)');
@@ -51,7 +70,7 @@ async function flushRoleLogs(key) {
     }).catch(() => null);
   }
 
-  if (removedRoles.length) {
+  if (removedRoles.length && !shouldSkipRoleLog(entry.guildId, user?.id, 'remove', removedRoles)) {
     const embed = baseEmbed('Member Role Removed');
     addField(embed, 'User', formatUser(user));
     addField(embed, 'Roles', removedRoles.join('\n') || '(unknown)');
@@ -179,7 +198,7 @@ async function execute(client, oldMember, newMember) {
     addField(embed, 'User', formatUser(newMember.user));
     if (newTimeout) {
       addField(embed, 'Until', formatDate(newTimeout), true);
-      addField(embed, 'Duration', formatDurationBetween(Date.now(), newTimeout), true);
+      addField(embed, 'Duration', formatDurationBetween(Date.now(), newTimeout, { maxParts: 1 }), true);
     }
     if (!newTimeout && oldTimeout) addField(embed, 'Previous', formatDate(oldTimeout), true);
     setUserIdentity(embed, newMember.user);

@@ -199,6 +199,37 @@ function inlineList(value) {
     .join(', ');
 }
 
+function cleanClipboardValue(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^[@#]+/, '')
+    .replace(/`/g, "'");
+}
+
+function cleanAuditUserValue(value) {
+  const raw = compactText(String(value || ''), 180);
+  if (!raw) return '';
+
+  return raw
+    .replace(/^<@!?\d{15,22}>\s*/g, '')
+    .replace(/\s*\[\d{15,22}\]\s*/g, ' ')
+    .replace(/^@+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function inlineCode(value, max = 180) {
+  const text = compactText(cleanClipboardValue(value), max);
+  return text ? `\`${text}\`` : '';
+}
+
+function inlineCodeList(value) {
+  return listFromMultiline(value)
+    .map((entry) => inlineCode(entry))
+    .filter(Boolean)
+    .join(', ');
+}
+
 function formatEmojiClipboardValue(value) {
   const raw = String(value || '').trim();
   if (!raw) return ':unknown:';
@@ -316,7 +347,8 @@ function detailLine(label, value, max = 700) {
 }
 
 function buildCompactAuditDescription(type, fields, fallbackDescription = '', context = {}) {
-  const user = fields.user || '';
+  const displayName = compactText(context.displayName || '', 120);
+  const user = displayName || cleanAuditUserValue(fields.user || '') || fields.user || '';
   const channel = fields.channel || '';
   const from = fields.from || '';
   const to = fields.to || '';
@@ -335,7 +367,7 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '', co
   const accountCreated = fields['account created'] || '';
   const until = fields.until || '';
   const duration = fields.duration || '';
-  const rolesText = inlineList(roles);
+  const rolesText = inlineCodeList(roles);
   const referenceTime = parseDateValue(context.timestamp) || new Date();
   const attachmentLinks = buildAttachmentLinks(fields['attachment urls'] || fields.attachments || '', fields['attachment names'] || '');
 
@@ -360,18 +392,18 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '', co
         1200
       );
     case 'role_delete':
-      return compactText(detailLine('Role', fields.role || ''), 900);
+      return compactText(`Role: ${inlineCode(fields.role || 'unknown role')}`, 900);
     case 'role_update':
       return compactText([detailLine('Role', fields.role || 'Role'), detailLine('Changes', changes, 1000)].filter(Boolean).join('\n'), 1200);
     case 'emoji_create':
-      return compactText(`New emoji has been created: ${formatEmojiClipboardValue(fields.name || emoji || '(unknown)')}`, 900);
+      return compactText(`New emoji has been created: ${inlineCode(formatEmojiClipboardValue(fields.name || emoji || '(unknown)'))}`, 900);
     case 'emoji_update':
       return compactText(
-        `${formatEmojiClipboardValue(before || '(unknown)')} was changed to ${formatEmojiClipboardValue(after || fields.name || '(unknown)')}`,
+        `${inlineCode(formatEmojiClipboardValue(before || '(unknown)'))} was changed to ${inlineCode(formatEmojiClipboardValue(after || fields.name || '(unknown)'))}`,
         900
       );
     case 'emoji_delete':
-      return compactText(`The emoji ${formatEmojiClipboardValue(fields.name || emoji || '(unknown)')} has been deleted!`, 900);
+      return compactText(`The emoji ${inlineCode(formatEmojiClipboardValue(fields.name || emoji || '(unknown)'))} has been deleted!`, 900);
     case 'member_join':
       return compactText(
         [
@@ -388,9 +420,9 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '', co
     case 'member_kick':
       return compactText([`${user || 'Unknown member'} was kicked from the server.`, detailLine('Reason', reason || 'No reason provided.')].filter(Boolean).join('\n'), 1200);
     case 'member_role_add':
-      return compactText(`${user || 'Unknown member'} received ${rolesText || 'unknown role'} role access.`, 1200);
+      return compactText(`${user || 'Unknown member'} received ${rolesText || inlineCode('unknown role')} role access.`, 1200);
     case 'member_role_remove':
-      return compactText(`${user || 'Unknown member'} lost ${rolesText || 'unknown role'} role access.`, 1200);
+      return compactText(`${user || 'Unknown member'} lost ${rolesText || inlineCode('unknown role')} role access.`, 1200);
     case 'member_timeout':
       if (until) {
         const untilDate = parseDateValue(until);
@@ -399,7 +431,7 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '', co
           (untilDate ? humanizeDurationMs(untilDate.getTime() - referenceTime.getTime(), { maxParts: 1 }) : '') ||
           'an unknown duration';
         return compactText(
-          `${user || 'Unknown member'} received a timeout for ${timeoutDuration}.`,
+          `${user || 'Unknown member'} received a timeout for ${inlineCode(timeoutDuration)}.`,
           1200
         );
       }
@@ -458,7 +490,8 @@ function buildCompactAuditEmbed(type, embed) {
   const style = getTypeStyle(type);
   const fields = extractFieldMap(normalized);
   const description = buildCompactAuditDescription(type, fields, normalized.description || '', {
-    timestamp: normalized.timestamp
+    timestamp: normalized.timestamp,
+    displayName: normalized.author?.name || fields['display name'] || ''
   });
   const entityId = extractAuditId(normalized, fields);
   const titleSource = style.title !== 'Audit Log' ? style.title : (normalized.title || style.title);
@@ -469,10 +502,7 @@ function buildCompactAuditEmbed(type, embed) {
   const avatarUrl = normalized.author?.icon_url || normalized.author?.iconURL || '';
   const displayName = compactText(normalized.author?.name || fields['display name'] || '', 120);
   const imageUrl = pickFirstImageUrl(normalized, fields);
-  const isEmojiAudit = String(type || '').toLowerCase().startsWith('emoji_');
-  const thumbnailUrl = shouldShowAuditThumbnail(type)
-    ? (normalized.thumbnail?.url || avatarUrl || '')
-    : (isEmojiAudit ? (normalized.thumbnail?.url || imageUrl) : '');
+  const thumbnailUrl = shouldShowAuditThumbnail(type) ? (normalized.thumbnail?.url || avatarUrl || '') : '';
 
   if (type === 'image_delete' || type === 'message_delete') {
     if (authorId) footerBits.push(`Author ID: ${authorId}`);
@@ -493,7 +523,7 @@ function buildCompactAuditEmbed(type, embed) {
     compact.setAuthor(avatarUrl ? { name: displayName, iconURL: avatarUrl } : { name: displayName });
   }
   if (thumbnailUrl) compact.setThumbnail(thumbnailUrl);
-  if (imageUrl && !isEmojiAudit) compact.setImage(imageUrl);
+  if (imageUrl && !String(type || '').toLowerCase().startsWith('emoji_')) compact.setImage(imageUrl);
   return compact.toJSON();
 }
 

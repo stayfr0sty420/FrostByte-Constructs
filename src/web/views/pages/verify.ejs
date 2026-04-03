@@ -7,7 +7,7 @@
     <%- include('../partials/nav') %>
     <main class="container py-4 py-lg-5">
       <% const needsGeo = (typeof requireLocation !== 'undefined' && requireLocation) ? true : false; %>
-      <% const qs = Array.isArray(questions) && questions.length ? questions : [cfg.verification.question1, cfg.verification.question2, cfg.verification.question3].filter(Boolean); %>
+      <% const qs = Array.isArray(questions) ? questions : []; %>
       <div class="verify-shell">
         <section class="verify-showcase">
           <div class="verify-showcase-copy">
@@ -58,6 +58,16 @@
                 Verification could not continue on the first attempt. Please try again.
               </div>
             <% } %>
+            <% if (error === 'answers_required') { %>
+              <div class="alert alert-danger">
+                Please answer all required verification questions before continuing.
+              </div>
+            <% } %>
+            <% if (error === 'invalid_answers') { %>
+              <div class="alert alert-danger">
+                One or more answers do not match the allowed responses for this server.
+              </div>
+            <% } %>
 
             <div class="alert alert-danger d-none" id="formError"></div>
 
@@ -88,7 +98,6 @@
                   />
                 </div>
               <% }) %>
-              <div class="verify-status-text" id="geoStatus" aria-live="polite"></div>
               <div class="verify-submit-row">
                 <button class="btn btn-primary btn-lg verify-submit-btn" type="submit" id="submitBtn">Verify</button>
               </div>

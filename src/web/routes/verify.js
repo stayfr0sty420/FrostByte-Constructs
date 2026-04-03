@@ -34,10 +34,82 @@ function parseGeoFromBody(body) {
   return { ok: true, geo: { lat, lon, accuracy } };
 }
 
+function normalizeQuestionPrompt(value) {
+  return String(value || '').trim();
+}
+
+function normalizeAnswerForCompare(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function buildVerificationQuestionConfigs(cfg) {
+  const configured = Array.isArray(cfg?.verification?.questionConfigs) ? cfg.verification.questionConfigs : [];
+  const normalized = configured
+    .map((entry) => ({
+      prompt: normalizeQuestionPrompt(entry?.prompt || ''),
+      acceptableAnswers: Array.isArray(entry?.acceptableAnswers)
+        ? entry.acceptableAnswers.map((answer) => String(answer || '').trim()).filter(Boolean)
+        : []
+    }))
+    .filter((entry) => entry.prompt)
+    .slice(0, 3);
+
+  if (normalized.length) return normalized;
+
+  return [cfg?.verification?.question1, cfg?.verification?.question2, cfg?.verification?.question3]
+    .map((prompt) => normalizeQuestionPrompt(prompt))
+    .filter(Boolean)
+    .slice(0, 3)
+    .map((prompt) => ({ prompt, acceptableAnswers: [] }));
+}
+
+function validateVerificationAnswers(questionConfigs, body) {
+  const answers = [];
+
+  for (const [index, question] of questionConfigs.entries()) {
+    const answer = String(body?.[`answer${index + 1}`] || '').trim();
+    if (!answer) {
+      return {
+        ok: false,
+        error: 'answers_required',
+        reason: 'Please answer all verification questions before continuing.'
+      };
+    }
+
+    const acceptableAnswers = Array.isArray(question?.acceptableAnswers) ? question.acceptableAnswers : [];
+    if (acceptableAnswers.length) {
+      const normalizedAnswer = normalizeAnswerForCompare(answer);
+      const matched = acceptableAnswers.some((entry) => normalizeAnswerForCompare(entry) === normalizedAnswer);
+      if (!matched) {
+        return {
+          ok: false,
+          error: 'invalid_answers',
+          reason: 'One or more answers do not match the allowed responses for this server.'
+        };
+      }
+    }
+
+    answers.push(answer);
+  }
+
+  return { ok: true, answers };
+}
+
 function botApprovalStatus(cfg, botKey) {
   const key = String(botKey || '').trim();
   if (!key) return cfg?.approval?.status || 'pending';
-  return cfg?.botApprovals?.[key]?.status || cfg?.approval?.status || 'pending';
+  const explicitStatus = String(cfg?.botApprovals?.[key]?.status || '').trim().toLowerCase();
+  if (explicitStatus === 'approved' || explicitStatus === 'rejected' || explicitStatus === 'pending') {
+    return explicitStatus;
+  }
+  if (cfg?.bots?.[key]) {
+    const aggregateStatus = String(cfg?.approval?.status || '').trim().toLowerCase();
+    if (aggregateStatus === 'approved' || aggregateStatus === 'rejected') return aggregateStatus;
+  }
+  return 'pending';
 }
 
 function resolveGuildName(app, guildId) {
@@ -121,10 +193,7 @@ router.get('/:guildId', async (req, res) => {
   // Note: intermediate verification events are intentionally not logged to reduce log spam.
 
   const requireLocation = cfg.verification?.requireLocation !== false;
-  const baseQuestions = Array.isArray(cfg.verification?.questions) && cfg.verification.questions.length
-    ? cfg.verification.questions
-    : [cfg.verification?.question1, cfg.verification?.question2, cfg.verification?.question3].filter(Boolean);
-  const questions = baseQuestions.length ? baseQuestions.slice(0, 3) : [];
+  const questions = buildVerificationQuestionConfigs(cfg).map((entry) => entry.prompt);
   const error = String(req.query.error || '');
   const guildName = resolveGuildName(req.app, guildId) || 'this server';
   return res.render('pages/verify', { title: 'Verify', guildId, cfg, requireLocation, error, token, questions, guildName });
@@ -323,9 +392,14 @@ router.post('/:guildId', async (req, res) => {
     });
   }
 
-  const answer1 = String(req.body.answer1 || '').trim() || '-';
-  const answer2 = String(req.body.answer2 || '').trim() || '-';
-  const answer3 = String(req.body.answer3 || '').trim();
+  const questionConfigs = buildVerificationQuestionConfigs(cfg);
+  const validatedAnswers = validateVerificationAnswers(questionConfigs, req.body);
+  if (!validatedAnswers.ok) {
+    return fail(validatedAnswers.error, validatedAnswers.reason);
+  }
+  const answer1 = String(validatedAnswers.answers[0] || '').trim();
+  const answer2 = String(validatedAnswers.answers[1] || '').trim();
+  const answer3 = String(validatedAnswers.answers[2] || '').trim();
 
   const session = await VerificationSession.findOne({
     sessionId: v.payload.sid,

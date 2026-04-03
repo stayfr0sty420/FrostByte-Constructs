@@ -60,6 +60,18 @@ async function fetchMember(guild, userId) {
   );
 }
 
+function resolveVerificationApprovalStatus(cfg) {
+  const explicitStatus = String(cfg?.botApprovals?.verification?.status || '').trim().toLowerCase();
+  if (explicitStatus === 'approved' || explicitStatus === 'rejected' || explicitStatus === 'pending') {
+    return explicitStatus;
+  }
+  if (cfg?.bots?.verification) {
+    const aggregateStatus = String(cfg?.approval?.status || '').trim().toLowerCase();
+    if (aggregateStatus === 'approved' || aggregateStatus === 'rejected') return aggregateStatus;
+  }
+  return 'pending';
+}
+
 async function resolveRoleFromConfig({ guild, cfg, idKey, nameKey }) {
   const roleId = String(cfg?.verification?.[idKey] || '').trim();
   const roleName = String(cfg?.verification?.[nameKey] || '').trim();
@@ -144,7 +156,7 @@ async function removeRole(discordClient, guildId, userId, roleId) {
 
 async function applyJoinGate(discordClient, guildId, userId) {
   const cfg = await getOrCreateGuildConfig(guildId);
-  const approvalStatus = cfg.botApprovals?.verification?.status || cfg.approval?.status || 'pending';
+  const approvalStatus = resolveVerificationApprovalStatus(cfg);
   if (approvalStatus !== 'approved') return { ok: true, skipped: true };
   if (!cfg.verification?.enabled) return { ok: true, skipped: true };
   if (!cfg.verification?.tempRoleId && !cfg.verification?.tempRoleName) return { ok: true, skipped: true };
@@ -187,7 +199,7 @@ async function applyJoinGate(discordClient, guildId, userId) {
 
 async function applyVerifiedRoles(discordClient, guildId, userId) {
   const cfg = await getOrCreateGuildConfig(guildId);
-  const approvalStatus = cfg.botApprovals?.verification?.status || cfg.approval?.status || 'pending';
+  const approvalStatus = resolveVerificationApprovalStatus(cfg);
   if (approvalStatus !== 'approved') return { ok: false, reason: 'Server is not approved.' };
   if (!cfg.verification?.verifiedRoleId && !cfg.verification?.verifiedRoleName) {
     return { ok: false, reason: 'Verified role is not configured.' };

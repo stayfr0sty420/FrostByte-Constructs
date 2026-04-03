@@ -97,12 +97,33 @@ async function getOrCreateGuildConfig(guildId) {
   const fallbackStatus = cfg.approval?.status || 'pending';
   const fallbackBy = cfg.approval?.reviewedBy || '';
   const fallbackAt = cfg.approval?.reviewedAt || null;
+  const approvalDefaultsFor = (key) => {
+    const present = Boolean(cfg.bots?.[key]);
+    if (present && fallbackStatus !== 'pending') {
+      return { status: fallbackStatus, sanctionedBy: fallbackBy, sanctionedAt: fallbackAt };
+    }
+    return { status: 'pending', sanctionedBy: '', sanctionedAt: null };
+  };
+  const normalizeBotApproval = (key, entry = {}) => {
+    const defaults = approvalDefaultsFor(key);
+    const status = String(entry?.status || '').trim().toLowerCase();
+    const normalizedStatus = ['approved', 'rejected', 'pending'].includes(status) ? status : defaults.status;
+    if (normalizedStatus === 'pending') {
+      return { status: 'pending', sanctionedBy: '', sanctionedAt: null };
+    }
+
+    return {
+      status: normalizedStatus,
+      sanctionedBy: typeof entry?.sanctionedBy === 'string' ? entry.sanctionedBy : defaults.sanctionedBy,
+      sanctionedAt: entry?.sanctionedAt ?? defaults.sanctionedAt
+    };
+  };
 
   if (!cfg.botApprovals) {
     cfg.botApprovals = {
-      economy: { status: fallbackStatus, sanctionedBy: fallbackBy, sanctionedAt: fallbackAt },
-      backup: { status: fallbackStatus, sanctionedBy: fallbackBy, sanctionedAt: fallbackAt },
-      verification: { status: fallbackStatus, sanctionedBy: fallbackBy, sanctionedAt: fallbackAt }
+      economy: approvalDefaultsFor('economy'),
+      backup: approvalDefaultsFor('backup'),
+      verification: approvalDefaultsFor('verification')
     };
     changed = true;
   }
@@ -110,21 +131,17 @@ async function getOrCreateGuildConfig(guildId) {
   const ensureBotApproval = (key) => {
     if (!cfg.botApprovals) cfg.botApprovals = {};
     if (!cfg.botApprovals[key]) {
-      cfg.botApprovals[key] = { status: fallbackStatus, sanctionedBy: fallbackBy, sanctionedAt: fallbackAt };
+      cfg.botApprovals[key] = approvalDefaultsFor(key);
       changed = true;
       return;
     }
-    const entry = cfg.botApprovals[key];
-    if (!entry.status) {
-      entry.status = fallbackStatus;
-      changed = true;
-    }
-    if (typeof entry.sanctionedBy !== 'string') {
-      entry.sanctionedBy = fallbackBy;
-      changed = true;
-    }
-    if (typeof entry.sanctionedAt === 'undefined') {
-      entry.sanctionedAt = fallbackAt;
+    const normalized = normalizeBotApproval(key, cfg.botApprovals[key]);
+    if (
+      cfg.botApprovals[key].status !== normalized.status ||
+      cfg.botApprovals[key].sanctionedBy !== normalized.sanctionedBy ||
+      (cfg.botApprovals[key].sanctionedAt || null) !== normalized.sanctionedAt
+    ) {
+      cfg.botApprovals[key] = normalized;
       changed = true;
     }
   };
@@ -132,6 +149,11 @@ async function getOrCreateGuildConfig(guildId) {
   ensureBotApproval('economy');
   ensureBotApproval('backup');
   ensureBotApproval('verification');
+
+  if (!Array.isArray(cfg.verification?.questionConfigs)) {
+    cfg.verification.questionConfigs = [];
+    changed = true;
+  }
 
   if (!cfg.economy) {
     cfg.economy = {};

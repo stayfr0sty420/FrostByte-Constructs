@@ -151,6 +151,8 @@ module.exports = {
       cfg.verification.question1 = interaction.options.getString('q1', true);
       cfg.verification.question2 = interaction.options.getString('q2', true);
       cfg.verification.question3 = interaction.options.getString('q3') || '';
+      cfg.verification.questions = [cfg.verification.question1, cfg.verification.question2, cfg.verification.question3].filter(Boolean);
+      cfg.verification.questionConfigs = cfg.verification.questions.map((prompt) => ({ prompt, acceptableAnswers: [] }));
       await cfg.save();
       const embed = new EmbedBuilder()
         .setTitle('Verification Questions Updated')

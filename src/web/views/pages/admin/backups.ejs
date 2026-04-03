@@ -40,7 +40,7 @@
                     <div class="col-12 col-md-7">
                       <label class="form-label">Backup Types</label>
                       <div class="backup-type-grid" role="group" aria-label="Backup types">
-                        <% ['full','channels','roles','messages','bans','webhooks','emojis','threads','nicknames','bots'].forEach((type) => { %>
+                        <% ['full','channels','roles','messages','bans','webhooks','emojis','stickers','threads','nicknames','bots'].forEach((type) => { %>
                           <label class="backup-type-option">
                             <input class="form-check-input" type="checkbox" name="type[]" value="<%= type %>" <%= type === 'full' ? 'checked' : '' %> />
                             <span><%= type %></span>
@@ -94,11 +94,11 @@
                             <span class="form-check-label">Wipe first (recommended for cross‑server)</span>
                           </label>
                           <label class="form-check">
-                            <input class="form-check-input" type="checkbox" name="restoreMessages" value="1" />
+                            <input class="form-check-input" type="checkbox" name="restoreMessages" value="1" checked />
                             <span class="form-check-label">Restore messages</span>
                           </label>
                           <label class="form-check">
-                            <input class="form-check-input" type="checkbox" name="restoreBans" value="1" />
+                            <input class="form-check-input" type="checkbox" name="restoreBans" value="1" checked />
                             <span class="form-check-label">Restore bans</span>
                           </label>
                         </div>
@@ -140,7 +140,7 @@
                     <div class="col-12 col-md-6">
                       <label class="form-label">Types</label>
                       <div class="backup-type-grid" role="group" aria-label="Scheduled backup types">
-                        <% ['full','channels','roles','messages','bans','webhooks','emojis','threads','nicknames','bots'].forEach((type) => { %>
+                        <% ['full','channels','roles','messages','bans','webhooks','emojis','stickers','threads','nicknames','bots'].forEach((type) => { %>
                           <label class="backup-type-option">
                             <input class="form-check-input" type="checkbox" name="types[]" value="<%= type %>" <%= type === 'full' ? 'checked' : '' %> />
                             <span><%= type %></span>
@@ -249,6 +249,7 @@
             <li>Message backups</li>
             <li>Ban list backups</li>
             <li>Emoji backups</li>
+            <li>Sticker backups</li>
             <li>Webhook backups</li>
             <li>Thread backups</li>
           </ul>

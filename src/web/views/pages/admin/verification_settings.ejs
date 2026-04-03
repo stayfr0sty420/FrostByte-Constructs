@@ -201,10 +201,16 @@
 
             <div class="col-12">
               <h2 class="h6 mb-2">Verification Questions</h2>
+              <div class="text-muted small mb-2">
+                Leave this empty for questionless verification. Optional acceptable answers can be added one per line for each question.
+              </div>
               <div class="question-list" data-question-list>
-                <% questions.forEach((q, idx) => { %>
+                <% (questionConfigs || []).forEach((item) => { %>
                   <div class="question-row">
-                    <input class="form-control" name="questions" value="<%= q %>" placeholder="Enter a question" required />
+                    <div class="flex-grow-1 d-grid gap-2">
+                      <input class="form-control" name="questionPrompt" value="<%= item.prompt %>" placeholder="Enter a question" />
+                      <textarea class="form-control" name="questionAcceptableAnswers" rows="2" placeholder="Acceptable answers, one per line"><%= (item.acceptableAnswers || []).join('\n') %></textarea>
+                    </div>
                     <button class="btn btn-outline-danger btn-sm icon-btn" type="button" data-question-remove aria-label="Remove question">🗑️</button>
                   </div>
                 <% }) %>

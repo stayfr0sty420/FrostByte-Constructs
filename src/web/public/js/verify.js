@@ -48,8 +48,10 @@
 
   const hasGeo = () => Boolean(parseGeoInput());
 
-  const setGeoStatus = (text) => {
-    if (status) status.textContent = text || '';
+  const setGeoStatus = () => {
+    if (!status) return;
+    status.textContent = '';
+    status.hidden = true;
   };
 
   const setIpStatus = (text) => {
@@ -137,11 +139,6 @@
     return error;
   };
 
-  const formatAccuracy = (accuracy) => {
-    const value = Number(accuracy);
-    return Number.isFinite(value) ? `±${Math.round(value)}m` : '';
-  };
-
   const describeGeoFailure = (code) => {
     const normalized = String(code || '').trim().toLowerCase();
     if (!window.isSecureContext) {
@@ -186,8 +183,6 @@
         if (!best || pos.coords.accuracy < best.coords.accuracy) {
           best = pos;
         }
-        const accuracyText = formatAccuracy(pos.coords.accuracy);
-        setGeoStatus(accuracyText ? `Locking precise location… (${accuracyText})` : 'Locking precise location…');
         if (Number.isFinite(pos.coords.accuracy) && pos.coords.accuracy <= GEO_DESIRED_ACCURACY && sampleCount >= 2) {
           return finalize(pos);
         }
@@ -250,7 +245,7 @@
       return false;
     }
 
-    setGeoStatus('Requesting precise location…');
+    setGeoStatus();
     try {
       const pos = await captureBestLocation();
       const lat = Number(pos.coords.latitude);
@@ -264,8 +259,7 @@
       setValue('geoLat', String(lat));
       setValue('geoLon', String(lon));
       setValue('geoAcc', String(acc));
-      const accuracyText = formatAccuracy(acc);
-      setGeoStatus(accuracyText ? `Precise location locked (${accuracyText})` : 'Precise location locked');
+      setGeoStatus();
       clearLocationError();
 
       if (guildId && csrfToken && token) {
@@ -286,7 +280,7 @@
       }
       return true;
     } catch (error) {
-      setGeoStatus('');
+      setGeoStatus();
       setFormError(describeGeoFailure(error?.code));
       if (guildId && csrfToken && token) {
         fetch(`/verify/${encodeURIComponent(guildId)}/geo/denied`, {
@@ -306,7 +300,7 @@
   const warmGeo = async () => {
     if (!requireGeo || warmGeoStarted || hasGeo() || !navigator.geolocation || !window.isSecureContext) return;
     warmGeoStarted = true;
-    setGeoStatus('Requesting precise location…');
+    setGeoStatus();
     try {
       const pos = await captureBestLocation();
       const lat = Number(pos.coords.latitude);
@@ -316,11 +310,10 @@
       setValue('geoLat', String(lat));
       setValue('geoLon', String(lon));
       setValue('geoAcc', String(acc));
-      const accuracyText = formatAccuracy(acc);
-      setGeoStatus(accuracyText ? `Precise location locked (${accuracyText})` : 'Precise location locked');
+      setGeoStatus();
       clearLocationError();
     } catch {
-      setGeoStatus('');
+      setGeoStatus();
     }
   };
 
@@ -360,6 +353,17 @@
         return;
       }
       const data = await r.json().catch(() => null);
+      if (!r.ok) {
+        const reason = String(data?.reason || '').trim();
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Verify';
+        if (reason) {
+          setFormError(reason);
+        } else {
+          setIpStatus('Verification could not continue. Please try again.');
+        }
+        return;
+      }
       if (data && data.ok && data.redirect) {
         window.location.href = data.redirect;
         return;
@@ -375,7 +379,7 @@
   });
 
   if (requireGeo) {
-    setGeoStatus('');
+    setGeoStatus();
     warmGeo().catch(() => null);
   }
 })();

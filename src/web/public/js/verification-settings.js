@@ -80,7 +80,7 @@
     queueSave();
   });
   form.addEventListener('input', (event) => {
-    if (event.target && event.target.name === 'questions') queueSave();
+    if (event.target && ['questionPrompt', 'questionAcceptableAnswers', 'questions'].includes(event.target.name)) queueSave();
   });
 
   const escapeSelector = (value) => {
@@ -323,8 +323,6 @@
     if (!btn) return;
     btn.addEventListener('click', () => {
       if (!list) return;
-      const rows = list.querySelectorAll('.question-row');
-      if (rows.length <= 1) return;
       const row = btn.closest('.question-row');
       if (row) row.remove();
       updateQuestionControls();
@@ -343,12 +341,15 @@
       const row = document.createElement('div');
       row.className = 'question-row';
       row.innerHTML = `
-        <input class="form-control" name="questions" placeholder="Enter a question" required />
+        <div class="flex-grow-1 d-grid gap-2">
+          <input class="form-control" name="questionPrompt" placeholder="Enter a question" />
+          <textarea class="form-control" name="questionAcceptableAnswers" rows="2" placeholder="Acceptable answers, one per line"></textarea>
+        </div>
         <button class="btn btn-outline-danger btn-sm icon-btn" type="button" data-question-remove aria-label="Remove question">🗑️</button>
       `;
       list.appendChild(row);
       bindRemove(row.querySelector('[data-question-remove]'));
-      const input = row.querySelector('input');
+      const input = row.querySelector('input[name="questionPrompt"]');
       if (input) input.focus();
       updateQuestionControls();
       queueSave();

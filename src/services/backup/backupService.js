@@ -6,7 +6,6 @@ const { nanoid } = require('nanoid');
 const Backup = require('../../db/models/Backup');
 const GuildConfig = require('../../db/models/GuildConfig');
 const { logger } = require('../../config/logger');
-const { env } = require('../../config/env');
 const { sendLog } = require('../discord/loggingService');
 
 const VALID_BACKUP_TYPES = new Set([
@@ -17,6 +16,7 @@ const VALID_BACKUP_TYPES = new Set([
   'bans',
   'webhooks',
   'emojis',
+  'stickers',
   'threads',
   'nicknames',
   'bots'
@@ -237,6 +237,7 @@ function buildTypeOptions(type) {
       includeRoles: true,
       includeChannels: true,
       includeEmojis: true,
+      includeStickers: true,
       includeWebhooks: true,
       includeBans: true,
       includeNicknames: true,
@@ -263,7 +264,10 @@ function buildTypeOptions(type) {
     return { includeServer: true, includeWebhooks: true };
   }
   if (t === 'emojis') {
-    return { includeServer: true, includeEmojis: true };
+    return { includeServer: true, includeEmojis: true, includeStickers: true };
+  }
+  if (t === 'stickers') {
+    return { includeServer: true, includeStickers: true };
   }
   if (t === 'threads') {
     return { includeServer: true, includeThreads: true, includeChannels: true };
@@ -282,7 +286,7 @@ function buildServerSnapshot(guild) {
   return {
     id: guild.id,
     name: guild.name,
-    iconURL: guild.iconURL?.() || '',
+    iconURL: guild.iconURL?.({ extension: 'png', size: 1024, forceStatic: false }) || '',
     verificationLevel: guild.verificationLevel,
     preferredLocale: guild.preferredLocale || '',
     defaultMessageNotifications: guild.defaultMessageNotifications ?? null,
@@ -312,20 +316,27 @@ function serializeRole(role) {
   };
 }
 
-function serializeChannel(channel) {
+function serializeChannel(channel, sortIndex = 0) {
   return {
     id: channel.id,
     name: channel.name,
     type: channel.type,
     parentId: channel.parentId || null,
     position: channel.rawPosition ?? 0,
+    sortIndex: Number.isFinite(Number(sortIndex)) ? Number(sortIndex) : 0,
     topic: channel.topic || '',
     nsfw: Boolean(channel.nsfw),
     rateLimitPerUser: channel.rateLimitPerUser ?? 0,
     bitrate: channel.bitrate ?? 0,
     userLimit: channel.userLimit ?? 0,
+    rtcRegion: channel.rtcRegion ?? null,
+    videoQualityMode: channel.videoQualityMode ?? null,
     permissionOverwrites: serializeOverwrites(channel),
     availableTags: channel.availableTags || [],
+    defaultReactionEmoji: channel.defaultReactionEmoji || null,
+    defaultSortOrder: channel.defaultSortOrder ?? null,
+    defaultForumLayout: channel.defaultForumLayout ?? null,
+    defaultThreadRateLimitPerUser: channel.defaultThreadRateLimitPerUser ?? null,
     defaultAutoArchiveDuration: channel.defaultAutoArchiveDuration || null
   };
 }
@@ -350,9 +361,12 @@ async function collectThreadsFromChannels(channels) {
         parentId: t.parentId,
         archived: t.archived,
         locked: t.locked,
+        type: t.type,
         autoArchiveDuration: t.autoArchiveDuration,
         createdTimestamp: t.createdTimestamp,
-        appliedTags: Array.isArray(t.appliedTags) ? t.appliedTags : []
+        appliedTags: Array.isArray(t.appliedTags) ? t.appliedTags : [],
+        invitable: typeof t.invitable === 'boolean' ? t.invitable : null,
+        rateLimitPerUser: t.rateLimitPerUser ?? null
       });
     }
   }
@@ -364,6 +378,8 @@ function serializeMessage(m) {
     id: m.id,
     authorId: m.author?.id || '',
     authorUsername: m.author?.username || '',
+    authorAvatarUrl:
+      (typeof m.author?.displayAvatarURL === 'function' && m.author.displayAvatarURL({ extension: 'png', size: 256 })) || '',
     content: m.content || '',
     createdTimestamp: m.createdTimestamp,
     editedTimestamp: m.editedTimestamp || null,
@@ -394,6 +410,10 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
   let members = null;
   if (needsMembers) {
     members = await guild.members.fetch().catch(() => null);
+  }
+
+  if ((options.includeEmojis || options.includeStickers) && !members) {
+    await guild.members.fetchMe().catch(() => null);
   }
 
   if (options.includeNicknames) {
@@ -434,6 +454,7 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
           userId: m.user.id,
           username: m.user.username,
           discriminator: m.user.discriminator || '',
+          nickname: m.nickname || '',
           joinedAt: m.joinedAt?.toISOString?.() || '',
           roles: m.roles?.cache?.map((r) => r.id) || [],
           highestRole
@@ -446,11 +467,11 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
   let channels = [];
   if (needsChannels) {
     const fetched = await guild.channels.fetch().catch(() => null);
-    channels = fetched ? Array.from(fetched.values()) : [];
+    channels = fetched ? Array.from(fetched.values()).filter((channel) => !channel?.isThread?.()) : [];
   }
 
   if (options.includeChannels) {
-    data.channels = channels.map((c) => serializeChannel(c));
+    data.channels = channels.map((channel, index) => serializeChannel(channel, index));
   }
 
   if (options.includeThreads) {
@@ -471,12 +492,29 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
   }
 
   if (options.includeEmojis) {
-    data.emojis = (await guild.emojis.fetch()).map((e) => ({
-      id: e.id,
-      name: e.name,
-      animated: e.animated,
-      url: e.url
-    }));
+    const emojiManager = guild?.emojis;
+    data.emojis = emojiManager?.fetch
+      ? (await emojiManager.fetch()).map((e) => ({
+          id: e.id,
+          name: e.name,
+          animated: e.animated,
+          url: e.url
+        }))
+      : [];
+  }
+
+  if (options.includeStickers) {
+    const stickerManager = guild?.stickers;
+    data.stickers = stickerManager?.fetch
+      ? (await stickerManager.fetch()).map((sticker) => ({
+          id: sticker.id,
+          name: sticker.name,
+          description: sticker.description || '',
+          tags: sticker.tags || '',
+          format: sticker.format,
+          url: sticker.url || ''
+        }))
+      : [];
   }
 
   if (options.includeBans) {
@@ -494,6 +532,7 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
       name: w.name,
       channelId: w.channelId || null,
       type: w.type,
+      avatarURL: (typeof w.avatarURL === 'function' && w.avatarURL({ extension: 'png', size: 256 })) || '',
       url: w.url || ''
     }));
   }
@@ -506,6 +545,7 @@ function buildStats(data) {
     roles: Array.isArray(data.roles) ? data.roles.length : 0,
     channels: Array.isArray(data.channels) ? data.channels.length : 0,
     emojis: Array.isArray(data.emojis) ? data.emojis.length : 0,
+    stickers: Array.isArray(data.stickers) ? data.stickers.length : 0,
     webhooks: Array.isArray(data.webhooks) ? data.webhooks.length : 0,
     bans: Array.isArray(data.bans) ? data.bans.length : 0,
     threads: Array.isArray(data.threads) ? data.threads.length : 0,
@@ -527,12 +567,6 @@ function buildStats(data) {
   }
 
   return stats;
-}
-
-function buildDownloadUrl(backupId) {
-  const base = String(env.PUBLIC_BASE_URL || '').trim();
-  if (!base) return '';
-  return `${base.replace(/\/+$/, '')}/admin/backups/download/${encodeURIComponent(backupId)}`;
 }
 
 async function sendBackupLog({ discordClient, guildId, content, channelId }) {
@@ -637,6 +671,7 @@ async function createBackup({
     await writeJsonIf(dir, 'roles.json', data.roles);
     await writeJsonIf(dir, 'channels.json', data.channels);
     await writeJsonIf(dir, 'emojis.json', data.emojis);
+    await writeJsonIf(dir, 'stickers.json', data.stickers);
     await writeJsonIf(dir, 'webhooks.json', data.webhooks);
     await writeJsonIf(dir, 'bans.json', data.bans);
     await writeJsonIf(dir, 'nicknames.json', data.nicknames);
@@ -690,15 +725,13 @@ async function createBackup({
 
     await enforceRetention({ guildId });
 
-    const downloadUrl = buildDownloadUrl(backupId);
-    const downloadLine = downloadUrl ? `\nDownload: ${downloadUrl}` : '';
     const sizeMb = size ? `${(size / (1024 * 1024)).toFixed(2)} MB` : '0 MB';
 
     await sendBackupLog({
       discordClient,
       guildId,
       channelId: options.channelId,
-      content: `✅ Backup complete: **${name || backupType}** (ID: \`${backupId}\`) • ${sizeMb}${downloadLine}`
+      content: `✅ Backup complete: **${name || backupType}** (ID: \`${backupId}\`) • ${sizeMb}`
     });
 
     return { ok: true, backupId, dir, zipPath, size };
@@ -723,4 +756,12 @@ async function deleteBackup({ guildId, backupId }) {
   return { ok: true, backup };
 }
 
-module.exports = { createBackup, deleteBackup, backupsRoot, enforceRetention, normalizeBackupType, ensureBackupArchive };
+module.exports = {
+  createBackup,
+  deleteBackup,
+  backupsRoot,
+  enforceRetention,
+  normalizeBackupType,
+  ensureBackupArchive,
+  findExistingBackupDirectory
+};
