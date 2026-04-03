@@ -218,6 +218,28 @@ function cleanAuditUserValue(value) {
     .trim();
 }
 
+function extractUserMention(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const match = raw.match(/<@!?\d{15,22}>/);
+  return match ? match[0] : '';
+}
+
+function resolveAuditUser(fields, context = {}) {
+  const fieldUser = String(fields.user || '').trim();
+  const contextMention = extractUserMention(context.userMention || '');
+  const fieldMention = extractUserMention(fieldUser);
+  const authorId = String(context.authorId || '').replace(/[^\d]/g, '');
+  const mention = contextMention || fieldMention || (authorId ? `<@${authorId}>` : '');
+  const displayName = compactText(context.displayName || '', 120);
+  const plain = cleanAuditUserValue(fieldUser) || displayName || fieldUser || '';
+  return {
+    mention,
+    displayName,
+    text: mention || plain
+  };
+}
+
 function inlineCode(value, max = 180) {
   const text = compactText(cleanClipboardValue(value), max);
   return text ? `\`${text}\`` : '';
@@ -347,8 +369,8 @@ function detailLine(label, value, max = 700) {
 }
 
 function buildCompactAuditDescription(type, fields, fallbackDescription = '', context = {}) {
-  const displayName = compactText(context.displayName || '', 120);
-  const user = displayName || cleanAuditUserValue(fields.user || '') || fields.user || '';
+  const userRef = resolveAuditUser(fields, context);
+  const user = userRef.text || 'Unknown member';
   const channel = fields.channel || '';
   const from = fields.from || '';
   const to = fields.to || '';
@@ -480,7 +502,7 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '', co
 }
 
 function shouldShowAuditThumbnail(type) {
-  return new Set(['member_kick', 'member_ban', 'member_unban']).has(String(type || '').toLowerCase());
+  return new Set(['member_join', 'member_leave', 'member_kick', 'member_ban', 'member_unban']).has(String(type || '').toLowerCase());
 }
 
 function buildCompactAuditEmbed(type, embed) {
@@ -491,7 +513,9 @@ function buildCompactAuditEmbed(type, embed) {
   const fields = extractFieldMap(normalized);
   const description = buildCompactAuditDescription(type, fields, normalized.description || '', {
     timestamp: normalized.timestamp,
-    displayName: normalized.author?.name || fields['display name'] || ''
+    displayName: normalized.author?.name || fields['display name'] || '',
+    userMention: fields.user || '',
+    authorId: fields['author id'] || ''
   });
   const entityId = extractAuditId(normalized, fields);
   const titleSource = style.title !== 'Audit Log' ? style.title : (normalized.title || style.title);

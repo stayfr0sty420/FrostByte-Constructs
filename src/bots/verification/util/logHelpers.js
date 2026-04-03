@@ -139,22 +139,23 @@ function buildEmojiAuditEmbed(type, values = {}) {
   const beforeName = formatEmojiClipboardValue(values.before || 'unknown');
   const afterName = formatEmojiClipboardValue(values.after || values.name || values.emoji || values.id || 'unknown');
   const embed = new EmbedBuilder().setTimestamp(new Date(values.timestamp || Date.now()));
+  const imageUrl = String(values.imageUrl || '').trim();
 
   if (key === 'emoji_create') {
     embed
       .setColor(0x22c55e)
-      .setTitle('✨ Emoji Created')
-      .setDescription(`New emoji has been created: \`${emojiName}\``);
+      .setTitle('Emoji Created')
+      .setDescription(`New emoji has been made: \`${emojiName}\``);
   } else if (key === 'emoji_update') {
     embed
       .setColor(0x3b82f6)
-      .setTitle('🪄 Emoji Updated')
+      .setTitle('Emoji Updated')
       .setDescription(`\`${beforeName}\` was changed to \`${afterName}\``);
   } else if (key === 'emoji_delete') {
     embed
       .setColor(0xef4444)
-      .setTitle('🧼 Emoji Deleted')
-      .setDescription(`The emoji \`${emojiName}\` has been deleted!`);
+      .setTitle('Emoji Deleted')
+      .setDescription(`The \`${emojiName}\` emoji has been deleted!`);
   } else {
     embed
       .setColor(LOG_COLOR)
@@ -164,6 +165,10 @@ function buildEmojiAuditEmbed(type, values = {}) {
 
   if (values.id) {
     embed.setFooter({ text: `ID: ${values.id}` });
+  }
+
+  if (imageUrl) {
+    embed.setThumbnail(imageUrl);
   }
 
   return embed;

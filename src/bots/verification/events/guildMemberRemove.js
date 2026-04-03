@@ -37,7 +37,7 @@ async function execute(client, member) {
   addField(embed, 'User', formatUser(member.user));
   if (kickAudit?.reason) addField(embed, 'Reason', kickAudit.reason);
   if (kickAudit?.executorId) addField(embed, 'Moderator', `<@${kickAudit.executorId}>`, true);
-  setUserIdentity(embed, member.user, { thumbnail: kicked });
+  setUserIdentity(embed, member.user, { thumbnail: true });
 
   await sendLog({
     discordClient: client,

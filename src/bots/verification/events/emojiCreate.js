@@ -13,7 +13,11 @@ async function execute(client, emoji) {
   const embed = buildEmojiAuditEmbed('emoji_create', {
     name: emoji?.name || '',
     emoji: emoji?.toString ? emoji.toString() : (emoji?.name || ''),
-    id: emoji?.id || ''
+    id: emoji?.id || '',
+    imageUrl:
+      (typeof emoji?.imageURL === 'function' && emoji.imageURL({ extension: 'png', size: 256 })) ||
+      emoji?.url ||
+      ''
   });
 
   await sendLog({

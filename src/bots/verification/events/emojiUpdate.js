@@ -16,7 +16,11 @@ async function execute(client, oldEmoji, newEmoji) {
     before: oldEmoji?.name || '',
     after: newEmoji?.name || '',
     emoji: newEmoji?.toString ? newEmoji.toString() : (newEmoji?.name || ''),
-    id: newEmoji?.id || ''
+    id: newEmoji?.id || '',
+    imageUrl:
+      (typeof newEmoji?.imageURL === 'function' && newEmoji.imageURL({ extension: 'png', size: 256 })) ||
+      newEmoji?.url ||
+      ''
   });
 
   await sendLog({
