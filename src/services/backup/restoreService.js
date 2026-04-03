@@ -1,10 +1,11 @@
 const fs = require('fs/promises');
 const path = require('path');
+const AdmZip = require('adm-zip');
 const { WebhookClient, ChannelType } = require('discord.js');
 const Backup = require('../../db/models/Backup');
 const { logger } = require('../../config/logger');
 const { sendLog } = require('../discord/loggingService');
-const { findExistingBackupDirectory } = require('./backupService');
+const { ensureBackupArchive, findExistingBackupDirectory } = require('./backupService');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const RESTORE_WEBHOOK_AVATAR_CANDIDATES = [
@@ -27,6 +28,74 @@ async function fileExists(filePath) {
 async function readJson(filePath) {
   const raw = await fs.readFile(filePath, 'utf8');
   return JSON.parse(raw);
+}
+
+async function ensureDirectory(dirPath) {
+  await fs.mkdir(dirPath, { recursive: true });
+}
+
+function normalizeExtractedBackupDir(zipPath, backup) {
+  const storedDir = String(backup?.filePath || backup?.path || '').trim();
+  if (storedDir) return storedDir;
+  const safeZipPath = String(zipPath || '').trim();
+  if (!safeZipPath) return '';
+  return path.join(path.dirname(safeZipPath), path.basename(safeZipPath, path.extname(safeZipPath)));
+}
+
+async function ensureBackupDirectory(backup) {
+  const existingDir = await findExistingBackupDirectory(backup);
+  if (existingDir && (await fileExists(existingDir))) {
+    return { ok: true, backupDir: existingDir, extracted: false };
+  }
+
+  const archive = await ensureBackupArchive(backup);
+  if (!archive.ok || !archive.zipPath) {
+    return { ok: false, reason: archive.reason || 'Backup archive is not available on disk.' };
+  }
+
+  const extractDir = normalizeExtractedBackupDir(archive.zipPath, backup);
+  if (!extractDir) {
+    return { ok: false, reason: 'Could not determine where to extract the backup archive.' };
+  }
+
+  try {
+    await fs.rm(extractDir, { recursive: true, force: true }).catch(() => null);
+    await ensureDirectory(extractDir);
+    const zip = new AdmZip(archive.zipPath);
+    zip.extractAllTo(extractDir, true);
+
+    const metadataPath = path.join(extractDir, 'metadata.json');
+    if (!(await fileExists(metadataPath))) {
+      const children = await fs.readdir(extractDir, { withFileTypes: true }).catch(() => []);
+      const nested = children.find((entry) => entry.isDirectory());
+      if (nested) {
+        const nestedPath = path.join(extractDir, nested.name);
+        if (await fileExists(path.join(nestedPath, 'metadata.json'))) {
+          await Backup.updateOne(
+            { _id: backup._id },
+            { $set: { path: nestedPath, filePath: nestedPath, zipPath: archive.zipPath } }
+          ).catch(() => null);
+          backup.path = nestedPath;
+          backup.filePath = nestedPath;
+          backup.zipPath = archive.zipPath;
+          return { ok: true, backupDir: nestedPath, extracted: true };
+        }
+      }
+
+      return { ok: false, reason: 'Backup archive extracted but metadata.json is missing.' };
+    }
+
+    await Backup.updateOne(
+      { _id: backup._id },
+      { $set: { path: extractDir, filePath: extractDir, zipPath: archive.zipPath } }
+    ).catch(() => null);
+    backup.path = extractDir;
+    backup.filePath = extractDir;
+    backup.zipPath = archive.zipPath;
+    return { ok: true, backupDir: extractDir, extracted: true };
+  } catch (err) {
+    return { ok: false, reason: `Failed to extract backup archive: ${String(err?.message || err)}` };
+  }
 }
 
 function toBigIntOrNull(value) {
@@ -54,6 +123,12 @@ function mapOverwriteIds(overwrites, roleIdMap, guildId) {
 
 function roleKey(name) {
   return String(name || '').toLowerCase();
+}
+
+function isEveryoneRoleData(role, sourceGuildId = '', targetGuildId = '') {
+  const roleId = String(role?.id || '').trim();
+  const roleName = String(role?.name || '').trim();
+  return roleName === '@everyone' || (sourceGuildId && roleId === sourceGuildId) || (targetGuildId && roleId === targetGuildId);
 }
 
 async function downloadRemoteAsset(url, { timeoutMs = 20000, maxBytes = 25 * 1024 * 1024 } = {}) {
@@ -116,23 +191,29 @@ async function getRestoreWebhookAvatar() {
   return await readFirstExistingFile(RESTORE_WEBHOOK_AVATAR_CANDIDATES);
 }
 
-async function syncRolePositions(guild, rolesData, roleIdMap) {
-  const positions = [...rolesData]
-    .filter((role) => role.id !== guild.id)
+async function syncRolePositions(guild, rolesData, roleIdMap, options = {}) {
+  const sourceGuildId = String(options.sourceGuildId || '').trim();
+  const orderedRoles = [...rolesData]
+    .filter((role) => !isEveryoneRoleData(role, sourceGuildId, guild.id))
     .filter((role) => !role.managed)
-    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
-    .map((role, index) => ({ id: roleIdMap.get(role.id), position: index + 1 }))
-    .filter((entry) => entry.id);
+    .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-  if (!positions.length) return;
-  await guild.roles.setPositions(positions).catch((err) => {
-    logger.warn({ err }, 'Role position sync failed');
-  });
+  for (const [index, roleData] of orderedRoles.entries()) {
+    const mappedRoleId = roleIdMap.get(String(roleData?.id || '').trim());
+    if (!mappedRoleId) continue;
+    const role = guild.roles.cache.get(mappedRoleId) || (await guild.roles.fetch(mappedRoleId).catch(() => null));
+    if (!role) continue;
+    await role.setPosition(index + 1).catch((err) => {
+      logger.warn({ err, roleId: mappedRoleId }, 'Role position sync failed');
+    });
+  }
 }
 
-async function pruneDuplicateRolesAfterRestore(guild, rolesData, roleIdMap) {
+async function pruneDuplicateRolesAfterRestore(guild, rolesData, roleIdMap, options = {}) {
+  const sourceGuildId = String(options.sourceGuildId || '').trim();
   const desiredCounts = new Map();
   for (const role of rolesData) {
+    if (isEveryoneRoleData(role, sourceGuildId, guild.id)) continue;
     const key = roleKey(role.name);
     desiredCounts.set(key, (desiredCounts.get(key) || 0) + 1);
   }
@@ -174,8 +255,12 @@ async function pruneDuplicateRolesAfterRestore(guild, rolesData, roleIdMap) {
 async function restoreRoles(guild, rolesData, options = {}) {
   const roleIdMap = new Map();
   const reuseExisting = Boolean(options.reuseExisting);
-  const everyoneRole = [...rolesData].find((role) => String(role?.id || '') === String(guild.id));
+  const sourceGuildId = String(options.sourceGuildId || '').trim();
+  const everyoneRole = [...rolesData].find((role) => isEveryoneRoleData(role, sourceGuildId, guild.id));
   let existingByName = new Map();
+
+  if (sourceGuildId) roleIdMap.set(sourceGuildId, guild.id);
+  roleIdMap.set(guild.id, guild.id);
 
   if (reuseExisting) {
     const existing = await guild.roles.fetch().catch(() => null);
@@ -212,7 +297,7 @@ async function restoreRoles(guild, rolesData, options = {}) {
   }
 
   const roles = [...rolesData]
-    .filter((r) => r.id !== guild.id)
+    .filter((r) => !isEveryoneRoleData(r, sourceGuildId, guild.id))
     .filter((r) => !r.managed)
     .sort((a, b) => a.position - b.position);
 
@@ -256,9 +341,9 @@ async function restoreRoles(guild, rolesData, options = {}) {
 
   if (roles.length) {
     if (reuseExisting) {
-      await pruneDuplicateRolesAfterRestore(guild, roles, roleIdMap);
+      await pruneDuplicateRolesAfterRestore(guild, roles, roleIdMap, { sourceGuildId });
     }
-    await syncRolePositions(guild, roles, roleIdMap);
+    await syncRolePositions(guild, roles, roleIdMap, { sourceGuildId });
   }
 
   return roleIdMap;
@@ -722,8 +807,41 @@ async function buildForumTagMap(guild, channelsData = [], channelIdMap = new Map
   return tagMap;
 }
 
+function normalizedRestoredAuthor(message) {
+  return String(message?.authorUsername || '').trim().slice(0, 80) || 'Unknown';
+}
+
+async function buildStoredMessagePayload(message, options = {}) {
+  const includeAuthorPrefix = Boolean(options.includeAuthorPrefix);
+  const fallbackContent = String(options.fallbackContent || '').trim();
+  const attachmentLimit = Math.max(1, Math.floor(Number(options.attachmentLimit || 3)));
+  const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
+  const { files, unresolvedUrls } = await buildRestoredFiles(attachments, attachmentLimit);
+  const embeds = Array.isArray(message?.embeds) ? message.embeds.slice(0, 3) : [];
+  const body = String(message?.content || '').trim().slice(0, 1800);
+  const withLinks = [body, ...unresolvedUrls].filter(Boolean).join('\n').slice(0, 1900);
+  const author = normalizedRestoredAuthor(message);
+
+  let content = withLinks;
+  if (includeAuthorPrefix) {
+    content = content ? `**${author}**: ${content}` : `**${author}**`;
+  }
+
+  if (!content && !embeds.length && !files.length) {
+    content = fallbackContent || (includeAuthorPrefix ? `**${author}**` : 'Restored message');
+  }
+
+  return {
+    content: content ? content.slice(0, 2000) : undefined,
+    embeds: embeds.length ? embeds : undefined,
+    files: files.length ? files : undefined,
+    allowedMentions: { parse: [] }
+  };
+}
+
 async function restoreThreads(guild, threadsData, channelIdMap = new Map(), options = {}) {
-  if (!Array.isArray(threadsData) || !threadsData.length) return;
+  const threadStateMap = new Map();
+  if (!Array.isArray(threadsData) || !threadsData.length) return threadStateMap;
   const safeDelay = Math.max(0, Math.floor(options.delayMs ?? 200));
   const forumTagMap = options.forumTagMap instanceof Map ? options.forumTagMap : new Map();
   const channelCache = await guild.channels.fetch().catch(() => null);
@@ -740,6 +858,11 @@ async function restoreThreads(guild, threadsData, channelIdMap = new Map(), opti
 
     try {
       let thread = null;
+      let starterWasRestored = false;
+      const starterPayload = await buildStoredMessagePayload(t?.starterMessage, {
+        includeAuthorPrefix: true,
+        fallbackContent: `Restored thread starter: ${name}`
+      });
       if (FORUM_LIKE_TYPES.has(parent.type)) {
         const appliedTags = Array.isArray(t?.appliedTags)
           ? t.appliedTags
@@ -751,8 +874,9 @@ async function restoreThreads(guild, threadsData, channelIdMap = new Map(), opti
           autoArchiveDuration,
           appliedTags: appliedTags?.length ? appliedTags : undefined,
           rateLimitPerUser: t?.rateLimitPerUser ?? undefined,
-          message: { content: 'Restored from backup.' }
+          message: starterPayload
         });
+        starterWasRestored = true;
       } else {
         const threadType = Number.isFinite(Number(t?.type)) ? Number(t.type) : ChannelType.PrivateThread;
         if (threadType === ChannelType.PrivateThread) {
@@ -764,13 +888,12 @@ async function restoreThreads(guild, threadsData, channelIdMap = new Map(), opti
             rateLimitPerUser: t?.rateLimitPerUser ?? undefined,
             reason: 'Restore from backup'
           });
+          if (thread) {
+            const sentStarter = await thread.send(starterPayload).catch(() => null);
+            starterWasRestored = Boolean(sentStarter);
+          }
         } else {
-          const starter = await parent
-            .send({
-              content: `Restored thread starter: ${name}`,
-              allowedMentions: { parse: [] }
-            })
-            .catch(() => null);
+          const starter = await parent.send(starterPayload).catch(() => null);
           if (!starter) continue;
           thread = await parent.threads.create({
             name,
@@ -779,20 +902,42 @@ async function restoreThreads(guild, threadsData, channelIdMap = new Map(), opti
             rateLimitPerUser: t?.rateLimitPerUser ?? undefined,
             reason: 'Restore from backup'
           });
+          starterWasRestored = true;
         }
       }
 
-      if (thread && t?.locked) {
-        await thread.setLocked(true).catch(() => null);
-      }
-      if (thread && t?.archived) {
-        await thread.setArchived(true).catch(() => null);
+      if (thread?.id) {
+        threadStateMap.set(String(t.id || ''), {
+          channelId: thread.id,
+          parentId,
+          archived: Boolean(t?.archived),
+          locked: Boolean(t?.locked),
+          skipMessageIds: starterWasRestored && t?.starterMessageId ? [String(t.starterMessageId)] : []
+        });
       }
 
       createdCount += 1;
       if (safeDelay > 0 && createdCount % 5 === 0) await sleep(safeDelay);
     } catch (err) {
       logger.warn({ err, threadName: name }, 'Thread restore failed');
+    }
+  }
+
+  return threadStateMap;
+}
+
+async function finalizeRestoredThreads(guild, threadStateMap = new Map()) {
+  if (!(threadStateMap instanceof Map) || !threadStateMap.size) return;
+  for (const state of threadStateMap.values()) {
+    const channelId = String(state?.channelId || '').trim();
+    if (!channelId) continue;
+    const thread = guild.channels.cache.get(channelId) || (await guild.channels.fetch(channelId).catch(() => null));
+    if (!thread?.isThread?.()) continue;
+    if (state.locked) {
+      await thread.setLocked(true).catch(() => null);
+    }
+    if (state.archived) {
+      await thread.setArchived(true).catch(() => null);
     }
   }
 }
@@ -842,7 +987,9 @@ async function restoreBots(guild, botsData, roleIdMap = new Map(), membersCache 
     }
 
     const desiredRoleIds = Array.isArray(botData?.roles)
-      ? botData.roles.map((roleId) => roleIdMap.get(String(roleId))).filter(Boolean)
+      ? botData.roles
+          .map((roleId) => roleIdMap.get(String(roleId)))
+          .filter((roleId) => roleId && String(roleId) !== String(guild.id))
       : [];
     for (const roleId of desiredRoleIds) {
       if (member.roles.cache.has(roleId)) continue;
@@ -864,7 +1011,7 @@ async function restoreRoleAssignments(guild, roleAssignments, roleIdMap = new Ma
     const originalRoleId = String(entry?.roleId || '').trim();
     if (!originalRoleId) continue;
     const newRoleId = roleIdMap.get(originalRoleId) || originalRoleId;
-    if (!newRoleId) continue;
+    if (!newRoleId || String(newRoleId) === String(guild.id)) continue;
     const role = guild.roles.cache.get(newRoleId) || (await guild.roles.fetch(newRoleId).catch(() => null));
     if (!role) continue;
     const memberIds = Array.isArray(entry?.members) ? entry.members : [];
@@ -883,7 +1030,7 @@ async function restoreRoleAssignments(guild, roleAssignments, roleIdMap = new Ma
   }
 }
 
-async function restoreMessages({ guild, backupDir, channelIdMap, maxPerChannel = 200, delayMs = 250 }) {
+async function restoreMessages({ guild, backupDir, channelIdMap, threadStateMap = new Map(), maxPerChannel = 200, delayMs = 250 }) {
   const messagesDir = path.join(backupDir, 'messages');
   const entries = await fs.readdir(messagesDir).catch(() => []);
   const safeDelay = Math.max(0, Math.floor(delayMs || 0));
@@ -894,20 +1041,31 @@ async function restoreMessages({ guild, backupDir, channelIdMap, maxPerChannel =
   for (const file of entries) {
     if (!file.endsWith('.json')) continue;
     const oldChannelId = file.replace('.json', '');
-    const newChannelId = channelIdMap.get(oldChannelId) || oldChannelId;
+    const threadState = threadStateMap.get(oldChannelId);
+    const newChannelId = threadState?.channelId || channelIdMap.get(oldChannelId) || oldChannelId;
     if (!newChannelId) continue;
 
     const channel = channelCache?.get?.(newChannelId) || (await guild.channels.fetch(newChannelId).catch(() => null));
     if (!channel?.isTextBased?.()) continue;
 
     const data = await readJson(path.join(messagesDir, file)).catch(() => []);
-    const msgs = Array.isArray(data) ? data.slice().reverse().slice(0, maxPerChannel) : [];
+    const skipMessageIds = new Set((threadState?.skipMessageIds || []).map((value) => String(value || '').trim()).filter(Boolean));
+    const msgs = Array.isArray(data)
+      ? data
+          .slice()
+          .reverse()
+          .filter((message) => !skipMessageIds.has(String(message?.id || '').trim()))
+          .slice(0, maxPerChannel)
+      : [];
     if (!msgs.length) continue;
 
+    const webhookTarget = channel.isThread?.() ? channel.parent : channel;
+    const threadId = channel.isThread?.() ? channel.id : undefined;
     let webhookClient = null;
     let webhookRef = null;
     try {
-      const hook = await channel.createWebhook({
+      if (!webhookTarget || typeof webhookTarget.createWebhook !== 'function') throw new Error('Webhook target unavailable');
+      const hook = await webhookTarget.createWebhook({
         name: 'Rodstarkian Vault',
         ...(restoreWebhookAvatar ? { avatar: restoreWebhookAvatar } : {}),
         reason: 'Restore messages from backup'
@@ -919,22 +1077,18 @@ async function restoreMessages({ guild, backupDir, channelIdMap, maxPerChannel =
     }
 
     for (const m of msgs) {
-      const content = (m.content || '').slice(0, 1800);
-      const header = m.authorUsername ? `**${m.authorUsername}**:` : '**Unknown**:';
       try {
-        const attachments = Array.isArray(m.attachments) ? m.attachments : [];
-        const { files, unresolvedUrls } = await buildRestoredFiles(attachments, 3);
-        const embeds = Array.isArray(m.embeds) ? m.embeds.slice(0, 3) : [];
-        const linkSuffix = unresolvedUrls.length ? `\n${unresolvedUrls.join('\n')}` : '';
-        const text = `${header} ${content}${linkSuffix}`.slice(0, 2000);
-        const payload = {
-          content: text,
-          embeds: embeds.length ? embeds : undefined,
-          files: files.length ? files : undefined,
-          allowedMentions: { parse: [] }
-        };
+        const payload = await buildStoredMessagePayload(m, {
+          includeAuthorPrefix: !webhookClient,
+          fallbackContent: !webhookClient ? `**${normalizedRestoredAuthor(m)}**` : 'Restored message'
+        });
         if (webhookClient) {
-          await webhookClient.send(payload);
+          await webhookClient.send({
+            ...payload,
+            ...(threadId ? { threadId } : {}),
+            username: normalizedRestoredAuthor(m),
+            ...(m?.authorAvatarUrl ? { avatarURL: String(m.authorAvatarUrl).trim() } : {})
+          });
         } else {
           const sent = await channel.send(payload);
           if (Array.isArray(m.reactions) && m.reactions.length) {
@@ -970,12 +1124,13 @@ async function restoreBans(guild, bansData) {
   }
 }
 
-async function pruneRoles(guild, rolesData) {
+async function pruneRoles(guild, rolesData, options = {}) {
   if (!Array.isArray(rolesData) || !rolesData.length) return;
+  const sourceGuildId = String(options.sourceGuildId || '').trim();
   const desired = new Map();
   for (const r of rolesData) {
     if (r.managed) continue;
-    if (r.id === guild.id) continue;
+    if (isEveryoneRoleData(r, sourceGuildId, guild.id)) continue;
     const key = roleKey(r.name);
     desired.set(key, (desired.get(key) || 0) + 1);
   }
@@ -1045,15 +1200,26 @@ async function restoreBackup({
 }) {
   const sourceGuildId = String(options.sourceGuildId || guildId || '').trim();
   const targetGuildId = String(options.targetGuildId || guildId || '').trim();
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+  const reportProgress = async (progress, message) => {
+    if (!onProgress) return;
+    await onProgress({
+      phase: 'restore',
+      progress: Math.max(0, Math.min(100, Math.floor(Number(progress) || 0))),
+      message: String(message || '').trim()
+    }).catch(() => null);
+  };
   const pruneChannelsEnabled = typeof options.pruneChannels === 'boolean' ? options.pruneChannels : true;
   const pruneRolesEnabled =
     typeof options.pruneRoles === 'boolean' ? options.pruneRoles : typeof options.pruneChannels === 'boolean' ? options.pruneChannels : true;
   const backup = await Backup.findOne({ guildId: sourceGuildId, backupId });
   if (!backup) return { ok: false, reason: 'Backup not found.' };
-  const backupDir = (await findExistingBackupDirectory(backup)) || String(backup.filePath || backup.path || '').trim();
-  if (!(await fileExists(backupDir))) {
-    return { ok: false, reason: 'Backup files are missing on disk. Create a fresh backup and try again.' };
+  await reportProgress(5, 'Preparing backup files');
+  const backupLocation = await ensureBackupDirectory(backup);
+  if (!backupLocation.ok || !backupLocation.backupDir) {
+    return { ok: false, reason: backupLocation.reason || 'Backup files are missing on disk. Create a fresh backup and try again.' };
   }
+  const backupDir = backupLocation.backupDir;
 
   await sendLog({
     discordClient,
@@ -1067,6 +1233,7 @@ async function restoreBackup({
   });
 
   try {
+    await reportProgress(12, 'Loading target server');
     const guild = await discordClient.guilds.fetch(targetGuildId || guildId);
     const rolesPath = path.join(backupDir, 'roles.json');
     const channelsPath = path.join(backupDir, 'channels.json');
@@ -1102,6 +1269,9 @@ async function restoreBackup({
     const nicknamesData = hasNicknames ? await readJson(nicknamesPath).catch(() => []) : [];
     const roleAssignments = hasRoleAssignments ? await readJson(roleAssignmentsPath).catch(() => []) : [];
     const botsData = hasBots ? await readJson(botsPath).catch(() => []) : [];
+    const sourceGuildIdForRoles = String(serverData?.id || backup.guildId || sourceGuildId || '').trim();
+
+    await reportProgress(20, 'Preparing current server state');
 
     if (options.wipe && (hasRoles || hasChannels)) {
       await wipeExisting(guild, { wipeChannels: hasChannels, wipeRoles: hasRoles });
@@ -1110,12 +1280,16 @@ async function restoreBackup({
         await pruneChannels(guild, channelsData);
       }
       if (pruneRolesEnabled && hasRoles) {
-        await pruneRoles(guild, rolesData);
+        await pruneRoles(guild, rolesData, { sourceGuildId: sourceGuildIdForRoles });
       }
     }
 
+    await reportProgress(35, 'Restoring roles and channels');
     const roleIdMap = hasRoles
-      ? await restoreRoles(guild, rolesData, { reuseExisting: pruneRolesEnabled && !options.wipe })
+      ? await restoreRoles(guild, rolesData, {
+          reuseExisting: pruneRolesEnabled && !options.wipe,
+          sourceGuildId: sourceGuildIdForRoles
+        })
       : new Map();
     const channelIdMap = hasChannels
       ? await restoreChannels(guild, channelsData, roleIdMap, { reuseExisting: pruneChannelsEnabled && !options.wipe })
@@ -1125,28 +1299,35 @@ async function restoreBackup({
     }
 
     if (serverData) {
+      await reportProgress(48, 'Restoring server settings');
       await restoreServerSettings(guild, serverData, channelIdMap);
     }
 
     if (hasEmojis) {
+      await reportProgress(56, 'Restoring emojis');
       await restoreEmojis(guild, emojisData);
     }
 
     if (hasStickers) {
+      await reportProgress(60, 'Restoring stickers');
       await restoreStickers(guild, stickersData);
     }
 
     if (hasWebhooks) {
+      await reportProgress(66, 'Restoring webhooks');
       await restoreWebhooks(guild, webhooksData, channelIdMap);
     }
 
+    let threadStateMap = new Map();
     if (hasThreads) {
+      await reportProgress(74, 'Restoring forum posts and threads');
       const forumTagMap = await buildForumTagMap(guild, channelsData, channelIdMap);
-      await restoreThreads(guild, threadsData, channelIdMap, { forumTagMap });
+      threadStateMap = await restoreThreads(guild, threadsData, channelIdMap, { forumTagMap });
     }
 
     let membersCache = null;
-    if (hasNicknames || hasRoleAssignments) {
+    if (hasNicknames || hasRoleAssignments || hasBots) {
+      await reportProgress(82, 'Loading members for role and nickname restore');
       membersCache = await guild.members.fetch().catch(() => null);
     }
 
@@ -1163,19 +1344,27 @@ async function restoreBackup({
     }
 
     if (options.restoreMessages) {
+      await reportProgress(90, 'Restoring messages');
       await restoreMessages({
         guild,
         backupDir,
         channelIdMap,
+        threadStateMap,
         maxPerChannel: options.maxMessagesPerChannel ?? 200
       });
     }
 
+    if (threadStateMap.size) {
+      await finalizeRestoredThreads(guild, threadStateMap);
+    }
+
     if (options.restoreBans && hasBans) {
+      await reportProgress(96, 'Restoring ban list');
       const bansData = await readJson(bansPath).catch(() => []);
       await restoreBans(guild, bansData);
     }
 
+    await reportProgress(100, 'Restore complete');
     await sendLog({
       discordClient,
       guildId: targetGuildId || guildId,
@@ -1188,6 +1377,7 @@ async function restoreBackup({
     });
     return { ok: true };
   } catch (err) {
+    await reportProgress(100, `Restore failed: ${String(err?.message || err)}`);
     await sendLog({
       discordClient,
       guildId: targetGuildId || guildId,

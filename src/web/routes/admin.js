@@ -51,6 +51,13 @@ const {
 } = require('../../services/discord/discordService');
 const { createBackup, deleteBackup, ensureBackupArchive } = require('../../services/backup/backupService');
 const { restoreBackup } = require('../../services/backup/restoreService');
+const {
+  createBackupOperation,
+  updateBackupOperation,
+  completeBackupOperation,
+  failBackupOperation,
+  getBackupOperation
+} = require('../../services/backup/backupOperationService');
 const { removeSchedule, upsertSchedule } = require('../../jobs/backupScheduler');
 const { reviewVerification } = require('../../services/verification/verificationService');
 const { sendLog } = require('../../services/discord/loggingService');
@@ -364,30 +371,60 @@ async function handleBackupRestore(req, res, backupId) {
     }
   }
 
-  const result = await restoreBackup({
-    discordClient: req.app.locals.discord.backup,
+  const operation = createBackupOperation({
     guildId,
-    backupId,
-    options: {
-      restoreMessages,
-      maxMessagesPerChannel: restoreMessages ? 200 : 0,
-      restoreBans,
-      wipe,
-      pruneChannels,
-      pruneRoles: pruneChannels,
-      targetGuildId: targetGuildId || guildId
-    }
+    action: 'restore',
+    label: targetGuildId && targetGuildId !== guildId ? `Restoring to ${targetGuildId}` : `Restoring ${backupId}`,
+    startedBy: adminDisplayName(req.adminUser)
   });
+  req.session.backupOperationId = operation.operationId;
 
-  if (!result.ok) {
-    setFlash(req, { type: 'danger', message: result.reason || 'Restore failed.' });
-  } else {
-    setFlash(req, {
-      type: 'success',
-      message:
-        targetGuildId && targetGuildId !== guildId ? `Restore complete to ${targetGuildId}.` : 'Restore complete.'
-    });
-  }
+  void (async () => {
+    try {
+      const result = await restoreBackup({
+        discordClient: req.app.locals.discord.backup,
+        guildId,
+        backupId,
+        options: {
+          restoreMessages,
+          maxMessagesPerChannel: restoreMessages ? 200 : 0,
+          restoreBans,
+          wipe,
+          pruneChannels,
+          pruneRoles: pruneChannels,
+          targetGuildId: targetGuildId || guildId,
+          onProgress: async ({ progress, message }) => {
+            await Promise.resolve(
+              updateBackupOperation(operation.operationId, {
+                progress,
+                message
+              })
+            );
+          }
+        }
+      });
+
+      if (!result.ok) {
+        failBackupOperation(operation.operationId, {
+          message: result.reason || 'Restore failed.',
+          error: result.reason || 'Restore failed.'
+        });
+        return;
+      }
+
+      completeBackupOperation(operation.operationId, {
+        message:
+          targetGuildId && targetGuildId !== guildId ? `Restore complete to ${targetGuildId}.` : 'Restore complete.'
+      });
+    } catch (err) {
+      failBackupOperation(operation.operationId, {
+        message: 'Restore failed.',
+        error: String(err?.message || err || 'Restore failed')
+      });
+    }
+  })();
+
+  setFlash(req, { type: 'info', message: 'Restore started. Watch the progress card below.' });
   return res.redirect('/admin/backups');
 }
 
@@ -1358,6 +1395,13 @@ router.post('/servers/:guildId/approvals/:botKey/:action', requireAdmin, async (
 
   const discord = req.app.locals.discord;
   const presence = { ...(cfg.bots || {}), ...(await resolvePresenceFromClients(discord, guildId)) };
+  if (!presence?.[botKey]) {
+    setFlash(req, {
+      type: 'warning',
+      message: 'That bot is not currently in the server, so approval actions are unavailable.'
+    });
+    return res.redirect(`/admin/servers/${guildId}/approvals`);
+  }
 
   const now = new Date();
   const status = action === 'approve' ? 'approved' : 'rejected';
@@ -2260,6 +2304,11 @@ router.post('/economy/users/exp-all', requireAdmin, requireGuild, async (req, re
 // Backups
 router.get('/backups', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
+  const activeOperationId = String(req.session.backupOperationId || '').trim();
+  const activeOperation = activeOperationId ? getBackupOperation(activeOperationId) : null;
+  if (activeOperation && activeOperation.guildId !== guildId) {
+    delete req.session.backupOperationId;
+  }
   const [cfg, backups, schedules, channels] = await Promise.all([
     getOrCreateGuildConfig(guildId),
     Backup.find({ guildId }).sort({ createdAt: -1 }).limit(50),
@@ -2297,7 +2346,8 @@ router.get('/backups', requireAdmin, requireGuild, async (req, res) => {
     schedules: labeledSchedules,
     channels,
     cfg,
-    flash
+    flash,
+    activeOperation: activeOperation && activeOperation.guildId === guildId ? activeOperation : null
   });
 });
 
@@ -2310,17 +2360,57 @@ router.post('/backups/create', requireAdmin, requireGuild, async (req, res) => {
   const normalized = types.length ? types : ['full'];
   const effectiveTypes = normalized.includes('full') ? ['full'] : normalized;
   const archive = Boolean(req.body.archive);
-  for (const type of effectiveTypes) {
-    // eslint-disable-next-line no-await-in-loop
-    await createBackup({
-      discordClient: req.app.locals.discord.backup,
-      guildId,
-      type,
-      name,
-      createdBy: req.adminUser.email,
-      options: { archive }
-    });
-  }
+  const operation = createBackupOperation({
+    guildId,
+    action: 'create',
+    label: effectiveTypes.length > 1 ? `Creating ${effectiveTypes.length} backups` : `Creating ${effectiveTypes[0] || 'backup'} backup`,
+    startedBy: adminDisplayName(req.adminUser)
+  });
+  req.session.backupOperationId = operation.operationId;
+
+  void (async () => {
+    try {
+      for (const [index, type] of effectiveTypes.entries()) {
+        // eslint-disable-next-line no-await-in-loop
+        await createBackup({
+          discordClient: req.app.locals.discord.backup,
+          guildId,
+          type,
+          name,
+          createdBy: req.adminUser.email,
+          options: {
+            archive,
+            onProgress: async ({ progress, message }) => {
+              const overall = Math.round(((index + Number(progress || 0) / 100) / effectiveTypes.length) * 100);
+              await Promise.resolve(
+                updateBackupOperation(operation.operationId, {
+                  progress: overall,
+                  message:
+                    effectiveTypes.length > 1
+                      ? `${String(type).toUpperCase()} ${index + 1}/${effectiveTypes.length}: ${message}`
+                      : message
+                })
+              );
+            }
+          }
+        });
+      }
+
+      completeBackupOperation(operation.operationId, {
+        message:
+          effectiveTypes.length > 1
+            ? `${effectiveTypes.length} backups created successfully.`
+            : 'Backup created successfully.'
+      });
+    } catch (err) {
+      failBackupOperation(operation.operationId, {
+        message: 'Backup creation failed.',
+        error: String(err?.message || err || 'Backup creation failed')
+      });
+    }
+  })();
+
+  setFlash(req, { type: 'info', message: 'Backup creation started. Watch the progress card below.' });
   return res.redirect('/admin/backups');
 });
 
@@ -2410,6 +2500,16 @@ router.post('/backups/delete/:id', requireAdmin, requireGuild, async (req, res) 
   const id = req.params.id;
   await deleteBackup({ guildId, backupId: id });
   return res.redirect('/admin/backups');
+});
+
+router.get('/backups/operations/:id', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const operationId = String(req.params.id || '').trim();
+  const operation = getBackupOperation(operationId);
+  if (!operation || operation.guildId !== guildId) {
+    return res.status(404).json({ ok: false, reason: 'not_found' });
+  }
+  return res.json({ ok: true, operation });
 });
 
 router.get('/backups/download/:id', requireAdmin, requireGuild, async (req, res) => {

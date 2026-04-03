@@ -93,48 +93,52 @@
                     <td class="text-muted small"><%= b.status === 'absent' ? '—' : (formatDate(b.sanctionedAt) || '—') %></td>
                     <td class="text-muted small"><%= b.status === 'absent' ? '—' : (b.sanctionedBy || '—') %></td>
                     <td class="text-end">
-                      <div class="d-inline-flex gap-2">
-                        <% if (b.status !== 'approved') { %>
-                          <form method="post" action="/admin/servers/<%= guildId %>/approvals/<%= b.key %>/approve" class="d-inline">
-                            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                            <button class="btn btn-outline-success btn-sm icon-btn" type="submit" title="Approve" aria-label="Approve">
-                              ✓
-                            </button>
-                          </form>
-                        <% } %>
-                        <% if (b.status !== 'rejected') { %>
-                          <form method="post" action="/admin/servers/<%= guildId %>/approvals/<%= b.key %>/reject" class="d-inline">
+                      <% if (b.status === 'absent') { %>
+                        <span class="text-muted small">Bot not in server</span>
+                      <% } else { %>
+                        <div class="d-inline-flex gap-2">
+                          <% if (b.status !== 'approved') { %>
+                            <form method="post" action="/admin/servers/<%= guildId %>/approvals/<%= b.key %>/approve" class="d-inline">
+                              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                              <button class="btn btn-outline-success btn-sm icon-btn" type="submit" title="Approve" aria-label="Approve">
+                                ✓
+                              </button>
+                            </form>
+                          <% } %>
+                          <% if (b.status !== 'rejected') { %>
+                            <form method="post" action="/admin/servers/<%= guildId %>/approvals/<%= b.key %>/reject" class="d-inline">
+                              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                              <button
+                                class="btn btn-outline-danger btn-sm icon-btn"
+                                type="submit"
+                                title="Reject"
+                                aria-label="Reject"
+                                data-confirm="Reject this bot? It will stop working in this server."
+                                data-confirm-title="Reject bot?"
+                                data-confirm-ok="Reject"
+                                data-confirm-cancel="Cancel"
+                              >
+                                ✕
+                              </button>
+                            </form>
+                          <% } %>
+                          <form method="post" action="/admin/servers/<%= guildId %>/approvals/<%= b.key %>/delete" class="d-inline">
                             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                             <button
                               class="btn btn-outline-danger btn-sm icon-btn"
                               type="submit"
-                              title="Reject"
-                              aria-label="Reject"
-                              data-confirm="Reject this bot? It will stop working in this server."
-                              data-confirm-title="Reject bot?"
-                              data-confirm-ok="Reject"
+                              title="Delete"
+                              aria-label="Delete"
+                              data-confirm="Delete this bot from the server? This will also reject it."
+                              data-confirm-title="Delete bot?"
+                              data-confirm-ok="Delete"
                               data-confirm-cancel="Cancel"
                             >
-                              ✕
+                              🗑️
                             </button>
                           </form>
-                        <% } %>
-                        <form method="post" action="/admin/servers/<%= guildId %>/approvals/<%= b.key %>/delete" class="d-inline">
-                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                          <button
-                            class="btn btn-outline-danger btn-sm icon-btn"
-                            type="submit"
-                            title="Delete"
-                            aria-label="Delete"
-                            data-confirm="Delete this bot from the server? This will also reject it."
-                            data-confirm-title="Delete bot?"
-                            data-confirm-ok="Delete"
-                            data-confirm-cancel="Cancel"
-                          >
-                            🗑️
-                          </button>
-                        </form>
-                      </div>
+                        </div>
+                      <% } %>
                     </td>
                   </tr>
                 <% }) %>

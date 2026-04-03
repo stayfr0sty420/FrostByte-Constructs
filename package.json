@@ -20,6 +20,7 @@
   "dependencies": {
     "@discordjs/voice": "^0.16.1",
     "@simplewebauthn/server": "^9.0.3",
+    "adm-zip": "^0.5.17",
     "archiver": "^7.0.1",
     "bcryptjs": "^3.0.2",
     "bootstrap": "^5.3.3",

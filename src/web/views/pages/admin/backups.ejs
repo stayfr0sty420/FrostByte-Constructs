@@ -10,6 +10,48 @@
         <div class="alert alert-<%= flash.type %>"><%= flash.message %></div>
       <% } %>
 
+      <% if (activeOperation) { %>
+        <section
+          class="card shadow-sm mb-4"
+          id="backupOperationCard"
+          data-operation-id="<%= activeOperation.operationId %>"
+          data-status="<%= activeOperation.status %>"
+        >
+          <div class="card-body">
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+              <div>
+                <div class="text-uppercase text-muted small"><%= activeOperation.action === 'restore' ? 'Restore Progress' : 'Backup Progress' %></div>
+                <h2 class="h6 mb-1" id="backupOperationLabel"><%= activeOperation.label || 'Backup operation' %></h2>
+                <div class="text-muted small" id="backupOperationMessage"><%= activeOperation.message || 'Queued' %></div>
+              </div>
+              <span
+                class="badge <%= activeOperation.status === 'completed' ? 'text-bg-success' : (activeOperation.status === 'failed' ? 'text-bg-danger' : 'text-bg-primary') %>"
+                id="backupOperationStatus"
+              >
+                <%= activeOperation.status %>
+              </span>
+            </div>
+
+            <div class="progress mb-2" role="progressbar" aria-label="Backup progress" aria-valuemin="0" aria-valuemax="100">
+              <div
+                class="progress-bar <%= activeOperation.status === 'completed' ? 'bg-success' : (activeOperation.status === 'failed' ? 'bg-danger' : 'bg-primary') %>"
+                id="backupOperationBar"
+                style="width: <%= Math.max(0, Math.min(100, Number(activeOperation.progress || 0))) %>%"
+              >
+                <span id="backupOperationPercent"><%= Math.max(0, Math.min(100, Number(activeOperation.progress || 0))) %>%</span>
+              </div>
+            </div>
+
+            <div class="small text-muted" id="backupOperationMeta">
+              Started <%= formatDate(activeOperation.startedAt) || 'just now' %>
+              <% if (activeOperation.error) { %>
+                · <span class="text-danger"><%= activeOperation.error %></span>
+              <% } %>
+            </div>
+          </div>
+        </section>
+      <% } %>
+
       <% const channelNameById = new Map((channels || []).map((c) => [c.id, c.name])); %>
 
       <section class="backup-hero">
@@ -411,6 +453,75 @@
 
         ensureAtLeastOneChecked(createForm, 'type[]', 'Select at least one backup type before creating a backup.');
         ensureAtLeastOneChecked(scheduleForm, 'types[]', 'Select at least one backup type before saving an automated backup schedule.');
+      })();
+
+      (() => {
+        const card = document.getElementById('backupOperationCard');
+        if (!card) return;
+
+        const operationId = card.dataset.operationId;
+        const statusEl = document.getElementById('backupOperationStatus');
+        const labelEl = document.getElementById('backupOperationLabel');
+        const messageEl = document.getElementById('backupOperationMessage');
+        const barEl = document.getElementById('backupOperationBar');
+        const percentEl = document.getElementById('backupOperationPercent');
+        const metaEl = document.getElementById('backupOperationMeta');
+        let reloadScheduled = false;
+
+        const applyStatus = (status) => {
+          const normalized = String(status || 'running').toLowerCase();
+          statusEl.textContent = normalized;
+          statusEl.className = `badge ${normalized === 'completed' ? 'text-bg-success' : normalized === 'failed' ? 'text-bg-danger' : 'text-bg-primary'}`;
+          barEl.className = `progress-bar ${normalized === 'completed' ? 'bg-success' : normalized === 'failed' ? 'bg-danger' : 'bg-primary'}`;
+          card.dataset.status = normalized;
+        };
+
+        const updateOperation = (operation) => {
+          if (!operation) return;
+          if (labelEl && operation.label) labelEl.textContent = operation.label;
+          if (messageEl) messageEl.textContent = operation.message || 'Queued';
+          const progress = Math.max(0, Math.min(100, Number(operation.progress || 0)));
+          if (barEl) barEl.style.width = `${progress}%`;
+          if (percentEl) percentEl.textContent = `${progress}%`;
+          if (metaEl) {
+            const bits = [];
+            if (operation.startedAt) bits.push(`Started ${new Date(operation.startedAt).toLocaleString()}`);
+            if (operation.completedAt) bits.push(`Finished ${new Date(operation.completedAt).toLocaleString()}`);
+            if (operation.error) bits.push(operation.error);
+            metaEl.textContent = bits.join(' · ');
+          }
+          applyStatus(operation.status);
+        };
+
+        const poll = async () => {
+          try {
+            const response = await fetch(`/admin/backups/operations/${encodeURIComponent(operationId)}`, {
+              headers: { Accept: 'application/json' },
+              credentials: 'same-origin'
+            });
+            if (!response.ok) return;
+            const payload = await response.json();
+            if (!payload?.ok || !payload.operation) return;
+            updateOperation(payload.operation);
+
+            const status = String(payload.operation.status || '').toLowerCase();
+            if ((status === 'completed' || status === 'failed') && !reloadScheduled) {
+              reloadScheduled = true;
+              window.setTimeout(() => window.location.reload(), 1200);
+              return;
+            }
+
+            if (status === 'running') {
+              window.setTimeout(poll, 1500);
+            }
+          } catch (_error) {
+            window.setTimeout(poll, 2500);
+          }
+        };
+
+        if (card.dataset.status === 'running') {
+          window.setTimeout(poll, 1000);
+        }
       })();
     </script>
     <%- include('../../partials/footer') %>

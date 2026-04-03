@@ -520,6 +520,26 @@ async function reviewVerification({ discordClient, roleClients, guildId, verific
   await attempt.save();
 
   if (action === 'approve') {
+    await logIpVisit({
+      guildId,
+      discordId: attempt.discordId,
+      username: attempt.username || '',
+      email: attempt.email || '',
+      ip: attempt.observedIp || attempt.ip || attempt.publicIp || '',
+      userAgent: attempt.userAgent || '',
+      verified: true,
+      ...(attempt.publicIp ? { publicIp: attempt.publicIp } : {}),
+      ...(attempt.ipGeo ? { ipGeo: attempt.ipGeo } : {}),
+      ...(attempt.geo ? { geo: attempt.geo } : {})
+    }).catch(() => null);
+
+    const verifiedUpdate = {
+      username: attempt.username || '',
+      verifiedAt: new Date()
+    };
+    if (attempt.email) verifiedUpdate.email = attempt.email;
+    await IpLog.updateMany({ guildId, discordId: attempt.discordId }, { $set: verifiedUpdate }).catch(() => null);
+
     const roleClientList = roleClients || discordClient;
     const roleResult = await applyVerifiedRoles(roleClientList, guildId, attempt.discordId).catch((err) => ({
       ok: false,

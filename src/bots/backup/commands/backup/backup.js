@@ -98,13 +98,18 @@ module.exports = {
       const name = interaction.options.getString('name') || '';
       const archive = Boolean(interaction.options.getBoolean('archive'));
       await interaction.deferReply({ ephemeral: true });
+      const progressReply = async ({ progress, message }) => {
+        await interaction.editReply({
+          content: `⏳ ${Math.max(0, Math.min(100, Number(progress || 0)))}% • ${message || 'Working...'}`
+        }).catch(() => null);
+      };
       const result = await createBackup({
         discordClient: client,
         guildId,
         type,
         name,
         createdBy: interaction.user.id,
-        options: { archive }
+        options: { archive, onProgress: progressReply }
       });
       return await interaction.editReply({ content: `✅ Backup created: \`${result.backupId}\`` });
     }
@@ -173,6 +178,11 @@ module.exports = {
         }
       }
       await interaction.deferReply({ ephemeral: true });
+      const progressReply = async ({ progress, message }) => {
+        await interaction.editReply({
+          content: `⏳ ${Math.max(0, Math.min(100, Number(progress || 0)))}% • ${message || 'Restoring backup...'}`
+        }).catch(() => null);
+      };
       const result = await restoreBackup({
         discordClient: client,
         guildId,
@@ -184,7 +194,8 @@ module.exports = {
           restoreBans,
           pruneChannels,
           pruneRoles: pruneChannels,
-          targetGuildId: targetGuildId || guildId
+          targetGuildId: targetGuildId || guildId,
+          onProgress: progressReply
         }
       });
       if (!result.ok) return await interaction.editReply({ content: result.reason || 'Restore failed.' });

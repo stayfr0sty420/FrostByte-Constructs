@@ -2,6 +2,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const archiver = require('archiver');
 const { createWriteStream } = require('fs');
+const { ChannelType } = require('discord.js');
 const { nanoid } = require('nanoid');
 const Backup = require('../../db/models/Backup');
 const GuildConfig = require('../../db/models/GuildConfig');
@@ -21,6 +22,7 @@ const VALID_BACKUP_TYPES = new Set([
   'nicknames',
   'bots'
 ]);
+const FORUM_LIKE_TYPES = new Set([ChannelType.GuildForum, ChannelType.GuildMedia].filter((value) => Number.isFinite(value)));
 
 function backupsRoot() {
   return path.join(process.cwd(), 'backups');
@@ -316,6 +318,31 @@ function serializeRole(role) {
   };
 }
 
+function serializeForumTag(tag) {
+  if (!tag || typeof tag !== 'object') return null;
+  const emoji = tag.emoji && typeof tag.emoji === 'object' ? tag.emoji : null;
+  const name = String(tag.name || '').trim();
+  if (!name) return null;
+  return {
+    id: String(tag.id || '').trim(),
+    name,
+    moderated: Boolean(tag.moderated),
+    ...(emoji?.id ? { emojiId: String(emoji.id) } : {}),
+    ...(emoji?.name ? { emojiName: String(emoji.name) } : {})
+  };
+}
+
+function serializeDefaultReactionEmoji(value) {
+  if (!value || typeof value !== 'object') return null;
+  const emojiId = String(value.emojiId || value.id || '').trim();
+  const emojiName = String(value.emojiName || value.name || '').trim();
+  if (!emojiId && !emojiName) return null;
+  return {
+    ...(emojiId ? { emojiId } : {}),
+    ...(emojiName ? { emojiName } : {})
+  };
+}
+
 function serializeChannel(channel, sortIndex = 0) {
   return {
     id: channel.id,
@@ -332,8 +359,8 @@ function serializeChannel(channel, sortIndex = 0) {
     rtcRegion: channel.rtcRegion ?? null,
     videoQualityMode: channel.videoQualityMode ?? null,
     permissionOverwrites: serializeOverwrites(channel),
-    availableTags: channel.availableTags || [],
-    defaultReactionEmoji: channel.defaultReactionEmoji || null,
+    availableTags: Array.isArray(channel.availableTags) ? channel.availableTags.map((tag) => serializeForumTag(tag)).filter(Boolean) : [],
+    defaultReactionEmoji: serializeDefaultReactionEmoji(channel.defaultReactionEmoji),
     defaultSortOrder: channel.defaultSortOrder ?? null,
     defaultForumLayout: channel.defaultForumLayout ?? null,
     defaultThreadRateLimitPerUser: channel.defaultThreadRateLimitPerUser ?? null,
@@ -341,8 +368,10 @@ function serializeChannel(channel, sortIndex = 0) {
   };
 }
 
-async function collectThreadsFromChannels(channels) {
+async function collectThreadsFromChannels(channels, { includeMessages = false, messageLimit = 1000 } = {}) {
   const threads = [];
+  const threadMessages = {};
+  const seenThreadIds = new Set();
   for (const ch of channels) {
     if (!ch?.isTextBased?.()) continue;
     if (!ch.threads) continue;
@@ -355,10 +384,14 @@ async function collectThreadsFromChannels(channels) {
       ...(archivedPrivate?.threads?.values?.() ? Array.from(archivedPrivate.threads.values()) : [])
     ];
     for (const t of all) {
+      if (!t?.id || seenThreadIds.has(t.id)) continue;
+      seenThreadIds.add(t.id);
+      const starterMessage = await t.fetchStarterMessage?.().catch(() => null);
       threads.push({
         id: t.id,
         name: t.name,
         parentId: t.parentId,
+        parentType: ch.type,
         archived: t.archived,
         locked: t.locked,
         type: t.type,
@@ -366,11 +399,26 @@ async function collectThreadsFromChannels(channels) {
         createdTimestamp: t.createdTimestamp,
         appliedTags: Array.isArray(t.appliedTags) ? t.appliedTags : [],
         invitable: typeof t.invitable === 'boolean' ? t.invitable : null,
-        rateLimitPerUser: t.rateLimitPerUser ?? null
+        rateLimitPerUser: t.rateLimitPerUser ?? null,
+        ownerId: String(t.ownerId || '').trim(),
+        messageCount: Number.isFinite(Number(t.messageCount)) ? Number(t.messageCount) : null,
+        memberCount: Number.isFinite(Number(t.memberCount)) ? Number(t.memberCount) : null,
+        starterMessageId: starterMessage?.id || '',
+        starterMessage: starterMessage ? serializeMessage(starterMessage) : null
       });
+
+      if (includeMessages && messageLimit > 0 && t?.messages?.fetch) {
+        const msgs = await fetchMessages(t, messageLimit).catch(() => []);
+        const serialized = msgs.map((m) => serializeMessage(m));
+        if (starterMessage?.id && !serialized.some((message) => message.id === starterMessage.id)) {
+          serialized.push(serializeMessage(starterMessage));
+          serialized.sort((a, b) => Number(a.createdTimestamp || 0) - Number(b.createdTimestamp || 0));
+        }
+        threadMessages[t.id] = serialized;
+      }
     }
   }
-  return threads;
+  return { threads, threadMessages };
 }
 
 function serializeMessage(m) {
@@ -474,8 +522,16 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
     data.channels = channels.map((channel, index) => serializeChannel(channel, index));
   }
 
+  let threadBundle = { threads: [], threadMessages: {} };
+  if (options.includeThreads || options.includeMessages) {
+    threadBundle = await collectThreadsFromChannels(channels, {
+      includeMessages: options.includeMessages,
+      messageLimit
+    });
+  }
+
   if (options.includeThreads) {
-    data.threads = await collectThreadsFromChannels(channels);
+    data.threads = threadBundle.threads;
   }
 
   if (options.includeMessages) {
@@ -486,6 +542,10 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
         if (!('messages' in ch)) continue;
         const msgs = await fetchMessages(ch, messageLimit).catch(() => []);
         messageBackups[ch.id] = msgs.map((m) => serializeMessage(m));
+      }
+
+      for (const [threadId, msgs] of Object.entries(threadBundle.threadMessages || {})) {
+        messageBackups[threadId] = Array.isArray(msgs) ? msgs : [];
       }
     }
     data.messages = messageBackups;
@@ -616,6 +676,16 @@ async function createBackup({
   const messageLimit = Math.max(0, Math.floor(options.messageLimit || 1000));
   const scheduleId = String(options.scheduleId || '').trim();
   const source = String(options.source || '').trim();
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+
+  const reportProgress = async (progress, message) => {
+    if (!onProgress) return;
+    await onProgress({
+      phase: 'create',
+      progress: Math.max(0, Math.min(100, Math.floor(Number(progress) || 0))),
+      message: String(message || '').trim()
+    }).catch(() => null);
+  };
 
   const backupId = nanoid(12);
   const ts = timestampSlug(new Date());
@@ -648,12 +718,14 @@ async function createBackup({
     channelId: options.channelId,
     content: `🔄 Backup started: **${name || backupType}** (ID: \`${backupId}\`)`
   });
+  await reportProgress(5, `Starting ${backupType} backup`);
   await sendBackupLog({
     discordClient,
     guildId,
     channelId: options.channelId,
     content: `⏳ Backup progress 25%: collecting data for **${backupType}**`
   });
+  await reportProgress(25, `Collecting ${backupType} data`);
 
   try {
     const guild = await discordClient.guilds.fetch(guildId);
@@ -693,6 +765,7 @@ async function createBackup({
       channelId: options.channelId,
       content: `⏳ Backup progress 50%: files written`
     });
+    await reportProgress(50, 'Writing backup files');
 
     await zipDirectory(dir, zipPath);
     const zipStats = await fs.stat(zipPath).catch(() => null);
@@ -704,6 +777,7 @@ async function createBackup({
       channelId: options.channelId,
       content: `⏳ Backup progress 75%: compressed archive ready`
     });
+    await reportProgress(75, 'Compressing archive');
 
     const stats = buildStats(data);
     await Backup.updateOne(
@@ -733,6 +807,7 @@ async function createBackup({
       channelId: options.channelId,
       content: `✅ Backup complete: **${name || backupType}** (ID: \`${backupId}\`) • ${sizeMb}`
     });
+    await reportProgress(100, `Backup complete (${sizeMb})`);
 
     return { ok: true, backupId, dir, zipPath, size };
   } catch (err) {
@@ -743,6 +818,7 @@ async function createBackup({
       channelId: options.channelId,
       content: `❌ Backup failed (ID: \`${backupId}\`): ${String(err?.message || err)}`
     });
+    await reportProgress(100, `Backup failed: ${String(err?.message || err)}`);
     throw err;
   }
 }
