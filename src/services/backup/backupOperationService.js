@@ -124,6 +124,27 @@ function getBackupOperation(operationId) {
   return cloneOperation(operations.get(key) || null);
 }
 
+function getRunningBackupOperationByGuild(guildId) {
+  cleanupOperations();
+  const targetGuildId = String(guildId || '').trim();
+  if (!targetGuildId) return null;
+
+  let activeOperation = null;
+  let activeUpdatedAt = 0;
+  for (const operation of operations.values()) {
+    if (String(operation?.guildId || '').trim() !== targetGuildId) continue;
+    if (String(operation?.status || '').trim().toLowerCase() !== 'running') continue;
+
+    const updatedAt = operation?.updatedAt ? new Date(operation.updatedAt).getTime() : 0;
+    if (!activeOperation || updatedAt >= activeUpdatedAt) {
+      activeOperation = operation;
+      activeUpdatedAt = updatedAt;
+    }
+  }
+
+  return cloneOperation(activeOperation);
+}
+
 function subscribeBackupOperation(operationId, listener) {
   const key = String(operationId || '').trim();
   if (!key || typeof listener !== 'function') return () => {};
@@ -139,5 +160,6 @@ module.exports = {
   completeBackupOperation,
   failBackupOperation,
   getBackupOperation,
+  getRunningBackupOperationByGuild,
   subscribeBackupOperation
 };

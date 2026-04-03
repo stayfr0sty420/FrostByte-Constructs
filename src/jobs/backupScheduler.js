@@ -7,6 +7,7 @@ const Backup = require('../db/models/Backup');
 const { isGuildApproved } = require('../services/admin/guildRegistryService');
 
 const tasks = new Map(); // scheduleId -> cron task
+const runningSchedules = new Set();
 
 function stopSchedule(scheduleId) {
   const task = tasks.get(scheduleId);
@@ -14,6 +15,7 @@ function stopSchedule(scheduleId) {
     task.stop();
     tasks.delete(scheduleId);
   }
+  runningSchedules.delete(String(scheduleId || '').trim());
 }
 
 async function scheduleOne({ discordClient, schedule }) {
@@ -39,6 +41,13 @@ async function scheduleOne({ discordClient, schedule }) {
   }
 
   const task = cron.schedule(cronExpr, async () => {
+    const scheduleId = String(schedule.scheduleId || '').trim();
+    if (runningSchedules.has(scheduleId)) {
+      logger.warn({ scheduleId, guildId: schedule.guildId }, 'Skipping scheduled backup because a prior run is still active');
+      return;
+    }
+    runningSchedules.add(scheduleId);
+
     try {
       const approved = await isGuildApproved(schedule.guildId, 'backup');
       if (!approved) {
@@ -47,11 +56,12 @@ async function scheduleOne({ discordClient, schedule }) {
       }
 
       if (schedule.replacePrevious) {
-        const previous = await Backup.findOne({
+        const previousBackups = await Backup.find({
           guildId: schedule.guildId,
           'metadata.scheduleId': schedule.scheduleId
         }).sort({ createdAt: -1 });
-        if (previous) {
+        for (const previous of previousBackups) {
+          // eslint-disable-next-line no-await-in-loop
           await deleteBackup({ guildId: schedule.guildId, backupId: previous.backupId }).catch(() => null);
         }
       }
@@ -70,6 +80,8 @@ async function scheduleOne({ discordClient, schedule }) {
       });
     } catch (err) {
       logger.error({ err, scheduleId: schedule.scheduleId }, 'Scheduled backup failed');
+    } finally {
+      runningSchedules.delete(scheduleId);
     }
   });
   task.start();

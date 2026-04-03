@@ -57,6 +57,7 @@ const {
   completeBackupOperation,
   failBackupOperation,
   getBackupOperation,
+  getRunningBackupOperationByGuild,
   subscribeBackupOperation
 } = require('../../services/backup/backupOperationService');
 const { removeSchedule, upsertSchedule } = require('../../jobs/backupScheduler');
@@ -351,9 +352,16 @@ async function upsertVerificationPanel({ discordClient, guildId, cfg, baseUrl = 
 async function handleBackupRestore(req, res, backupId) {
   const guildId = req.session.activeGuildId;
   const wantsJson = wantsJsonResponse(req);
+  const backupClient = req.app.locals.discord.backup;
   if (!backupId) {
     if (wantsJson) return res.status(400).json({ ok: false, reason: 'Backup ID is required.' });
     setFlash(req, { type: 'danger', message: 'Backup ID is required.' });
+    return res.redirect('/admin/backups');
+  }
+
+  if (!backupClient?.guilds) {
+    if (wantsJson) return res.status(503).json({ ok: false, reason: 'Backup bot is not connected right now.' });
+    setFlash(req, { type: 'danger', message: 'Backup bot is not connected right now.' });
     return res.redirect('/admin/backups');
   }
 
@@ -370,7 +378,7 @@ async function handleBackupRestore(req, res, backupId) {
   const targetGuildId = String(req.body.targetGuildId || '').trim();
 
   if (targetGuildId && targetGuildId !== guildId) {
-    const targetGuild = await req.app.locals.discord.backup.guilds.fetch(targetGuildId).catch(() => null);
+    const targetGuild = await backupClient.guilds.fetch(targetGuildId).catch(() => null);
     if (!targetGuild) {
       if (wantsJson) {
         return res.status(400).json({
@@ -386,6 +394,21 @@ async function handleBackupRestore(req, res, backupId) {
     }
   }
 
+  const runningOperation = getRunningBackupOperationByGuild(guildId);
+  if (runningOperation) {
+    req.session.backupOperationId = runningOperation.operationId;
+    if (wantsJson) {
+      return res.status(409).json({
+        ok: false,
+        reason: 'already_running',
+        message: 'Another backup or restore is already running for this server.',
+        operation: runningOperation
+      });
+    }
+    setFlash(req, { type: 'warning', message: 'Another backup or restore is already running for this server.' });
+    return res.redirect('/admin/backups');
+  }
+
   const operation = createBackupOperation({
     guildId,
     action: 'restore',
@@ -397,7 +420,7 @@ async function handleBackupRestore(req, res, backupId) {
   void (async () => {
     try {
       const result = await restoreBackup({
-        discordClient: req.app.locals.discord.backup,
+        discordClient: backupClient,
         guildId,
         backupId,
         options: {
@@ -2380,6 +2403,7 @@ router.get('/backups', requireAdmin, requireGuild, async (req, res) => {
 router.post('/backups/create', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
   const wantsJson = wantsJsonResponse(req);
+  const backupClient = req.app.locals.discord.backup;
   const name = String(req.body.name || '').trim();
   const rawTypeValue = req.body.type || req.body.types || req.body['type[]'] || req.body['types[]'] || 'full';
   const rawTypes = Array.isArray(rawTypeValue) ? rawTypeValue : [rawTypeValue];
@@ -2387,6 +2411,27 @@ router.post('/backups/create', requireAdmin, requireGuild, async (req, res) => {
   const normalized = types.length ? types : ['full'];
   const effectiveTypes = normalized.includes('full') ? ['full'] : normalized;
   const archive = Boolean(req.body.archive);
+  if (!backupClient?.guilds) {
+    if (wantsJson) return res.status(503).json({ ok: false, reason: 'Backup bot is not connected right now.' });
+    setFlash(req, { type: 'danger', message: 'Backup bot is not connected right now.' });
+    return res.redirect('/admin/backups');
+  }
+
+  const runningOperation = getRunningBackupOperationByGuild(guildId);
+  if (runningOperation) {
+    req.session.backupOperationId = runningOperation.operationId;
+    if (wantsJson) {
+      return res.status(409).json({
+        ok: false,
+        reason: 'already_running',
+        message: 'Another backup or restore is already running for this server.',
+        operation: runningOperation
+      });
+    }
+    setFlash(req, { type: 'warning', message: 'Another backup or restore is already running for this server.' });
+    return res.redirect('/admin/backups');
+  }
+
   const operation = createBackupOperation({
     guildId,
     action: 'create',
@@ -2400,7 +2445,7 @@ router.post('/backups/create', requireAdmin, requireGuild, async (req, res) => {
       for (const [index, type] of effectiveTypes.entries()) {
         // eslint-disable-next-line no-await-in-loop
         await createBackup({
-          discordClient: req.app.locals.discord.backup,
+          discordClient: backupClient,
           guildId,
           type,
           name,
@@ -2496,8 +2541,14 @@ router.post('/backups/schedules', requireAdmin, requireGuild, async (req, res) =
 });
 
 router.post('/backups/schedules/:id/delete', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
   const id = String(req.params.id || '').trim();
   if (!id) return res.redirect('/admin/backups');
+  const schedule = await BackupSchedule.findOne({ guildId, scheduleId: id }).select('scheduleId').lean().catch(() => null);
+  if (!schedule) {
+    setFlash(req, { type: 'warning', message: 'Schedule not found.' });
+    return res.redirect('/admin/backups');
+  }
   await removeSchedule({ scheduleId: id });
   setFlash(req, { type: 'info', message: 'Schedule removed.' });
   return res.redirect('/admin/backups');
@@ -2539,7 +2590,7 @@ router.get('/backups/operations/:id', requireAdmin, requireGuild, async (req, re
   if (!operation || operation.guildId !== guildId) {
     return res.status(404).json({ ok: false, reason: 'not_found' });
   }
-  return res.json({ ok: true, operation });
+  return res.json({ ok: true, operation, serverTime: new Date().toISOString() });
 });
 
 router.get('/backups/operations/:id/stream', requireAdmin, requireGuild, async (req, res) => {
@@ -2562,10 +2613,10 @@ router.get('/backups/operations/:id/stream', requireAdmin, requireGuild, async (
     res.flush?.();
   };
 
-  sendEvent({ ok: true, operation });
+  sendEvent({ ok: true, operation, serverTime: new Date().toISOString() });
 
   const unsubscribe = subscribeBackupOperation(operationId, (nextOperation) => {
-    sendEvent({ ok: true, operation: nextOperation });
+    sendEvent({ ok: true, operation: nextOperation, serverTime: new Date().toISOString() });
     const status = String(nextOperation?.status || '').toLowerCase();
     if (status === 'completed' || status === 'failed') {
       clearInterval(heartbeat);
@@ -2578,9 +2629,15 @@ router.get('/backups/operations/:id/stream', requireAdmin, requireGuild, async (
 
   const heartbeat = setInterval(() => {
     if (res.writableEnded) return;
-    res.write(': keep-alive\n\n');
-    res.flush?.();
-  }, 15000);
+    const nextOperation = getBackupOperation(operationId);
+    if (!nextOperation || nextOperation.guildId !== guildId) return;
+    sendEvent({
+      ok: true,
+      operation: nextOperation,
+      heartbeat: true,
+      serverTime: new Date().toISOString()
+    });
+  }, 5000);
 
   req.on('close', () => {
     clearInterval(heartbeat);

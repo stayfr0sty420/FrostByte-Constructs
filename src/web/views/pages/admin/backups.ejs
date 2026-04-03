@@ -12,25 +12,39 @@
 
       <div id="backupOperationMount">
         <% if (activeOperation) { %>
+          <% const activeOperationStatus = String(activeOperation.status || '').toLowerCase(); %>
           <section
-            class="card shadow-sm mb-4"
+            class="card shadow-sm mb-4 backup-operation-card"
             id="backupOperationCard"
             data-operation-id="<%= activeOperation.operationId %>"
             data-status="<%= activeOperation.status %>"
           >
             <div class="card-body">
-              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-                <div>
-                  <div class="text-uppercase text-muted small"><%= activeOperation.action === 'restore' ? 'Restore Progress' : 'Backup Progress' %></div>
+              <div class="backup-operation-head mb-3">
+                <div class="backup-operation-copy">
+                  <div class="text-uppercase text-muted small" id="backupOperationEyebrow"><%= activeOperation.action === 'restore' ? 'Restore Progress' : 'Backup Progress' %></div>
                   <h2 class="h6 mb-1" id="backupOperationLabel"><%= activeOperation.label || 'Backup operation' %></h2>
                   <div class="text-muted small" id="backupOperationMessage"><%= activeOperation.message || 'Queued' %></div>
                 </div>
-                <span
-                  class="badge <%= activeOperation.status === 'completed' ? 'text-bg-success' : (activeOperation.status === 'failed' ? 'text-bg-danger' : 'text-bg-primary') %>"
-                  id="backupOperationStatus"
-                >
-                  <%= activeOperation.status %>
-                </span>
+                <div class="backup-operation-badges">
+                  <span
+                    class="backup-operation-live <%= activeOperationStatus === 'completed' ? 'is-done' : (activeOperationStatus === 'failed' ? 'is-failed' : 'is-connecting') %>"
+                    id="backupOperationLiveState"
+                  >
+                    <span class="backup-operation-live__dot"></span>
+                    <span id="backupOperationLiveLabel"><%= activeOperationStatus === 'completed' ? 'DONE' : (activeOperationStatus === 'failed' ? 'FAILED' : 'CONNECTING') %></span>
+                  </span>
+                  <span
+                    class="badge <%= activeOperationStatus === 'completed' ? 'text-bg-success' : (activeOperationStatus === 'failed' ? 'text-bg-danger' : 'text-bg-primary') %>"
+                    id="backupOperationStatus"
+                  >
+                    <%= activeOperation.status %>
+                  </span>
+                </div>
+              </div>
+
+              <div class="backup-operation-health small" id="backupOperationHealth">
+                <%= activeOperationStatus === 'completed' ? 'Operation finished successfully.' : (activeOperationStatus === 'failed' ? 'Operation stopped. Review the details below.' : 'Opening live updates…') %>
               </div>
 
               <div class="progress mb-2" role="progressbar" aria-label="Backup progress" aria-valuemin="0" aria-valuemax="100">
@@ -45,14 +59,21 @@
 
               <div class="small text-muted" id="backupOperationMeta">
                 Started <%= formatDate(activeOperation.startedAt) || 'just now' %>
+                <% if (activeOperation.updatedAt && activeOperationStatus === 'running') { %>
+                  · Updated <%= formatDate(activeOperation.updatedAt) %>
+                <% } %>
+                <% if (activeOperation.completedAt) { %>
+                  · Finished <%= formatDate(activeOperation.completedAt) %>
+                <% } %>
                 <% if (activeOperation.error) { %>
-                  · <span class="text-danger"><%= activeOperation.error %></span>
+                  · <%= activeOperation.error %>
                 <% } %>
               </div>
             </div>
           </section>
         <% } %>
       </div>
+      <script id="backupOperationInitialData" type="application/json"><%- JSON.stringify(activeOperation || null).replace(/</g, '\\u003c') %></script>
 
       <% const channelNameById = new Map((channels || []).map((c) => [c.id, c.name])); %>
 
@@ -380,18 +401,27 @@
                 </tr>
               </thead>
               <tbody>
+                <% if (!backups.length) { %>
+                  <tr>
+                    <td colspan="9" class="text-muted small">No backups found yet. Create one above to get started.</td>
+                  </tr>
+                <% } %>
                 <% backups.forEach(b => { %>
                   <tr>
                     <td data-label="ID"><code><%= b.backupId %></code></td>
-                    <td data-label="Name"><%= b.name || b.type %></td>
-                    <td data-label="Type"><%= b.type %></td>
-                    <td data-label="Status"><%= b.status %></td>
-                    <td data-label="Size" class="text-muted small"><%= b.size ? (b.size / (1024 * 1024)).toFixed(2) + ' MB' : '0 MB' %></td>
-                    <td data-label="Archived"><%= b.archived ? 'yes' : 'no' %></td>
+                    <td data-label="Name"><span class="backup-cell-text"><%= b.name || b.type %></span></td>
+                    <td data-label="Type"><span class="backup-cell-text"><%= b.type %></span></td>
+                    <td data-label="Status">
+                      <span class="badge backup-status-badge <%= b.status === 'completed' ? 'text-bg-success' : (b.status === 'failed' ? 'text-bg-danger' : 'text-bg-warning') %>">
+                        <%= b.status %>
+                      </span>
+                    </td>
+                    <td data-label="Size" class="text-muted small"><span class="backup-cell-text"><%= b.size ? (b.size / (1024 * 1024)).toFixed(2) + ' MB' : '0 MB' %></span></td>
+                    <td data-label="Archived"><span class="backup-cell-text"><%= b.archived ? 'yes' : 'no' %></span></td>
                     <td data-label="Source">
                       <span class="badge <%= b.source === 'automated' ? 'text-bg-primary' : 'text-bg-secondary' %>"><%= b.source %></span>
                     </td>
-                    <td data-label="Created" class="text-muted small"><%= formatDate(b.createdAt) || '—' %></td>
+                    <td data-label="Created" class="text-muted small"><span class="backup-cell-text"><%= formatDate(b.createdAt) || '—' %></span></td>
                     <td data-label="Actions" class="text-end">
                       <div class="backup-actions">
                         <a class="btn btn-outline-secondary btn-sm icon-btn" href="/admin/backups/download/<%= b.backupId %>" title="Download" aria-label="Download">⬇️</a>
@@ -459,14 +489,28 @@
 
       (() => {
         const mount = document.getElementById('backupOperationMount');
+        const initialOperationEl = document.getElementById('backupOperationInitialData');
         const createForm = document.querySelector('form[action="/admin/backups/create"]');
         const restoreForms = Array.from(document.querySelectorAll('form[action="/admin/backups/restore"], form[action^="/admin/backups/restore/"]'));
         if (!mount) return;
+
+        let initialOperation = null;
+        try {
+          initialOperation = JSON.parse(initialOperationEl?.textContent || 'null');
+        } catch (_error) {
+          initialOperation = null;
+        }
 
         let stream = null;
         let pollTimer = null;
         let reloadScheduled = false;
         let activeOperationId = '';
+        let liveTicker = null;
+        let currentOperation = initialOperation && typeof initialOperation === 'object' ? initialOperation : null;
+        let lastContactAt = 0;
+        let transportMode = '';
+        let connectionState =
+          currentOperation && String(currentOperation.status || '').toLowerCase() === 'running' ? 'connecting' : 'idle';
 
         const escapeHtml = (value) =>
           String(value || '')
@@ -483,10 +527,142 @@
           return 'primary';
         };
 
-        const formatTimestamp = (value, prefix) => {
+        const formatTimestamp = (value, prefix = '') => {
           const date = value ? new Date(value) : null;
           if (!date || Number.isNaN(date.getTime())) return '';
-          return `${prefix} ${date.toLocaleString()}`;
+          return prefix ? `${prefix} ${date.toLocaleString()}` : date.toLocaleString();
+        };
+
+        const timestampToMs = (value) => {
+          if (!value) return 0;
+          if (typeof value === 'number' && Number.isFinite(value)) return value;
+          const date = new Date(value);
+          return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+        };
+
+        const formatDurationMs = (value) => {
+          const ms = Math.max(0, Number(value) || 0);
+          const totalSeconds = Math.floor(ms / 1000);
+          const hours = Math.floor(totalSeconds / 3600);
+          const minutes = Math.floor((totalSeconds % 3600) / 60);
+          const seconds = totalSeconds % 60;
+
+          if (hours) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+          if (minutes) return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
+          return `${seconds}s`;
+        };
+
+        const formatDuration = (startValue, endValue = Date.now()) => {
+          const startMs = timestampToMs(startValue);
+          const endMs = timestampToMs(endValue) || Date.now();
+          if (!startMs) return '';
+          return formatDurationMs(Math.max(0, endMs - startMs));
+        };
+
+        const formatRelative = (value) => {
+          const timestamp = timestampToMs(value);
+          if (!timestamp) return '';
+          const diff = Math.max(0, Date.now() - timestamp);
+          if (diff < 2000) return 'just now';
+          if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
+          if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+          if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+          return `${Math.floor(diff / 86_400_000)}d ago`;
+        };
+
+        const ensureLiveTicker = () => {
+          if (liveTicker) return;
+          liveTicker = window.setInterval(() => {
+            renderOperationHealth();
+          }, 1000);
+        };
+
+        const setConnectionState = (nextState, { mode = '', touchAt = 0 } = {}) => {
+          connectionState = String(nextState || '').trim() || 'idle';
+          if (mode) transportMode = mode;
+          const contactMs = timestampToMs(touchAt);
+          if (contactMs) lastContactAt = contactMs;
+          renderOperationHealth();
+        };
+
+        const touchConnection = (mode = '', value = Date.now()) => {
+          transportMode = mode || transportMode || 'stream';
+          connectionState = 'live';
+          lastContactAt = timestampToMs(value) || Date.now();
+          renderOperationHealth();
+        };
+
+        const renderOperationHealth = () => {
+          const liveStateEl = document.getElementById('backupOperationLiveState');
+          const liveLabelEl = document.getElementById('backupOperationLiveLabel');
+          const healthEl = document.getElementById('backupOperationHealth');
+          const metaEl = document.getElementById('backupOperationMeta');
+          if (!healthEl || !metaEl || !currentOperation) return;
+
+          const normalizedStatus = String(currentOperation.status || 'running').toLowerCase();
+          const startedAt = formatTimestamp(currentOperation.startedAt, 'Started');
+          const updatedAt = formatTimestamp(currentOperation.updatedAt, 'Updated');
+          const finishedAt = formatTimestamp(currentOperation.completedAt, 'Finished');
+          const elapsed = currentOperation.startedAt
+            ? formatDuration(
+                currentOperation.startedAt,
+                normalizedStatus === 'completed' || normalizedStatus === 'failed'
+                  ? currentOperation.completedAt || Date.now()
+                  : Date.now()
+              )
+            : '';
+          const lastProgress = formatRelative(currentOperation.updatedAt);
+          const lastPing = formatRelative(lastContactAt);
+          const sincePingMs = lastContactAt ? Math.max(0, Date.now() - lastContactAt) : Infinity;
+          const healthBits = [];
+          const metaBits = [];
+          let liveClass = 'backup-operation-live is-idle';
+          let liveLabel = 'IDLE';
+
+          if (normalizedStatus === 'completed') {
+            liveClass = 'backup-operation-live is-done';
+            liveLabel = 'DONE';
+            if (currentOperation.completedAt) healthBits.push(`Finished ${formatRelative(currentOperation.completedAt)}`);
+            if (elapsed) healthBits.push(`elapsed ${elapsed}`);
+          } else if (normalizedStatus === 'failed') {
+            liveClass = 'backup-operation-live is-failed';
+            liveLabel = 'FAILED';
+            healthBits.push('Operation stopped');
+            if (elapsed) healthBits.push(`after ${elapsed}`);
+          } else if (connectionState === 'connecting') {
+            liveClass = 'backup-operation-live is-connecting';
+            liveLabel = 'CONNECTING';
+            healthBits.push('Opening live updates...');
+            if (elapsed) healthBits.push(`elapsed ${elapsed}`);
+          } else if (connectionState === 'reconnecting') {
+            liveClass = 'backup-operation-live is-waiting';
+            liveLabel = 'RECONNECTING';
+            healthBits.push('Connection dropped, retrying...');
+            if (lastPing) healthBits.push(`last ping ${lastPing}`);
+            if (elapsed) healthBits.push(`elapsed ${elapsed}`);
+          } else if (sincePingMs > 15000) {
+            liveClass = 'backup-operation-live is-stale';
+            liveLabel = 'STALLED';
+            healthBits.push(`No server heartbeat for ${formatDurationMs(sincePingMs)}`);
+            if (elapsed) healthBits.push(`elapsed ${elapsed}`);
+          } else {
+            liveClass = `backup-operation-live ${transportMode === 'poll' ? 'is-polling' : 'is-live'}`;
+            liveLabel = 'LIVE';
+            healthBits.push(transportMode === 'poll' ? 'Live via polling' : 'Live via stream');
+            if (lastPing) healthBits.push(`last ping ${lastPing}`);
+            if (lastProgress) healthBits.push(`last progress ${lastProgress}`);
+            if (elapsed) healthBits.push(`elapsed ${elapsed}`);
+          }
+
+          if (startedAt) metaBits.push(startedAt);
+          if (normalizedStatus === 'running' && updatedAt) metaBits.push(updatedAt);
+          if ((normalizedStatus === 'completed' || normalizedStatus === 'failed') && finishedAt) metaBits.push(finishedAt);
+          if (currentOperation.error) metaBits.push(currentOperation.error);
+
+          if (liveStateEl) liveStateEl.className = liveClass;
+          if (liveLabelEl) liveLabelEl.textContent = liveLabel;
+          healthEl.textContent = healthBits.join(' · ');
+          metaEl.textContent = metaBits.join(' · ');
         };
 
         const ensureCard = (operation = {}) => {
@@ -494,16 +670,24 @@
           if (card) return card;
 
           mount.innerHTML = `
-            <section class="card shadow-sm mb-4" id="backupOperationCard" data-operation-id="${escapeHtml(operation.operationId || '')}" data-status="${escapeHtml(operation.status || 'running')}">
+            <section class="card shadow-sm mb-4 backup-operation-card" id="backupOperationCard" data-operation-id="${escapeHtml(operation.operationId || '')}" data-status="${escapeHtml(operation.status || 'running')}">
               <div class="card-body">
-                <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-                  <div>
+                <div class="backup-operation-head mb-3">
+                  <div class="backup-operation-copy">
                     <div class="text-uppercase text-muted small" id="backupOperationEyebrow">${escapeHtml(operation.action === 'restore' ? 'Restore Progress' : 'Backup Progress')}</div>
                     <h2 class="h6 mb-1" id="backupOperationLabel">${escapeHtml(operation.label || 'Preparing backup operation')}</h2>
                     <div class="text-muted small" id="backupOperationMessage">${escapeHtml(operation.message || 'Waiting for server response...')}</div>
                   </div>
-                  <span class="badge text-bg-${statusClass(operation.status)}" id="backupOperationStatus">${escapeHtml(operation.status || 'running')}</span>
+                  <div class="backup-operation-badges">
+                    <span class="backup-operation-live is-connecting" id="backupOperationLiveState">
+                      <span class="backup-operation-live__dot"></span>
+                      <span id="backupOperationLiveLabel">CONNECTING</span>
+                    </span>
+                    <span class="badge text-bg-${statusClass(operation.status)}" id="backupOperationStatus">${escapeHtml(operation.status || 'running')}</span>
+                  </div>
                 </div>
+
+                <div class="backup-operation-health small" id="backupOperationHealth">Opening live updates...</div>
 
                 <div class="progress mb-2" role="progressbar" aria-label="Backup progress" aria-valuemin="0" aria-valuemax="100">
                   <div class="progress-bar bg-${statusClass(operation.status)}" id="backupOperationBar" style="width: ${Math.max(0, Math.min(100, Number(operation.progress || 0)))}%">
@@ -541,11 +725,13 @@
         const scheduleReload = () => {
           if (reloadScheduled) return;
           reloadScheduled = true;
-          window.setTimeout(() => window.location.reload(), 1400);
+          window.setTimeout(() => window.location.reload(), 2500);
         };
 
-        const updateOperationCard = (operation) => {
+        const updateOperationCard = (operation, { source = '', contactAt = 0, touch = true } = {}) => {
           if (!operation) return;
+          currentOperation = operation;
+          ensureLiveTicker();
           const card = ensureCard(operation);
           const eyebrowEl = document.getElementById('backupOperationEyebrow');
           const labelEl = document.getElementById('backupOperationLabel');
@@ -553,7 +739,6 @@
           const statusEl = document.getElementById('backupOperationStatus');
           const barEl = document.getElementById('backupOperationBar');
           const percentEl = document.getElementById('backupOperationPercent');
-          const metaEl = document.getElementById('backupOperationMeta');
           const normalizedStatus = String(operation.status || 'running').toLowerCase();
           const progress = Math.max(0, Math.min(100, Number(operation.progress || 0)));
           const flavor = statusClass(normalizedStatus);
@@ -573,20 +758,27 @@
             barEl.style.width = `${progress}%`;
           }
           if (percentEl) percentEl.textContent = `${progress}%`;
-          if (metaEl) {
-            const bits = [];
-            const startedAt = formatTimestamp(operation.startedAt, 'Started');
-            const completedAt = formatTimestamp(operation.completedAt, 'Finished');
-            if (startedAt) bits.push(startedAt);
-            if (completedAt) bits.push(completedAt);
-            if (operation.error) bits.push(operation.error);
-            metaEl.textContent = bits.join(' · ');
+
+          if (touch) {
+            if (normalizedStatus === 'running') {
+              touchConnection(source || transportMode || 'stream', contactAt || operation.updatedAt || Date.now());
+            } else if (contactAt) {
+              lastContactAt = timestampToMs(contactAt) || lastContactAt;
+            }
           }
 
+          if (normalizedStatus === 'completed' || normalizedStatus === 'failed') {
+            connectionState = 'settled';
+          }
+
+          renderOperationHealth();
           setControlsDisabled(normalizedStatus === 'running');
-          if ((normalizedStatus === 'completed' || normalizedStatus === 'failed') && activeOperationId) {
+          if (normalizedStatus === 'completed' && activeOperationId) {
             closeLiveUpdates();
             scheduleReload();
+          }
+          if (normalizedStatus === 'failed') {
+            closeLiveUpdates();
           }
         };
 
@@ -600,11 +792,15 @@
             if (!response.ok) throw new Error('poll_failed');
             const payload = await response.json();
             if (!payload?.ok || !payload.operation) throw new Error('invalid_payload');
-            updateOperationCard(payload.operation);
+            updateOperationCard(payload.operation, {
+              source: 'poll',
+              contactAt: payload.serverTime || Date.now()
+            });
             if (String(payload.operation.status || '').toLowerCase() === 'running') {
               pollTimer = window.setTimeout(() => pollOperation(operationId), 600);
             }
           } catch (_error) {
+            setConnectionState('reconnecting', { mode: 'poll' });
             pollTimer = window.setTimeout(() => pollOperation(operationId), 1200);
           }
         };
@@ -613,24 +809,33 @@
           if (!operationId) return;
           closeLiveUpdates();
           activeOperationId = operationId;
+          setConnectionState('connecting', { mode: 'stream' });
 
           if (typeof window.EventSource !== 'function') {
+            setConnectionState('reconnecting', { mode: 'poll' });
             pollOperation(operationId);
             return;
           }
 
           stream = new window.EventSource(`/admin/backups/operations/${encodeURIComponent(operationId)}/stream`);
+          stream.onopen = () => {
+            touchConnection('stream');
+          };
           stream.onmessage = (event) => {
             try {
               const payload = JSON.parse(event.data || '{}');
               if (!payload?.ok || !payload.operation) return;
-              updateOperationCard(payload.operation);
+              updateOperationCard(payload.operation, {
+                source: 'stream',
+                contactAt: payload.serverTime || Date.now()
+              });
             } catch (_error) {
               // ignore malformed events
             }
           };
           stream.onerror = () => {
             closeLiveUpdates();
+            setConnectionState('reconnecting', { mode: 'poll' });
             pollOperation(operationId);
           };
         };
@@ -652,7 +857,8 @@
             message: 'Contacting server...',
             startedAt: new Date().toISOString(),
             operationId: ''
-          });
+          }, { touch: false });
+          setConnectionState('connecting', { mode: 'stream' });
 
           try {
             const formData = new window.FormData(form);
@@ -668,11 +874,22 @@
             });
 
             const payload = await response.json().catch(() => null);
+            if (payload?.reason === 'already_running' && payload?.operation) {
+              updateOperationCard(payload.operation, {
+                source: 'stream',
+                touch: false
+              });
+              subscribeToOperation(payload.operation.operationId);
+              return;
+            }
             if (!response.ok || !payload?.ok || !payload.operation) {
               throw new Error(payload?.reason || 'Request failed.');
             }
 
-            updateOperationCard(payload.operation);
+            updateOperationCard(payload.operation, {
+              source: 'stream',
+              touch: false
+            });
             subscribeToOperation(payload.operation.operationId);
           } catch (error) {
             updateOperationCard({
@@ -684,7 +901,7 @@
               error: String(error?.message || error || 'Request failed.'),
               startedAt: new Date().toISOString(),
               completedAt: new Date().toISOString()
-            });
+            }, { touch: false });
           }
         };
 
@@ -706,9 +923,14 @@
         if (existingCard) {
           const existingStatus = String(existingCard.dataset.status || '').toLowerCase();
           const existingId = String(existingCard.dataset.operationId || '').trim();
+          if (initialOperation) {
+            updateOperationCard(initialOperation, { touch: false });
+          }
           setControlsDisabled(existingStatus === 'running');
           if (existingStatus === 'running' && existingId) {
             subscribeToOperation(existingId);
+          } else {
+            renderOperationHealth();
           }
         }
       })();

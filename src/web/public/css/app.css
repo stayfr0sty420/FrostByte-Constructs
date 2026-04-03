@@ -3258,8 +3258,159 @@ code {
   color: rgba(239, 68, 68, 0.85);
 }
 
+.backup-operation-card {
+  overflow: hidden;
+  border-color: rgba(239, 68, 68, 0.26);
+  background:
+    radial-gradient(520px 180px at 100% 0%, rgba(225, 29, 72, 0.14), transparent 60%),
+    linear-gradient(180deg, rgba(18, 7, 12, 0.96), rgba(10, 4, 8, 0.94));
+}
+
+.backup-operation-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.backup-operation-copy {
+  min-width: 0;
+}
+
+.backup-operation-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.backup-operation-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 32px;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(248, 250, 252, 0.9);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.backup-operation-live__dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 0 currentColor;
+  animation: backupOperationPulse 1.5s ease-out infinite;
+}
+
+.backup-operation-live.is-live,
+.backup-operation-live.is-polling {
+  color: #5eead4;
+  border-color: rgba(45, 212, 191, 0.34);
+  background: rgba(13, 44, 39, 0.42);
+}
+
+.backup-operation-live.is-connecting,
+.backup-operation-live.is-waiting {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.34);
+  background: rgba(62, 34, 8, 0.4);
+}
+
+.backup-operation-live.is-stale,
+.backup-operation-live.is-failed {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.32);
+  background: rgba(69, 18, 26, 0.36);
+}
+
+.backup-operation-live.is-done {
+  color: #86efac;
+  border-color: rgba(74, 222, 128, 0.3);
+  background: rgba(14, 46, 28, 0.36);
+}
+
+.backup-operation-health {
+  margin-bottom: 0.8rem;
+  color: rgba(255, 228, 230, 0.82);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.backup-operation-card .progress {
+  height: 1rem;
+  overflow: hidden;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.backup-operation-card .progress-bar {
+  min-width: 2.5rem;
+  font-weight: 700;
+  transition: width 0.35s ease;
+}
+
+.backup-operation-card .progress-bar span {
+  padding-inline: 0.55rem;
+  font-size: 0.76rem;
+  line-height: 1.2;
+}
+
+@keyframes backupOperationPulse {
+  0% {
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
 .backup-table-card {
   margin-bottom: 1rem;
+}
+
+.backups-table {
+  margin-bottom: 0;
+}
+
+.backups-table td,
+.backups-table th {
+  min-width: 0;
+}
+
+.backups-table td {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.backups-table td code,
+.backups-table td .badge,
+.backups-table td .backup-cell-text {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.backups-table td code,
+.backups-table td .backup-cell-text {
+  align-items: flex-start;
+}
+
+.backup-status-badge {
+  text-transform: capitalize;
 }
 
 .backup-actions {
@@ -3282,6 +3433,15 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .backup-operation-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .backup-operation-badges {
+    justify-content: space-between;
+  }
+
   .backup-actions {
     justify-content: flex-start;
   }
@@ -3293,16 +3453,22 @@ code {
   .backups-table tbody tr {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 0.35rem;
-    padding: 0.75rem 0;
+    gap: 0.65rem;
+    padding: 1rem;
+    margin-bottom: 0.9rem;
+    border-radius: 18px;
+    background: rgba(12, 5, 8, 0.72);
+    border: 1px solid rgba(239, 68, 68, 0.16);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
   }
 
   .backups-table tbody td {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    text-align: right;
-    padding: 0.35rem 0.5rem;
+    display: grid;
+    gap: 0.28rem;
+    justify-items: start;
+    text-align: left;
+    padding: 0;
+    border: 0;
   }
 
   .backups-table tbody td::before {
@@ -3313,14 +3479,65 @@ code {
     color: rgba(229, 231, 235, 0.6);
   }
 
+  .backups-table tbody td > * {
+    min-width: 0;
+  }
+
+  .backups-table tbody td code,
+  .backups-table tbody td .badge,
+  .backups-table tbody td .backup-cell-text {
+    justify-self: start;
+  }
+
   .backups-table tbody td[data-label='Actions'] {
-    flex-direction: column;
-    align-items: flex-start;
-    text-align: left;
+    margin-top: 0.2rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
 
   .backups-table tbody td[data-label='Actions']::before {
+    content: 'Actions';
+  }
+
+  .backups-table tbody td[data-label='Actions'] .backup-actions {
+    width: 100%;
+  }
+
+  .backups-table tbody td[colspan] {
+    padding: 0.25rem 0;
+  }
+
+  .backups-table tbody td[colspan]::before {
     content: none;
+  }
+
+  .backups-table tbody tr:last-child {
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 768px) {
+  .backups-table tbody td[data-label='Created'] .backup-cell-text {
+    white-space: normal;
+  }
+
+  .backup-actions {
+    justify-content: stretch;
+  }
+
+  .backup-actions .btn,
+  .backup-actions form {
+    flex: 1 1 0;
+  }
+
+  .backup-actions form {
+    display: flex;
+  }
+
+  .backup-actions .icon-btn {
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
   }
 }
 
@@ -3333,9 +3550,32 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .backup-operation-card .card-body {
+    padding: 1rem;
+  }
+
+  .backup-operation-badges {
+    width: 100%;
+  }
+
+  .backup-operation-badges > * {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .backup-table-card .card-body {
+    padding: 1rem;
+  }
+
+  .backups-table tbody tr {
+    padding: 0.85rem;
+  }
+
   .backup-actions {
-    flex-direction: column;
-    align-items: stretch;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    align-items: flex-start;
+    gap: 0.5rem;
   }
 
   .backup-actions .btn {
