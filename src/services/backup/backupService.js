@@ -329,7 +329,7 @@ function buildTypeOptions(type) {
     return { includeServer: true, includeRoles: true, includeRoleAssignments: true };
   }
   if (t === 'messages') {
-    return { includeServer: true, includeChannels: true, includeMessages: true };
+    return { includeServer: true, includeChannels: true, includeThreads: true, includeMessages: true };
   }
   if (t === 'bans') {
     return { includeServer: true, includeBans: true };
@@ -484,9 +484,8 @@ async function collectThreadsFromChannels(channels, { includeMessages = false, m
         const serialized = msgs.map((m) => serializeMessage(m));
         if (starterMessage?.id && !serialized.some((message) => message.id === starterMessage.id)) {
           serialized.push(serializeMessage(starterMessage));
-          serialized.sort((a, b) => Number(a.createdTimestamp || 0) - Number(b.createdTimestamp || 0));
         }
-        threadMessages[t.id] = serialized;
+        threadMessages[t.id] = sortStoredMessages(serialized);
       }
     }
   }
@@ -511,6 +510,17 @@ function serializeMessage(m) {
         count: r.count || 0
       })) || []
   };
+}
+
+function sortStoredMessages(messages = []) {
+  return [...messages].sort((left, right) => {
+    const leftTimestamp = Number(left?.createdTimestamp || 0);
+    const rightTimestamp = Number(right?.createdTimestamp || 0);
+    if (leftTimestamp && rightTimestamp && leftTimestamp !== rightTimestamp) {
+      return leftTimestamp - rightTimestamp;
+    }
+    return String(left?.id || '').localeCompare(String(right?.id || ''));
+  });
 }
 
 async function collectGuildData(guild, options = {}, messageLimit = 1000) {
@@ -616,7 +626,7 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
     });
   }
 
-  if (options.includeThreads) {
+  if (options.includeThreads || options.includeMessages) {
     data.threads = threadBundle.threads;
   }
 
@@ -628,11 +638,11 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
         if (!ch?.isTextBased?.()) continue;
         if (!('messages' in ch)) continue;
         const msgs = await fetchMessages(ch, messageLimit).catch(() => []);
-        messageBackups[ch.id] = msgs.map((m) => serializeMessage(m));
+        messageBackups[ch.id] = sortStoredMessages(msgs.map((m) => serializeMessage(m)));
       }
 
       for (const [threadId, msgs] of Object.entries(threadBundle.threadMessages || {})) {
-        messageBackups[threadId] = Array.isArray(msgs) ? msgs : [];
+        messageBackups[threadId] = Array.isArray(msgs) ? sortStoredMessages(msgs) : [];
       }
     }
     data.messages = messageBackups;

@@ -365,7 +365,7 @@ async function handleBackupRestore(req, res, backupId) {
     return res.redirect('/admin/backups');
   }
 
-  const backupMeta = await Backup.findOne({ guildId, backupId }).select('type status').lean().catch(() => null);
+  const backupMeta = await Backup.findOne({ guildId, backupId }).select('name type status').lean().catch(() => null);
   const backupStatus = String(backupMeta?.status || '').trim().toLowerCase();
   if (!backupMeta) {
     if (wantsJson) return res.status(404).json({ ok: false, reason: 'Backup not found.' });
@@ -393,6 +393,9 @@ async function handleBackupRestore(req, res, backupId) {
   const pruneOpt = req.body.prune;
   const pruneChannels = typeof pruneOpt === 'undefined' ? true : Boolean(pruneOpt);
   const targetGuildId = String(req.body.targetGuildId || '').trim();
+  const sourceGuild = await fetchGuildFromClients(req.app.locals.discord, guildId).catch(() => null);
+  const sourceGuildName = String(sourceGuild?.name || res.locals.activeGuildName || guildId).trim() || guildId;
+  let targetGuildName = sourceGuildName;
 
   if (targetGuildId && targetGuildId !== guildId) {
     const targetGuild = await backupClient.guilds.fetch(targetGuildId).catch(() => null);
@@ -409,6 +412,7 @@ async function handleBackupRestore(req, res, backupId) {
       });
       return res.redirect('/admin/backups');
     }
+    targetGuildName = String(targetGuild.name || targetGuildId).trim() || targetGuildId;
   }
 
   const runningOperation = getRunningBackupOperationByGuild(guildId);
@@ -429,7 +433,10 @@ async function handleBackupRestore(req, res, backupId) {
   const operation = createBackupOperation({
     guildId,
     action: 'restore',
-    label: targetGuildId && targetGuildId !== guildId ? `Restoring to ${targetGuildId}` : `Restoring ${backupId}`,
+    label:
+      targetGuildId && targetGuildId !== guildId
+        ? `Restoring ${String(backupMeta?.name || backupMeta?.type || 'backup')} to ${targetGuildName}`
+        : `Restoring ${String(backupMeta?.name || backupMeta?.type || 'backup')} in ${sourceGuildName}`,
     startedBy: adminDisplayName(req.adminUser)
   });
   req.session.backupOperationId = operation.operationId;
@@ -2368,6 +2375,13 @@ router.get('/backups', requireAdmin, requireGuild, async (req, res) => {
     delete req.session.backupOperationId;
     activeOperation = null;
   }
+  if (!activeOperation) {
+    const runningOperation = getRunningBackupOperationByGuild(guildId);
+    if (runningOperation) {
+      req.session.backupOperationId = runningOperation.operationId;
+      activeOperation = runningOperation;
+    }
+  }
   if (activeOperation && ['completed', 'failed'].includes(String(activeOperation.status || '').toLowerCase())) {
     const completedAt = activeOperation.completedAt ? new Date(activeOperation.completedAt).getTime() : 0;
     if (completedAt && Date.now() - completedAt > 15000) {
@@ -2428,6 +2442,8 @@ router.post('/backups/create', requireAdmin, requireGuild, async (req, res) => {
   const normalized = types.length ? types : ['full'];
   const effectiveTypes = normalized.includes('full') ? ['full'] : normalized;
   const archive = Boolean(req.body.archive);
+  const sourceGuild = await fetchGuildFromClients(req.app.locals.discord, guildId).catch(() => null);
+  const sourceGuildName = String(sourceGuild?.name || res.locals.activeGuildName || guildId).trim() || guildId;
   if (!backupClient?.guilds) {
     if (wantsJson) return res.status(503).json({ ok: false, reason: 'Backup bot is not connected right now.' });
     setFlash(req, { type: 'danger', message: 'Backup bot is not connected right now.' });
@@ -2452,7 +2468,10 @@ router.post('/backups/create', requireAdmin, requireGuild, async (req, res) => {
   const operation = createBackupOperation({
     guildId,
     action: 'create',
-    label: effectiveTypes.length > 1 ? `Creating ${effectiveTypes.length} backups` : `Creating ${effectiveTypes[0] || 'backup'} backup`,
+    label:
+      effectiveTypes.length > 1
+        ? `Creating ${effectiveTypes.length} backups for ${sourceGuildName}`
+        : `Creating ${effectiveTypes[0] || 'backup'} backup for ${sourceGuildName}`,
     startedBy: adminDisplayName(req.adminUser)
   });
   req.session.backupOperationId = operation.operationId;

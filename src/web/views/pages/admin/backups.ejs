@@ -509,6 +509,7 @@
 
         let stream = null;
         let pollTimer = null;
+        let watchdogTimer = null;
         let reloadScheduled = false;
         let activeOperationId = '';
         let liveTicker = null;
@@ -574,6 +575,16 @@
           if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
           if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
           return `${Math.floor(diff / 86_400_000)}d ago`;
+        };
+
+        const operationVersionMs = (operation, fallback = 0) => {
+          if (!operation || typeof operation !== 'object') return timestampToMs(fallback);
+          return (
+            timestampToMs(operation.updatedAt) ||
+            timestampToMs(operation.completedAt) ||
+            timestampToMs(operation.startedAt) ||
+            timestampToMs(fallback)
+          );
         };
 
         const ensureLiveTicker = () => {
@@ -726,6 +737,10 @@
             window.clearTimeout(pollTimer);
             pollTimer = null;
           }
+          if (watchdogTimer) {
+            window.clearInterval(watchdogTimer);
+            watchdogTimer = null;
+          }
         };
 
         const scheduleReload = () => {
@@ -736,6 +751,26 @@
 
         const updateOperationCard = (operation, { source = '', contactAt = 0, touch = true } = {}) => {
           if (!operation) return;
+          const incomingOperationId = String(operation.operationId || '').trim();
+          const currentOperationId = String(currentOperation?.operationId || '').trim();
+          const incomingStatus = String(operation.status || 'running').toLowerCase();
+          const incomingProgress = Math.max(0, Math.min(100, Number(operation.progress || 0)));
+          const currentProgress = Math.max(0, Math.min(100, Number(currentOperation?.progress || 0)));
+          const incomingVersion = operationVersionMs(operation, contactAt);
+          const currentVersion = operationVersionMs(currentOperation);
+
+          if (
+            currentOperation &&
+            currentOperationId &&
+            incomingOperationId &&
+            currentOperationId === incomingOperationId &&
+            currentVersion &&
+            incomingVersion
+          ) {
+            if (incomingVersion < currentVersion) return;
+            if (incomingVersion === currentVersion && incomingStatus === 'running' && incomingProgress < currentProgress) return;
+          }
+
           currentOperation = operation;
           ensureLiveTicker();
           const card = ensureCard(operation);
@@ -745,8 +780,8 @@
           const statusEl = document.getElementById('backupOperationStatus');
           const barEl = document.getElementById('backupOperationBar');
           const percentEl = document.getElementById('backupOperationPercent');
-          const normalizedStatus = String(operation.status || 'running').toLowerCase();
-          const progress = Math.max(0, Math.min(100, Number(operation.progress || 0)));
+          const normalizedStatus = incomingStatus;
+          const progress = incomingProgress;
           const flavor = statusClass(normalizedStatus);
 
           activeOperationId = String(operation.operationId || '').trim();
@@ -788,7 +823,7 @@
           }
         };
 
-        const pollOperation = async (operationId) => {
+        const pollOperation = async (operationId, { repeat = false, suppressReconnect = false } = {}) => {
           if (!operationId) return;
           try {
             const response = await fetch(`/admin/backups/operations/${encodeURIComponent(operationId)}`, {
@@ -802,13 +837,37 @@
               source: 'poll',
               contactAt: payload.serverTime || Date.now()
             });
-            if (String(payload.operation.status || '').toLowerCase() === 'running') {
-              pollTimer = window.setTimeout(() => pollOperation(operationId), 600);
+            if (repeat && String(payload.operation.status || '').toLowerCase() === 'running') {
+              pollTimer = window.setTimeout(() => pollOperation(operationId, { repeat: true }), 900);
             }
           } catch (_error) {
-            setConnectionState('reconnecting', { mode: 'poll' });
-            pollTimer = window.setTimeout(() => pollOperation(operationId), 1200);
+            if (!suppressReconnect) {
+              setConnectionState('reconnecting', { mode: 'poll' });
+            }
+            if (repeat) {
+              pollTimer = window.setTimeout(() => pollOperation(operationId, { repeat: true }), 1500);
+            }
           }
+        };
+
+        const startWatchdog = (operationId) => {
+          if (watchdogTimer) {
+            window.clearInterval(watchdogTimer);
+            watchdogTimer = null;
+          }
+          if (!operationId) return;
+
+          watchdogTimer = window.setInterval(() => {
+            if (!activeOperationId || activeOperationId !== operationId) return;
+            if (String(currentOperation?.status || '').toLowerCase() !== 'running') return;
+
+            const silenceMs = lastContactAt ? Math.max(0, Date.now() - lastContactAt) : Infinity;
+            if (stream && silenceMs < 3500) return;
+
+            void pollOperation(operationId, {
+              suppressReconnect: Boolean(stream)
+            });
+          }, 1500);
         };
 
         const subscribeToOperation = (operationId) => {
@@ -819,10 +878,11 @@
 
           if (typeof window.EventSource !== 'function') {
             setConnectionState('reconnecting', { mode: 'poll' });
-            pollOperation(operationId);
+            pollOperation(operationId, { repeat: true });
             return;
           }
 
+          startWatchdog(operationId);
           stream = new window.EventSource(`/admin/backups/operations/${encodeURIComponent(operationId)}/stream`);
           stream.onopen = () => {
             touchConnection('stream');
@@ -842,7 +902,7 @@
           stream.onerror = () => {
             closeLiveUpdates();
             setConnectionState('reconnecting', { mode: 'poll' });
-            pollOperation(operationId);
+            pollOperation(operationId, { repeat: true });
           };
         };
 

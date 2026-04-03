@@ -367,18 +367,24 @@ function sanitizeForumTags(tags = []) {
     .map((tag) => ({
       name: String(tag?.name || '').trim(),
       moderated: Boolean(tag?.moderated),
-      ...(tag?.emojiId ? { emojiId: String(tag.emojiId) } : {}),
-      ...(tag?.emojiName ? { emojiName: String(tag.emojiName) } : {})
+      ...((tag?.emojiId || tag?.emojiName)
+        ? {
+            emoji: {
+              ...(tag?.emojiId ? { id: String(tag.emojiId) } : {}),
+              ...(tag?.emojiName ? { name: String(tag.emojiName) } : {})
+            }
+          }
+        : {})
     }))
     .filter((tag) => tag.name);
 }
 
 function normalizeReactionEmoji(value) {
   if (!value || typeof value !== 'object') return undefined;
-  const emojiId = String(value.emojiId || '').trim();
-  const emojiName = String(value.emojiName || '').trim();
+  const emojiId = String(value.emojiId || value.id || '').trim();
+  const emojiName = String(value.emojiName || value.name || '').trim();
   if (!emojiId && !emojiName) return undefined;
-  return { ...(emojiId ? { emojiId } : {}), ...(emojiName ? { emojiName } : {}) };
+  return { ...(emojiId ? { id: emojiId } : {}), ...(emojiName ? { name: emojiName } : {}) };
 }
 
 function channelSortValue(channelData) {
@@ -857,6 +863,15 @@ async function buildStoredMessagePayload(message, options = {}) {
   };
 }
 
+function compareStoredMessages(left, right) {
+  const leftTimestamp = Number(left?.createdTimestamp || 0);
+  const rightTimestamp = Number(right?.createdTimestamp || 0);
+  if (leftTimestamp && rightTimestamp && leftTimestamp !== rightTimestamp) {
+    return leftTimestamp - rightTimestamp;
+  }
+  return String(left?.id || '').localeCompare(String(right?.id || ''));
+}
+
 async function restoreThreads(guild, threadsData, channelIdMap = new Map(), options = {}) {
   const threadStateMap = new Map();
   if (!Array.isArray(threadsData) || !threadsData.length) return threadStateMap;
@@ -896,7 +911,11 @@ async function restoreThreads(guild, threadsData, channelIdMap = new Map(), opti
         });
         starterWasRestored = true;
       } else {
-        const threadType = Number.isFinite(Number(t?.type)) ? Number(t.type) : ChannelType.PrivateThread;
+        const threadType = Number.isFinite(Number(t?.type))
+          ? Number(t.type)
+          : parent.type === ChannelType.GuildAnnouncement
+            ? ChannelType.AnnouncementThread
+            : ChannelType.PublicThread;
         if (threadType === ChannelType.PrivateThread) {
           thread = await parent.threads.create({
             name,
@@ -910,7 +929,7 @@ async function restoreThreads(guild, threadsData, channelIdMap = new Map(), opti
             const sentStarter = await thread.send(starterPayload).catch(() => null);
             starterWasRestored = Boolean(sentStarter);
           }
-        } else {
+        } else if (parent.type === ChannelType.GuildAnnouncement) {
           const starter = await parent.send(starterPayload).catch(() => null);
           if (!starter) continue;
           thread = await parent.threads.create({
@@ -921,6 +940,18 @@ async function restoreThreads(guild, threadsData, channelIdMap = new Map(), opti
             reason: 'Restore from backup'
           });
           starterWasRestored = true;
+        } else {
+          thread = await parent.threads.create({
+            name,
+            autoArchiveDuration,
+            type: ChannelType.PublicThread,
+            rateLimitPerUser: t?.rateLimitPerUser ?? undefined,
+            reason: 'Restore from backup'
+          });
+          if (thread) {
+            const sentStarter = await thread.send(starterPayload).catch(() => null);
+            starterWasRestored = Boolean(sentStarter);
+          }
         }
       }
 
@@ -1071,6 +1102,8 @@ async function restoreRoleAssignments(guild, roleAssignments, roleIdMap = new Ma
 }
 
 async function restoreMessages({ guild, backupDir, channelIdMap, threadStateMap = new Map(), maxPerChannel = 1000, delayMs = 250 }) {
+  const safeMaxPerChannel = Math.max(0, Math.floor(Number(maxPerChannel) || 0));
+  if (!safeMaxPerChannel) return;
   const messagesDir = path.join(backupDir, 'messages');
   const entries = await fs.readdir(messagesDir).catch(() => []);
   const safeDelay = Math.max(0, Math.floor(delayMs || 0));
@@ -1090,13 +1123,15 @@ async function restoreMessages({ guild, backupDir, channelIdMap, threadStateMap 
 
     const data = await readJson(path.join(messagesDir, file)).catch(() => []);
     const skipMessageIds = new Set((threadState?.skipMessageIds || []).map((value) => String(value || '').trim()).filter(Boolean));
-    const msgs = Array.isArray(data)
+    const orderedMessages = Array.isArray(data)
       ? data
           .slice()
-          .reverse()
           .filter((message) => !skipMessageIds.has(String(message?.id || '').trim()))
-          .slice(0, maxPerChannel)
+          .sort(compareStoredMessages)
       : [];
+    const msgs = orderedMessages.length > safeMaxPerChannel
+      ? orderedMessages.slice(orderedMessages.length - safeMaxPerChannel)
+      : orderedMessages;
     if (!msgs.length) continue;
 
     const webhookTarget = channel.isThread?.() ? channel.parent : channel;
@@ -1118,23 +1153,33 @@ async function restoreMessages({ guild, backupDir, channelIdMap, threadStateMap 
 
     for (const m of msgs) {
       try {
-        const payload = await buildStoredMessagePayload(m, {
-          includeAuthorPrefix: !webhookClient,
-          fallbackContent: !webhookClient ? `**${normalizedRestoredAuthor(m)}**` : 'Restored message'
+        const directPayload = await buildStoredMessagePayload(m, {
+          includeAuthorPrefix: true,
+          fallbackContent: `**${normalizedRestoredAuthor(m)}**`
+        });
+        const webhookPayload = await buildStoredMessagePayload(m, {
+          fallbackContent: 'Restored message'
         });
         let sentMessage = null;
+        let webhookDelivered = false;
         if (webhookClient) {
-          const webhookSent = await webhookClient.send({
-            ...payload,
-            ...(threadId ? { threadId } : {}),
-            username: normalizedRestoredAuthor(m),
-            ...(m?.authorAvatarUrl ? { avatarURL: String(m.authorAvatarUrl).trim() } : {})
-          });
-          if (webhookSent?.id && typeof channel.messages?.fetch === 'function') {
-            sentMessage = await channel.messages.fetch(webhookSent.id).catch(() => null);
+          try {
+            const webhookSent = await webhookClient.send({
+              ...webhookPayload,
+              ...(threadId ? { threadId } : {}),
+              username: normalizedRestoredAuthor(m),
+              ...(m?.authorAvatarUrl ? { avatarURL: String(m.authorAvatarUrl).trim() } : {})
+            });
+            webhookDelivered = Boolean(webhookSent);
+            if (webhookSent?.id && typeof channel.messages?.fetch === 'function') {
+              sentMessage = await channel.messages.fetch(webhookSent.id).catch(() => null);
+            }
+          } catch {
+            webhookClient = null;
           }
-        } else {
-          sentMessage = await channel.send(payload);
+        }
+        if (!webhookDelivered) {
+          sentMessage = await channel.send(directPayload).catch(() => null);
         }
 
         if (sentMessage && Array.isArray(m.reactions) && m.reactions.length) {
@@ -1376,19 +1421,19 @@ async function restoreBackup({
       membersCache = await resolveMembersCollection(guild);
     }
 
-    if (hasRoleAssignments) {
-      await reportProgress(86, 'Restoring role assignments');
-      await restoreRoleAssignments(guild, roleAssignments, roleIdMap, membersCache);
-    }
-
     if (hasNicknames) {
-      await reportProgress(89, 'Restoring nicknames');
+      await reportProgress(86, 'Restoring nicknames');
       await restoreNicknames(guild, nicknamesData, membersCache);
     }
 
     if (hasBots) {
-      await reportProgress(92, 'Restoring bot roles and info');
+      await reportProgress(89, 'Restoring bot roles and info');
       await restoreBots(guild, botsData, roleIdMap, membersCache);
+    }
+
+    if (hasRoleAssignments) {
+      await reportProgress(92, 'Restoring role assignments');
+      await restoreRoleAssignments(guild, roleAssignments, roleIdMap, membersCache);
     }
 
     if (options.restoreMessages) {
