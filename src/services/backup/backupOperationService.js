@@ -1,7 +1,10 @@
 const { nanoid } = require('nanoid');
+const { EventEmitter } = require('events');
 
 const operations = new Map();
 const OPERATION_TTL_MS = 6 * 60 * 60 * 1000;
+const operationEvents = new EventEmitter();
+operationEvents.setMaxListeners(0);
 
 function cleanupOperations() {
   const now = Date.now();
@@ -16,6 +19,14 @@ function cleanupOperations() {
 function cloneOperation(operation) {
   if (!operation) return null;
   return JSON.parse(JSON.stringify(operation));
+}
+
+function emitOperationUpdate(operationId) {
+  const key = String(operationId || '').trim();
+  if (!key) return;
+  const operation = operations.get(key);
+  if (!operation) return;
+  operationEvents.emit(key, cloneOperation(operation));
 }
 
 function createBackupOperation({ guildId, action = 'create', label = '', startedBy = '' } = {}) {
@@ -37,6 +48,7 @@ function createBackupOperation({ guildId, action = 'create', label = '', started
     completedAt: null
   };
   operations.set(operation.operationId, operation);
+  emitOperationUpdate(operation.operationId);
   return cloneOperation(operation);
 }
 
@@ -63,6 +75,7 @@ function updateBackupOperation(operationId, updates = {}) {
   }
   operation.updatedAt = new Date().toISOString();
   operations.set(key, operation);
+  emitOperationUpdate(key);
   return cloneOperation(operation);
 }
 
@@ -81,6 +94,7 @@ function completeBackupOperation(operationId, { message = '', result = null } = 
   operation.updatedAt = now;
   operation.completedAt = now;
   operations.set(key, operation);
+  emitOperationUpdate(key);
   return cloneOperation(operation);
 }
 
@@ -99,6 +113,7 @@ function failBackupOperation(operationId, { message = '', error = '', result = n
   operation.updatedAt = now;
   operation.completedAt = now;
   operations.set(key, operation);
+  emitOperationUpdate(key);
   return cloneOperation(operation);
 }
 
@@ -109,10 +124,20 @@ function getBackupOperation(operationId) {
   return cloneOperation(operations.get(key) || null);
 }
 
+function subscribeBackupOperation(operationId, listener) {
+  const key = String(operationId || '').trim();
+  if (!key || typeof listener !== 'function') return () => {};
+  operationEvents.on(key, listener);
+  return () => {
+    operationEvents.off(key, listener);
+  };
+}
+
 module.exports = {
   createBackupOperation,
   updateBackupOperation,
   completeBackupOperation,
   failBackupOperation,
-  getBackupOperation
+  getBackupOperation,
+  subscribeBackupOperation
 };

@@ -56,7 +56,8 @@ const {
   updateBackupOperation,
   completeBackupOperation,
   failBackupOperation,
-  getBackupOperation
+  getBackupOperation,
+  subscribeBackupOperation
 } = require('../../services/backup/backupOperationService');
 const { removeSchedule, upsertSchedule } = require('../../jobs/backupScheduler');
 const { reviewVerification } = require('../../services/verification/verificationService');
@@ -108,6 +109,12 @@ function allBotsPresent(presence) {
 
 function setFlash(req, flash) {
   req.session.flash = flash;
+}
+
+function wantsJsonResponse(req) {
+  const accept = String(req.headers.accept || '').toLowerCase();
+  const requestedWith = String(req.headers['x-requested-with'] || '').toLowerCase();
+  return requestedWith === 'xmlhttprequest' || accept.includes('application/json');
 }
 
 async function logAccountAudit(req, { status = 'success', stage = 'account-update', reason = '' } = {}) {
@@ -343,7 +350,9 @@ async function upsertVerificationPanel({ discordClient, guildId, cfg, baseUrl = 
 
 async function handleBackupRestore(req, res, backupId) {
   const guildId = req.session.activeGuildId;
+  const wantsJson = wantsJsonResponse(req);
   if (!backupId) {
+    if (wantsJson) return res.status(400).json({ ok: false, reason: 'Backup ID is required.' });
     setFlash(req, { type: 'danger', message: 'Backup ID is required.' });
     return res.redirect('/admin/backups');
   }
@@ -363,6 +372,12 @@ async function handleBackupRestore(req, res, backupId) {
   if (targetGuildId && targetGuildId !== guildId) {
     const targetGuild = await req.app.locals.discord.backup.guilds.fetch(targetGuildId).catch(() => null);
     if (!targetGuild) {
+      if (wantsJson) {
+        return res.status(400).json({
+          ok: false,
+          reason: 'Target guild not found. Make sure the backup bot is in that server.'
+        });
+      }
       setFlash(req, {
         type: 'danger',
         message: 'Target guild not found. Make sure the backup bot is in that server.'
@@ -424,6 +439,9 @@ async function handleBackupRestore(req, res, backupId) {
     }
   })();
 
+  if (wantsJson) {
+    return res.json({ ok: true, operation });
+  }
   setFlash(req, { type: 'info', message: 'Restore started. Watch the progress card below.' });
   return res.redirect('/admin/backups');
 }
@@ -2305,9 +2323,17 @@ router.post('/economy/users/exp-all', requireAdmin, requireGuild, async (req, re
 router.get('/backups', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
   const activeOperationId = String(req.session.backupOperationId || '').trim();
-  const activeOperation = activeOperationId ? getBackupOperation(activeOperationId) : null;
+  let activeOperation = activeOperationId ? getBackupOperation(activeOperationId) : null;
   if (activeOperation && activeOperation.guildId !== guildId) {
     delete req.session.backupOperationId;
+    activeOperation = null;
+  }
+  if (activeOperation && ['completed', 'failed'].includes(String(activeOperation.status || '').toLowerCase())) {
+    const completedAt = activeOperation.completedAt ? new Date(activeOperation.completedAt).getTime() : 0;
+    if (completedAt && Date.now() - completedAt > 15000) {
+      delete req.session.backupOperationId;
+      activeOperation = null;
+    }
   }
   const [cfg, backups, schedules, channels] = await Promise.all([
     getOrCreateGuildConfig(guildId),
@@ -2353,6 +2379,7 @@ router.get('/backups', requireAdmin, requireGuild, async (req, res) => {
 
 router.post('/backups/create', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
+  const wantsJson = wantsJsonResponse(req);
   const name = String(req.body.name || '').trim();
   const rawTypeValue = req.body.type || req.body.types || req.body['type[]'] || req.body['types[]'] || 'full';
   const rawTypes = Array.isArray(rawTypeValue) ? rawTypeValue : [rawTypeValue];
@@ -2410,6 +2437,9 @@ router.post('/backups/create', requireAdmin, requireGuild, async (req, res) => {
     }
   })();
 
+  if (wantsJson) {
+    return res.json({ ok: true, operation });
+  }
   setFlash(req, { type: 'info', message: 'Backup creation started. Watch the progress card below.' });
   return res.redirect('/admin/backups');
 });
@@ -2510,6 +2540,52 @@ router.get('/backups/operations/:id', requireAdmin, requireGuild, async (req, re
     return res.status(404).json({ ok: false, reason: 'not_found' });
   }
   return res.json({ ok: true, operation });
+});
+
+router.get('/backups/operations/:id/stream', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const operationId = String(req.params.id || '').trim();
+  const operation = getBackupOperation(operationId);
+  if (!operation || operation.guildId !== guildId) {
+    return res.status(404).end();
+  }
+
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const sendEvent = (payload) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    res.flush?.();
+  };
+
+  sendEvent({ ok: true, operation });
+
+  const unsubscribe = subscribeBackupOperation(operationId, (nextOperation) => {
+    sendEvent({ ok: true, operation: nextOperation });
+    const status = String(nextOperation?.status || '').toLowerCase();
+    if (status === 'completed' || status === 'failed') {
+      clearInterval(heartbeat);
+      unsubscribe();
+      setTimeout(() => {
+        if (!res.writableEnded) res.end();
+      }, 1500);
+    }
+  });
+
+  const heartbeat = setInterval(() => {
+    if (res.writableEnded) return;
+    res.write(': keep-alive\n\n');
+    res.flush?.();
+  }, 15000);
+
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  });
 });
 
 router.get('/backups/download/:id', requireAdmin, requireGuild, async (req, res) => {

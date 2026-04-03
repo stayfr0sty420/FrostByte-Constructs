@@ -56,7 +56,20 @@ async function createWebApp({ economyClient, backupClient, verificationClient })
       }
     })
   );
-  app.use(compression());
+  app.use((req, _res, next) => {
+    if (/\/admin\/backups\/operations\/[^/]+\/stream$/i.test(String(req.path || ''))) {
+      req.headers['x-no-compression'] = '1';
+    }
+    next();
+  });
+  app.use(
+    compression({
+      filter: (req, res) => {
+        if (req.headers['x-no-compression']) return false;
+        return compression.filter(req, res);
+      }
+    })
+  );
   app.use(cookieParser());
 
   if (env.NODE_ENV !== 'production') app.use(morgan('dev'));

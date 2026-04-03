@@ -10,47 +10,49 @@
         <div class="alert alert-<%= flash.type %>"><%= flash.message %></div>
       <% } %>
 
-      <% if (activeOperation) { %>
-        <section
-          class="card shadow-sm mb-4"
-          id="backupOperationCard"
-          data-operation-id="<%= activeOperation.operationId %>"
-          data-status="<%= activeOperation.status %>"
-        >
-          <div class="card-body">
-            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-              <div>
-                <div class="text-uppercase text-muted small"><%= activeOperation.action === 'restore' ? 'Restore Progress' : 'Backup Progress' %></div>
-                <h2 class="h6 mb-1" id="backupOperationLabel"><%= activeOperation.label || 'Backup operation' %></h2>
-                <div class="text-muted small" id="backupOperationMessage"><%= activeOperation.message || 'Queued' %></div>
+      <div id="backupOperationMount">
+        <% if (activeOperation) { %>
+          <section
+            class="card shadow-sm mb-4"
+            id="backupOperationCard"
+            data-operation-id="<%= activeOperation.operationId %>"
+            data-status="<%= activeOperation.status %>"
+          >
+            <div class="card-body">
+              <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                <div>
+                  <div class="text-uppercase text-muted small"><%= activeOperation.action === 'restore' ? 'Restore Progress' : 'Backup Progress' %></div>
+                  <h2 class="h6 mb-1" id="backupOperationLabel"><%= activeOperation.label || 'Backup operation' %></h2>
+                  <div class="text-muted small" id="backupOperationMessage"><%= activeOperation.message || 'Queued' %></div>
+                </div>
+                <span
+                  class="badge <%= activeOperation.status === 'completed' ? 'text-bg-success' : (activeOperation.status === 'failed' ? 'text-bg-danger' : 'text-bg-primary') %>"
+                  id="backupOperationStatus"
+                >
+                  <%= activeOperation.status %>
+                </span>
               </div>
-              <span
-                class="badge <%= activeOperation.status === 'completed' ? 'text-bg-success' : (activeOperation.status === 'failed' ? 'text-bg-danger' : 'text-bg-primary') %>"
-                id="backupOperationStatus"
-              >
-                <%= activeOperation.status %>
-              </span>
-            </div>
 
-            <div class="progress mb-2" role="progressbar" aria-label="Backup progress" aria-valuemin="0" aria-valuemax="100">
-              <div
-                class="progress-bar <%= activeOperation.status === 'completed' ? 'bg-success' : (activeOperation.status === 'failed' ? 'bg-danger' : 'bg-primary') %>"
-                id="backupOperationBar"
-                style="width: <%= Math.max(0, Math.min(100, Number(activeOperation.progress || 0))) %>%"
-              >
-                <span id="backupOperationPercent"><%= Math.max(0, Math.min(100, Number(activeOperation.progress || 0))) %>%</span>
+              <div class="progress mb-2" role="progressbar" aria-label="Backup progress" aria-valuemin="0" aria-valuemax="100">
+                <div
+                  class="progress-bar <%= activeOperation.status === 'completed' ? 'bg-success' : (activeOperation.status === 'failed' ? 'bg-danger' : 'bg-primary') %>"
+                  id="backupOperationBar"
+                  style="width: <%= Math.max(0, Math.min(100, Number(activeOperation.progress || 0))) %>%"
+                >
+                  <span id="backupOperationPercent"><%= Math.max(0, Math.min(100, Number(activeOperation.progress || 0))) %>%</span>
+                </div>
+              </div>
+
+              <div class="small text-muted" id="backupOperationMeta">
+                Started <%= formatDate(activeOperation.startedAt) || 'just now' %>
+                <% if (activeOperation.error) { %>
+                  · <span class="text-danger"><%= activeOperation.error %></span>
+                <% } %>
               </div>
             </div>
-
-            <div class="small text-muted" id="backupOperationMeta">
-              Started <%= formatDate(activeOperation.startedAt) || 'just now' %>
-              <% if (activeOperation.error) { %>
-                · <span class="text-danger"><%= activeOperation.error %></span>
-              <% } %>
-            </div>
-          </div>
-        </section>
-      <% } %>
+          </section>
+        <% } %>
+      </div>
 
       <% const channelNameById = new Map((channels || []).map((c) => [c.id, c.name])); %>
 
@@ -456,71 +458,258 @@
       })();
 
       (() => {
-        const card = document.getElementById('backupOperationCard');
-        if (!card) return;
+        const mount = document.getElementById('backupOperationMount');
+        const createForm = document.querySelector('form[action="/admin/backups/create"]');
+        const restoreForms = Array.from(document.querySelectorAll('form[action="/admin/backups/restore"], form[action^="/admin/backups/restore/"]'));
+        if (!mount) return;
 
-        const operationId = card.dataset.operationId;
-        const statusEl = document.getElementById('backupOperationStatus');
-        const labelEl = document.getElementById('backupOperationLabel');
-        const messageEl = document.getElementById('backupOperationMessage');
-        const barEl = document.getElementById('backupOperationBar');
-        const percentEl = document.getElementById('backupOperationPercent');
-        const metaEl = document.getElementById('backupOperationMeta');
+        let stream = null;
+        let pollTimer = null;
         let reloadScheduled = false;
+        let activeOperationId = '';
 
-        const applyStatus = (status) => {
+        const escapeHtml = (value) =>
+          String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+
+        const statusClass = (status) => {
           const normalized = String(status || 'running').toLowerCase();
-          statusEl.textContent = normalized;
-          statusEl.className = `badge ${normalized === 'completed' ? 'text-bg-success' : normalized === 'failed' ? 'text-bg-danger' : 'text-bg-primary'}`;
-          barEl.className = `progress-bar ${normalized === 'completed' ? 'bg-success' : normalized === 'failed' ? 'bg-danger' : 'bg-primary'}`;
-          card.dataset.status = normalized;
+          if (normalized === 'completed') return 'success';
+          if (normalized === 'failed') return 'danger';
+          return 'primary';
         };
 
-        const updateOperation = (operation) => {
+        const formatTimestamp = (value, prefix) => {
+          const date = value ? new Date(value) : null;
+          if (!date || Number.isNaN(date.getTime())) return '';
+          return `${prefix} ${date.toLocaleString()}`;
+        };
+
+        const ensureCard = (operation = {}) => {
+          let card = document.getElementById('backupOperationCard');
+          if (card) return card;
+
+          mount.innerHTML = `
+            <section class="card shadow-sm mb-4" id="backupOperationCard" data-operation-id="${escapeHtml(operation.operationId || '')}" data-status="${escapeHtml(operation.status || 'running')}">
+              <div class="card-body">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                  <div>
+                    <div class="text-uppercase text-muted small" id="backupOperationEyebrow">${escapeHtml(operation.action === 'restore' ? 'Restore Progress' : 'Backup Progress')}</div>
+                    <h2 class="h6 mb-1" id="backupOperationLabel">${escapeHtml(operation.label || 'Preparing backup operation')}</h2>
+                    <div class="text-muted small" id="backupOperationMessage">${escapeHtml(operation.message || 'Waiting for server response...')}</div>
+                  </div>
+                  <span class="badge text-bg-${statusClass(operation.status)}" id="backupOperationStatus">${escapeHtml(operation.status || 'running')}</span>
+                </div>
+
+                <div class="progress mb-2" role="progressbar" aria-label="Backup progress" aria-valuemin="0" aria-valuemax="100">
+                  <div class="progress-bar bg-${statusClass(operation.status)}" id="backupOperationBar" style="width: ${Math.max(0, Math.min(100, Number(operation.progress || 0)))}%">
+                    <span id="backupOperationPercent">${Math.max(0, Math.min(100, Number(operation.progress || 0)))}%</span>
+                  </div>
+                </div>
+
+                <div class="small text-muted" id="backupOperationMeta"></div>
+              </div>
+            </section>
+          `;
+
+          return document.getElementById('backupOperationCard');
+        };
+
+        const setControlsDisabled = (disabled) => {
+          [createForm, ...restoreForms].filter(Boolean).forEach((form) => {
+            form.querySelectorAll('button[type="submit"]').forEach((button) => {
+              button.disabled = Boolean(disabled);
+            });
+          });
+        };
+
+        const closeLiveUpdates = () => {
+          if (stream) {
+            stream.close();
+            stream = null;
+          }
+          if (pollTimer) {
+            window.clearTimeout(pollTimer);
+            pollTimer = null;
+          }
+        };
+
+        const scheduleReload = () => {
+          if (reloadScheduled) return;
+          reloadScheduled = true;
+          window.setTimeout(() => window.location.reload(), 1400);
+        };
+
+        const updateOperationCard = (operation) => {
           if (!operation) return;
-          if (labelEl && operation.label) labelEl.textContent = operation.label;
-          if (messageEl) messageEl.textContent = operation.message || 'Queued';
+          const card = ensureCard(operation);
+          const eyebrowEl = document.getElementById('backupOperationEyebrow');
+          const labelEl = document.getElementById('backupOperationLabel');
+          const messageEl = document.getElementById('backupOperationMessage');
+          const statusEl = document.getElementById('backupOperationStatus');
+          const barEl = document.getElementById('backupOperationBar');
+          const percentEl = document.getElementById('backupOperationPercent');
+          const metaEl = document.getElementById('backupOperationMeta');
+          const normalizedStatus = String(operation.status || 'running').toLowerCase();
           const progress = Math.max(0, Math.min(100, Number(operation.progress || 0)));
-          if (barEl) barEl.style.width = `${progress}%`;
+          const flavor = statusClass(normalizedStatus);
+
+          activeOperationId = String(operation.operationId || '').trim();
+          card.dataset.operationId = activeOperationId;
+          card.dataset.status = normalizedStatus;
+          if (eyebrowEl) eyebrowEl.textContent = operation.action === 'restore' ? 'Restore Progress' : 'Backup Progress';
+          if (labelEl) labelEl.textContent = operation.label || 'Backup operation';
+          if (messageEl) messageEl.textContent = operation.message || 'Queued';
+          if (statusEl) {
+            statusEl.textContent = normalizedStatus;
+            statusEl.className = `badge text-bg-${flavor}`;
+          }
+          if (barEl) {
+            barEl.className = `progress-bar bg-${flavor}`;
+            barEl.style.width = `${progress}%`;
+          }
           if (percentEl) percentEl.textContent = `${progress}%`;
           if (metaEl) {
             const bits = [];
-            if (operation.startedAt) bits.push(`Started ${new Date(operation.startedAt).toLocaleString()}`);
-            if (operation.completedAt) bits.push(`Finished ${new Date(operation.completedAt).toLocaleString()}`);
+            const startedAt = formatTimestamp(operation.startedAt, 'Started');
+            const completedAt = formatTimestamp(operation.completedAt, 'Finished');
+            if (startedAt) bits.push(startedAt);
+            if (completedAt) bits.push(completedAt);
             if (operation.error) bits.push(operation.error);
             metaEl.textContent = bits.join(' · ');
           }
-          applyStatus(operation.status);
+
+          setControlsDisabled(normalizedStatus === 'running');
+          if ((normalizedStatus === 'completed' || normalizedStatus === 'failed') && activeOperationId) {
+            closeLiveUpdates();
+            scheduleReload();
+          }
         };
 
-        const poll = async () => {
+        const pollOperation = async (operationId) => {
+          if (!operationId) return;
           try {
             const response = await fetch(`/admin/backups/operations/${encodeURIComponent(operationId)}`, {
               headers: { Accept: 'application/json' },
               credentials: 'same-origin'
             });
-            if (!response.ok) return;
+            if (!response.ok) throw new Error('poll_failed');
             const payload = await response.json();
-            if (!payload?.ok || !payload.operation) return;
-            updateOperation(payload.operation);
-
-            const status = String(payload.operation.status || '').toLowerCase();
-            if ((status === 'completed' || status === 'failed') && !reloadScheduled) {
-              reloadScheduled = true;
-              window.setTimeout(() => window.location.reload(), 1200);
-              return;
-            }
-
-            if (status === 'running') {
-              window.setTimeout(poll, 1500);
+            if (!payload?.ok || !payload.operation) throw new Error('invalid_payload');
+            updateOperationCard(payload.operation);
+            if (String(payload.operation.status || '').toLowerCase() === 'running') {
+              pollTimer = window.setTimeout(() => pollOperation(operationId), 600);
             }
           } catch (_error) {
-            window.setTimeout(poll, 2500);
+            pollTimer = window.setTimeout(() => pollOperation(operationId), 1200);
           }
         };
 
-        if (card.dataset.status === 'running') {
-          window.setTimeout(poll, 1000);
+        const subscribeToOperation = (operationId) => {
+          if (!operationId) return;
+          closeLiveUpdates();
+          activeOperationId = operationId;
+
+          if (typeof window.EventSource !== 'function') {
+            pollOperation(operationId);
+            return;
+          }
+
+          stream = new window.EventSource(`/admin/backups/operations/${encodeURIComponent(operationId)}/stream`);
+          stream.onmessage = (event) => {
+            try {
+              const payload = JSON.parse(event.data || '{}');
+              if (!payload?.ok || !payload.operation) return;
+              updateOperationCard(payload.operation);
+            } catch (_error) {
+              // ignore malformed events
+            }
+          };
+          stream.onerror = () => {
+            closeLiveUpdates();
+            pollOperation(operationId);
+          };
+        };
+
+        const submitBackupForm = async (form, fallbackLabel) => {
+          if (!form || typeof window.fetch !== 'function') {
+            form?.submit?.();
+            return;
+          }
+
+          closeLiveUpdates();
+          activeOperationId = '';
+          reloadScheduled = false;
+          updateOperationCard({
+            action: form.action.includes('/restore') ? 'restore' : 'create',
+            label: fallbackLabel,
+            status: 'running',
+            progress: 0,
+            message: 'Contacting server...',
+            startedAt: new Date().toISOString(),
+            operationId: ''
+          });
+
+          try {
+            const formData = new window.FormData(form);
+            const response = await fetch(form.action, {
+              method: 'POST',
+              headers: {
+                Accept: 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-Requested-With': 'XMLHttpRequest'
+              },
+              body: new URLSearchParams(formData).toString(),
+              credentials: 'same-origin'
+            });
+
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || !payload?.ok || !payload.operation) {
+              throw new Error(payload?.reason || 'Request failed.');
+            }
+
+            updateOperationCard(payload.operation);
+            subscribeToOperation(payload.operation.operationId);
+          } catch (error) {
+            updateOperationCard({
+              action: form.action.includes('/restore') ? 'restore' : 'create',
+              label: fallbackLabel,
+              status: 'failed',
+              progress: 100,
+              message: String(error?.message || error || 'Request failed.'),
+              error: String(error?.message || error || 'Request failed.'),
+              startedAt: new Date().toISOString(),
+              completedAt: new Date().toISOString()
+            });
+          }
+        };
+
+        if (createForm) {
+          createForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            submitBackupForm(createForm, 'Creating backup');
+          });
+        }
+
+        restoreForms.forEach((form) => {
+          form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            submitBackupForm(form, 'Restoring backup');
+          });
+        });
+
+        const existingCard = document.getElementById('backupOperationCard');
+        if (existingCard) {
+          const existingStatus = String(existingCard.dataset.status || '').toLowerCase();
+          const existingId = String(existingCard.dataset.operationId || '').trim();
+          setControlsDisabled(existingStatus === 'running');
+          if (existingStatus === 'running' && existingId) {
+            subscribeToOperation(existingId);
+          }
         }
       })();
     </script>
