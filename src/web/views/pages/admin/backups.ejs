@@ -76,7 +76,7 @@
           </section>
         <% } %>
       </div>
-      <script id="backupOperationInitialData" type="application/json"><%- JSON.stringify(activeOperation || null).replace(/</g, '\\u003c') %></script>
+      <script id="backupOperationInitialData" type="application/json" nonce="<%= cspNonce %>"><%- JSON.stringify(activeOperation || null).replace(/</g, '\\u003c') %></script>
       <div id="backupsPageContent">
 
       <% const channelNameById = new Map((channels || []).map((c) => [c.id, c.name])); %>
@@ -392,7 +392,7 @@
             <h2 class="h5 m-0">Latest Backups</h2>
             <span class="text-muted small backup-table-meta"><%= backups.length %> total</span>
           </div>
-          <div class="table-responsive">
+          <div class="table-responsive backup-table-scroll">
             <table class="table table-sm align-middle backups-table">
               <thead>
                 <tr>
@@ -416,32 +416,32 @@
                 <% } %>
                 <% backups.forEach(b => { %>
                   <tr>
-                    <td data-label="ID"><code><%= b.backupId %></code></td>
-                    <td data-label="Name">
-                      <span class="backup-cell-text"><%= b.name || b.type %></span>
+                    <td data-label="ID"><code class="backup-id-code"><%= b.backupId %></code></td>
+                    <td data-label="Name" class="backup-name-cell">
+                      <span class="backup-cell-text backup-name-value"><%= b.name || b.type %></span>
                       <% if (b.availability?.reason) { %>
-                        <div class="text-muted small mt-1"><%= b.availability.reason %></div>
+                        <div class="text-muted small mt-1 backup-name-meta"><%= b.availability.reason %></div>
                       <% } %>
                     </td>
-                    <td data-label="Type"><span class="backup-cell-text"><%= b.type %></span></td>
+                    <td data-label="Type"><span class="backup-cell-text backup-cell-text--nowrap"><%= b.type %></span></td>
                     <td data-label="Status">
-                      <span class="badge backup-status-badge <%= b.status === 'completed' ? 'text-bg-success' : (b.status === 'failed' ? 'text-bg-danger' : 'text-bg-warning') %>">
+                      <span class="badge backup-pill-badge backup-status-badge <%= b.status === 'completed' ? 'text-bg-success' : (b.status === 'failed' ? 'text-bg-danger' : 'text-bg-warning') %>">
                         <%= b.status %>
                       </span>
                     </td>
                     <td data-label="Health">
                       <% const healthState = String(b.availability?.state || '').toLowerCase(); %>
-                      <span class="badge <%= healthState === 'ready' ? 'text-bg-success' : (healthState === 'processing' ? 'text-bg-primary' : (healthState === 'failed' ? 'text-bg-danger' : 'text-bg-warning')) %>">
+                      <span class="badge backup-pill-badge <%= healthState === 'ready' ? 'text-bg-success' : (healthState === 'processing' ? 'text-bg-primary' : (healthState === 'failed' ? 'text-bg-danger' : 'text-bg-warning')) %>">
                         <%= healthState || 'unknown' %>
                       </span>
                     </td>
-                    <td data-label="Size" class="text-muted small"><span class="backup-cell-text"><%= b.size ? (b.size / (1024 * 1024)).toFixed(2) + ' MB' : '0 MB' %></span></td>
-                    <td data-label="Archived"><span class="backup-cell-text"><%= b.archived ? 'yes' : 'no' %></span></td>
+                    <td data-label="Size" class="text-muted small"><span class="backup-cell-text backup-cell-text--nowrap"><%= b.size ? (b.size / (1024 * 1024)).toFixed(2) + ' MB' : '0 MB' %></span></td>
+                    <td data-label="Archived"><span class="backup-cell-text backup-cell-text--nowrap"><%= b.archived ? 'yes' : 'no' %></span></td>
                     <td data-label="Source">
-                      <span class="badge <%= b.source === 'automated' ? 'text-bg-primary' : 'text-bg-secondary' %>"><%= b.source %></span>
+                      <span class="badge backup-pill-badge <%= b.source === 'automated' ? 'text-bg-primary' : 'text-bg-secondary' %>"><%= b.source %></span>
                     </td>
-                    <td data-label="Created" class="text-muted small"><span class="backup-cell-text"><%= formatDate(b.createdAt) || '—' %></span></td>
-                    <td data-label="Actions" class="text-end">
+                    <td data-label="Created" class="text-muted small"><span class="backup-cell-text backup-cell-text--nowrap"><%= formatDate(b.createdAt) || '—' %></span></td>
+                    <td data-label="Actions" class="text-end backup-actions-cell">
                       <div class="backup-actions">
                         <% if (String(b.status || '').toLowerCase() === 'completed' && b.availability?.canDownload) { %>
                           <a class="btn btn-outline-secondary btn-sm icon-btn" href="/admin/backups/download/<%= b.backupId %>" title="Download" aria-label="Download">⬇️</a>
@@ -490,7 +490,7 @@
       </section>
       </div>
     </main>
-    <script>
+    <script nonce="<%= cspNonce %>">
       (() => {
         const mount = document.getElementById('backupOperationMount');
         const initialOperationEl = document.getElementById('backupOperationInitialData');

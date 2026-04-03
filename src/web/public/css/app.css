@@ -3830,10 +3830,12 @@ code {
 
 .backup-schedule-table-wrap,
 .backup-table-card .table-responsive {
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   border-radius: 18px;
   border: 1px solid rgba(239, 68, 68, 0.18);
   background: rgba(12, 5, 8, 0.76);
+  -webkit-overflow-scrolling: touch;
 }
 
 .backup-feature-card {
@@ -3996,10 +3998,12 @@ code {
 
 .backups-table {
   margin-bottom: 0;
+  min-width: 1120px;
 }
 
 .backup-schedule-table {
   margin-bottom: 0;
+  min-width: 780px;
 }
 
 .backups-table td,
@@ -4040,17 +4044,51 @@ code {
   text-transform: capitalize;
 }
 
+.backup-id-code,
+.backup-pill-badge,
+.backup-cell-text--nowrap {
+  white-space: nowrap !important;
+  overflow-wrap: normal !important;
+  word-break: normal !important;
+}
+
+.backup-id-code {
+  display: inline-block !important;
+  max-width: none !important;
+}
+
+.backup-pill-badge {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.backup-name-value {
+  display: block;
+}
+
+.backup-name-meta {
+  max-width: 34rem;
+  overflow-wrap: anywhere;
+}
+
 .backup-actions {
   display: flex;
   gap: 0.5rem;
   justify-content: flex-end;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .backup-archive-col,
 .backup-schedule-switches,
 .backup-table-head {
   min-width: 0;
+}
+
+.backup-actions-cell {
+  width: 1%;
+  white-space: nowrap;
 }
 
 .backup-schedule-switches {
@@ -4071,6 +4109,11 @@ code {
 }
 
 @media (max-width: 992px) {
+  .backups-table,
+  .backup-schedule-table {
+    min-width: 0;
+  }
+
   .backup-hero-grid {
     grid-template-columns: 1fr;
   }
@@ -4103,6 +4146,7 @@ code {
 
   .backup-actions {
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .backups-table thead,

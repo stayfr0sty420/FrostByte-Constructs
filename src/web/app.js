@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const path = require('path');
 const express = require('express');
 const session = require('express-session');
@@ -39,12 +40,18 @@ async function createWebApp({ economyClient, backupClient, verificationClient })
   // Back-compat for any legacy routes (prefer app.locals.discord.* instead).
   app.locals.discordClient = verificationClient;
 
-  // Keep CSP strict, but allow public IP lookup for verification flow.
+  app.use((req, res, next) => {
+    res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+    next();
+  });
+
+  // Keep CSP strict, but allow trusted inline scripts via per-request nonces.
   app.use(
     helmet({
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
+          'script-src': ["'self'", (_req, res) => `'nonce-${res.locals.cspNonce}'`],
           'connect-src': ["'self'", 'https://api.ipify.org', 'https://api64.ipify.org'],
           'img-src': [
             "'self'",
