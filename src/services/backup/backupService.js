@@ -249,15 +249,17 @@ async function fetchArchivedThreads(channel, options = {}) {
     }).catch(() => null);
     if (!batch?.threads?.size) break;
 
+    let addedThisBatch = 0;
     for (const thread of batch.threads.values()) {
       if (!thread?.id || seen.has(thread.id)) continue;
       seen.add(thread.id);
       results.push(thread);
+      addedThisBatch += 1;
     }
 
-    hasMore = Boolean(batch.hasMore) && batch.threads.size >= 100;
+    hasMore = Boolean(batch.hasMore);
     const lastThread = results.at(-1) || Array.from(batch.threads.values()).at(-1);
-    if (!lastThread) break;
+    if (!lastThread || addedThisBatch === 0) break;
     before = lastThread;
   }
 

@@ -469,14 +469,17 @@ async function handleBackupRestore(req, res, backupId) {
       if (!result.ok) {
         failBackupOperation(operation.operationId, {
           message: result.reason || 'Restore failed.',
-          error: result.reason || 'Restore failed.'
+          error: result.reason || 'Restore failed.',
+          result: result.summary || null
         });
         return;
       }
 
       completeBackupOperation(operation.operationId, {
         message:
-          targetGuildId && targetGuildId !== guildId ? `Restore complete to ${targetGuildId}.` : 'Restore complete.'
+          result.message ||
+          (targetGuildId && targetGuildId !== guildId ? `Restore complete to ${targetGuildId}.` : 'Restore complete.'),
+        result: result.summary || null
       });
     } catch (err) {
       failBackupOperation(operation.operationId, {

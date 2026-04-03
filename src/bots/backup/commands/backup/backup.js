@@ -200,7 +200,9 @@ module.exports = {
       });
       if (!result.ok) return await interaction.editReply({ content: result.reason || 'Restore failed.' });
       return await interaction.editReply({
-        content: targetGuildId && targetGuildId !== guildId ? `✅ Restore complete to ${targetGuildId}.` : '✅ Restore complete.'
+        content:
+          result.message ||
+          (targetGuildId && targetGuildId !== guildId ? `✅ Restore complete to ${targetGuildId}.` : '✅ Restore complete.')
       });
     }
 
