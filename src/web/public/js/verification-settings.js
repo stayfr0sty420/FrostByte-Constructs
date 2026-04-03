@@ -341,11 +341,11 @@
       const row = document.createElement('div');
       row.className = 'question-row';
       row.innerHTML = `
-        <div class="flex-grow-1 d-grid gap-2">
+        <div class="question-fields d-grid gap-2">
           <input class="form-control" name="questionPrompt" placeholder="Enter a question" />
           <textarea class="form-control" name="questionAcceptableAnswers" rows="2" placeholder="Acceptable answers, one per line"></textarea>
         </div>
-        <button class="btn btn-outline-danger btn-sm icon-btn" type="button" data-question-remove aria-label="Remove question">🗑️</button>
+        <button class="btn btn-outline-danger btn-sm icon-btn question-remove-btn" type="button" data-question-remove aria-label="Remove question">🗑️</button>
       `;
       list.appendChild(row);
       bindRemove(row.querySelector('[data-question-remove]'));

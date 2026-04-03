@@ -197,7 +197,10 @@ h3,
   .navbar-minimal__collapse {
     width: 100%;
     margin-top: 0.8rem;
-    padding: 0.9rem;
+    max-height: calc(100vh - 5.5rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 1rem;
     border-radius: 20px;
     border: 1px solid rgba(248, 113, 113, 0.14);
     background:
@@ -222,7 +225,7 @@ h3,
   .navbar-minimal__secondary {
     width: 100%;
     align-items: stretch;
-    gap: 0.35rem;
+    gap: 0.45rem;
   }
 
   .navbar-minimal__primary {
@@ -250,13 +253,23 @@ h3,
     display: inline-flex;
     width: 100%;
     align-items: center;
-    justify-content: center;
-    min-height: 42px;
-    border-radius: 12px;
+    min-height: 44px;
+    border-radius: 14px;
+    padding: 0.8rem 0.95rem;
   }
 
   .navbar-minimal .nav-link {
+    justify-content: flex-start;
+    text-align: left;
     background: rgba(255, 255, 255, 0.03);
+  }
+
+  .navbar-minimal .btn {
+    justify-content: center;
+  }
+
+  .navbar-minimal .dropdown-toggle::after {
+    margin-left: auto;
   }
 
   .navbar-minimal .dropdown-menu {
@@ -264,8 +277,19 @@ h3,
     inset: auto !important;
     transform: none !important;
     width: 100%;
-    margin-top: 0.35rem;
+    margin-top: 0.45rem;
+    padding: 0.45rem;
+    border-radius: 14px;
+    background: rgba(16, 8, 12, 0.9);
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  }
+
+  .navbar-minimal .dropdown-item {
+    display: flex;
+    align-items: center;
+    min-height: 40px;
+    padding: 0.75rem 0.9rem;
+    border-radius: 10px;
   }
 
   .navbar-user-pill {
@@ -2465,29 +2489,51 @@ code {
 }
 
 @media (max-width: 991px) {
+  .accounts-table-wrap {
+    overflow: visible;
+  }
+
   .accounts-table thead {
     display: none;
   }
 
+  .accounts-table,
+  .accounts-table tbody {
+    display: block;
+    width: 100%;
+  }
+
   .accounts-table tbody tr {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 0.35rem;
-    padding: 0.85rem 0;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 1rem;
+    margin-bottom: 0.9rem;
+    border-radius: 18px;
+    background: rgba(12, 5, 8, 0.72);
+    border: 1px solid rgba(239, 68, 68, 0.16);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  }
+
+  .accounts-table tbody tr:last-child {
+    margin-bottom: 0;
   }
 
   .accounts-table tbody td {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    text-align: right;
-    padding: 0.35rem 0.5rem;
+    display: grid;
+    gap: 0.25rem;
+    justify-items: start;
+    text-align: left;
+    padding: 0.55rem 0;
+    border: 0;
+  }
+
+  .accounts-table tbody td + td {
+    border-top: 1px solid rgba(239, 68, 68, 0.12);
   }
 
   .accounts-table tbody td::before {
     content: attr(data-label);
-    flex: 0 0 auto;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.7rem;
@@ -2507,7 +2553,7 @@ code {
     min-width: 0;
     display: block !important;
     text-align: left !important;
-    padding-top: 0.5rem !important;
+    padding-top: 0.8rem !important;
   }
 
   .accounts-actions-cell::before {
@@ -2515,6 +2561,7 @@ code {
   }
 
   .accounts-actions {
+    width: 100%;
     justify-content: flex-start;
   }
 }
@@ -2576,28 +2623,17 @@ code {
     grid-template-columns: 1fr;
   }
 
-  .accounts-table tbody td {
-    align-items: flex-start;
-    flex-direction: column;
-    text-align: left;
-  }
-
   .accounts-table tbody td::before {
     margin-bottom: 0.15rem;
   }
 
   .accounts-actions {
-    width: 100%;
-    flex-direction: column;
-  }
-
-  .accounts-actions form,
-  .accounts-actions .btn {
-    width: 100%;
+    gap: 0.5rem;
   }
 
   .accounts-actions-icons {
-    flex-direction: row;
+    width: 100%;
+    justify-content: flex-start;
     flex-wrap: wrap;
   }
 
@@ -2800,25 +2836,43 @@ code {
     display: none;
   }
 
+  .economy-users-table,
+  .economy-users-table tbody {
+    display: block;
+    width: 100%;
+  }
+
   .economy-users-table tbody tr {
     display: grid;
-    grid-template-columns: 1fr;
-    gap: 0.35rem;
-    padding: 0.75rem 0;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 1rem;
+    margin-bottom: 0.9rem;
+    border-radius: 18px;
+    background: rgba(12, 5, 8, 0.72);
+    border: 1px solid rgba(239, 68, 68, 0.16);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  }
+
+  .economy-users-table tbody tr:last-child {
+    margin-bottom: 0;
   }
 
   .economy-users-table tbody td {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    text-align: right;
-    padding: 0.35rem 0.5rem;
+    display: grid;
+    gap: 0.25rem;
+    justify-items: start;
+    text-align: left;
+    padding: 0.55rem 0;
+    border: 0;
+  }
+
+  .economy-users-table tbody td + td {
+    border-top: 1px solid rgba(239, 68, 68, 0.12);
   }
 
   .economy-users-table tbody td::before {
     content: attr(data-label);
-    flex: 0 0 auto;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.7rem;
@@ -2839,7 +2893,7 @@ code {
     min-width: 0;
     display: block !important;
     text-align: left !important;
-    padding-top: 0.5rem !important;
+    padding-top: 0.8rem !important;
   }
 
   .user-actions-cell::before,
@@ -2848,7 +2902,8 @@ code {
   }
 
   .user-actions-grid {
-    justify-content: stretch;
+    width: 100%;
+    justify-content: flex-start;
   }
 }
 
@@ -2862,12 +2917,6 @@ code {
     width: 100%;
   }
 
-  .economy-users-table tbody td {
-    align-items: flex-start;
-    flex-direction: column;
-    text-align: left;
-  }
-
   .economy-users-table tbody td::before {
     margin-bottom: 0.15rem;
   }
@@ -2875,13 +2924,14 @@ code {
   .user-actions-grid {
     width: 100%;
     flex-direction: column;
+    gap: 0.6rem;
   }
 
   .user-action-form,
   .user-action-form--wide,
   .user-action-form--compact {
     width: 100%;
-    grid-template-columns: minmax(0, 1fr) 36px;
+    grid-template-columns: minmax(0, 1fr) 40px;
   }
 
   .user-action-form--toggle {
@@ -2889,8 +2939,12 @@ code {
     grid-template-columns: 1fr;
   }
 
+  .user-action-form .btn {
+    min-height: 40px;
+  }
+
   .whitelist-actions-cell form {
-    width: 100%;
+    width: auto;
   }
 }
 
@@ -3618,7 +3672,20 @@ code {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.6rem;
+  align-items: start;
+}
+
+.question-fields {
+  min-width: 0;
+}
+
+.question-remove-btn {
+  align-self: center;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
 }
 
 @media (max-width: 576px) {
@@ -3626,13 +3693,25 @@ code {
     padding-right: 3rem;
   }
 
-  .question-row {
-    grid-template-columns: 1fr;
+  .question-list {
+    gap: 0.85rem;
   }
 
-  .question-row .icon-btn {
-    width: 100%;
-    height: auto;
+  .question-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 0.85rem;
+    border-radius: 16px;
+    border: 1px solid rgba(239, 68, 68, 0.18);
+    background: rgba(12, 5, 8, 0.72);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+  }
+
+  .question-remove-btn {
+    width: auto;
+    height: 2.5rem;
+    align-self: end;
+    justify-self: end;
   }
 }
 
@@ -4110,7 +4189,11 @@ code {
 
 @media (max-width: 992px) {
   .backups-table,
-  .backup-schedule-table {
+  .backup-schedule-table,
+  .backups-table tbody,
+  .backup-schedule-table tbody {
+    display: block;
+    width: 100%;
     min-width: 0;
   }
 
@@ -4158,7 +4241,7 @@ code {
   .backup-schedule-table tbody tr {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 0.65rem;
+    gap: 0;
     padding: 1rem;
     margin-bottom: 0.9rem;
     border-radius: 18px;
@@ -4173,8 +4256,13 @@ code {
     gap: 0.28rem;
     justify-items: start;
     text-align: left;
-    padding: 0;
+    padding: 0.55rem 0;
     border: 0;
+  }
+
+  .backups-table tbody td + td,
+  .backup-schedule-table tbody td + td {
+    border-top: 1px solid rgba(239, 68, 68, 0.12);
   }
 
   .backups-table tbody td::before,
@@ -4203,7 +4291,7 @@ code {
   .backups-table tbody td[data-label='Actions'],
   .backup-schedule-table tbody td[data-label='Actions'] {
     margin-top: 0.2rem;
-    padding-top: 0.75rem;
+    padding-top: 0.8rem;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
   }
 
@@ -4239,7 +4327,7 @@ code {
   }
 
   .backup-actions {
-    justify-content: stretch;
+    justify-content: flex-start;
   }
 
   .backup-actions .btn,
@@ -4248,10 +4336,14 @@ code {
   }
 
   .backup-actions form {
-    display: flex;
+    display: flex !important;
+    width: 100%;
   }
 
   .backup-actions .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
     min-width: 0;
     min-height: 40px;
@@ -4310,18 +4402,28 @@ code {
 
   .backups-table tbody tr,
   .backup-schedule-table tbody tr {
-    padding: 0.85rem;
+    padding: 0.95rem;
   }
 
   .backup-actions {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    align-items: flex-start;
-    gap: 0.5rem;
+    align-items: stretch;
+    gap: 0.55rem;
   }
 
-  .backup-actions .btn {
+  .backup-actions .btn,
+  .backup-actions form {
     width: 100%;
+  }
+
+  .backup-actions form {
+    display: flex !important;
+  }
+
+  .backup-actions .icon-btn {
+    min-height: 42px;
+    border-radius: 12px;
   }
 
   .backup-feature-grid {

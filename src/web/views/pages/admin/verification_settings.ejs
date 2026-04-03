@@ -3,7 +3,7 @@
   <head>
     <%- include('../../partials/head', { title }) %>
   </head>
-  <body class="app admin-page">
+  <body class="app admin-page verification-settings-page">
     <%- include('../../partials/nav') %>
     <main class="container py-4">
       <%
@@ -207,11 +207,11 @@
               <div class="question-list" data-question-list>
                 <% (questionConfigs || []).forEach((item) => { %>
                   <div class="question-row">
-                    <div class="flex-grow-1 d-grid gap-2">
+                    <div class="question-fields d-grid gap-2">
                       <input class="form-control" name="questionPrompt" value="<%= item.prompt %>" placeholder="Enter a question" />
                       <textarea class="form-control" name="questionAcceptableAnswers" rows="2" placeholder="Acceptable answers, one per line"><%= (item.acceptableAnswers || []).join('\n') %></textarea>
                     </div>
-                    <button class="btn btn-outline-danger btn-sm icon-btn" type="button" data-question-remove aria-label="Remove question">🗑️</button>
+                    <button class="btn btn-outline-danger btn-sm icon-btn question-remove-btn" type="button" data-question-remove aria-label="Remove question">🗑️</button>
                   </div>
                 <% }) %>
               </div>
