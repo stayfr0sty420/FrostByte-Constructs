@@ -74,6 +74,7 @@
         <% } %>
       </div>
       <script id="backupOperationInitialData" type="application/json"><%- JSON.stringify(activeOperation || null).replace(/</g, '\\u003c') %></script>
+      <div id="backupsPageContent">
 
       <% const channelNameById = new Map((channels || []).map((c) => [c.id, c.name])); %>
       <% const restorableBackups = (backups || []).filter((b) => String(b.status || '').toLowerCase() === 'completed'); %>
@@ -470,35 +471,17 @@
           </div>
         </div>
       </section>
+      </div>
     </main>
     <script>
       (() => {
-        const preset = document.getElementById('schedulePreset');
-        const scheduleForm = preset?.closest('form') || null;
-        const createForm = document.querySelector('form[action="/admin/backups/create"]');
-        if (!preset) return;
-
-        const ensureAtLeastOneChecked = (formSelector, inputName, message) => {
-          const form = formSelector;
-          if (!form) return;
-          form.addEventListener('submit', (event) => {
-            const checked = form.querySelectorAll(`input[name="${inputName}"]:checked`);
-            if (checked.length) return;
-            event.preventDefault();
-            window.alert(message);
-          });
-        };
-
-        ensureAtLeastOneChecked(createForm, 'type[]', 'Select at least one backup type before creating a backup.');
-        ensureAtLeastOneChecked(scheduleForm, 'types[]', 'Select at least one backup type before saving an automated backup schedule.');
-      })();
-
-      (() => {
         const mount = document.getElementById('backupOperationMount');
         const initialOperationEl = document.getElementById('backupOperationInitialData');
-        const createForm = document.querySelector('form[action="/admin/backups/create"]');
-        const restoreForms = Array.from(document.querySelectorAll('form[action="/admin/backups/restore"], form[action^="/admin/backups/restore/"]'));
-        if (!mount) return;
+        const contentMount = document.getElementById('backupsPageContent');
+        const createFormSelector = 'form[action="/admin/backups/create"]';
+        const restoreFormSelector = 'form[action="/admin/backups/restore"], form[action^="/admin/backups/restore/"]';
+        const scheduleFormSelector = 'form[action="/admin/backups/schedules"]';
+        if (!mount || !contentMount) return;
 
         let initialOperation = null;
         try {
@@ -510,7 +493,8 @@
         let stream = null;
         let pollTimer = null;
         let watchdogTimer = null;
-        let reloadScheduled = false;
+        let refreshTimer = null;
+        let refreshRequest = null;
         let activeOperationId = '';
         let liveTicker = null;
         let currentOperation = initialOperation && typeof initialOperation === 'object' ? initialOperation : null;
@@ -720,8 +704,17 @@
           return document.getElementById('backupOperationCard');
         };
 
+        const delay = (ms) =>
+          new Promise((resolve) => {
+            window.setTimeout(resolve, ms);
+          });
+
+        const getCreateForm = () => document.querySelector(createFormSelector);
+
+        const getRestoreForms = () => Array.from(document.querySelectorAll(restoreFormSelector));
+
         const setControlsDisabled = (disabled) => {
-          [createForm, ...restoreForms].filter(Boolean).forEach((form) => {
+          [getCreateForm(), ...getRestoreForms()].filter(Boolean).forEach((form) => {
             form.querySelectorAll('button[type="submit"]').forEach((button) => {
               button.disabled = Boolean(disabled);
             });
@@ -743,10 +736,62 @@
           }
         };
 
-        const scheduleReload = () => {
-          if (reloadScheduled) return;
-          reloadScheduled = true;
-          window.setTimeout(() => window.location.reload(), 2500);
+        const clearScheduledRefresh = () => {
+          if (refreshTimer) {
+            window.clearTimeout(refreshTimer);
+            refreshTimer = null;
+          }
+        };
+
+        const refreshBackupSections = async () => {
+          if (typeof window.fetch !== 'function' || typeof window.DOMParser !== 'function') return false;
+          if (refreshRequest) return refreshRequest;
+
+          refreshRequest = (async () => {
+            contentMount.setAttribute('aria-busy', 'true');
+
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+              try {
+                const response = await fetch(`${window.location.pathname}${window.location.search}`, {
+                  headers: {
+                    Accept: 'text/html',
+                    'X-Requested-With': 'XMLHttpRequest'
+                  },
+                  credentials: 'same-origin',
+                  cache: 'no-store'
+                });
+                if (!response.ok) throw new Error('refresh_failed');
+
+                const html = await response.text();
+                const parsed = new window.DOMParser().parseFromString(html, 'text/html');
+                const nextContent = parsed.getElementById('backupsPageContent');
+                if (!nextContent) throw new Error('refresh_fragment_missing');
+
+                contentMount.innerHTML = nextContent.innerHTML;
+                setControlsDisabled(String(currentOperation?.status || '').toLowerCase() === 'running');
+                renderOperationHealth();
+                return true;
+              } catch (_error) {
+                if (attempt >= 2) return false;
+                await delay(900 * (attempt + 1));
+              }
+            }
+
+            return false;
+          })().finally(() => {
+            contentMount.removeAttribute('aria-busy');
+            refreshRequest = null;
+          });
+
+          return refreshRequest;
+        };
+
+        const scheduleSectionRefresh = () => {
+          if (refreshTimer) return;
+          refreshTimer = window.setTimeout(async () => {
+            refreshTimer = null;
+            await refreshBackupSections();
+          }, 1400);
         };
 
         const updateOperationCard = (operation, { source = '', contactAt = 0, touch = true } = {}) => {
@@ -814,12 +859,9 @@
 
           renderOperationHealth();
           setControlsDisabled(normalizedStatus === 'running');
-          if (normalizedStatus === 'completed' && activeOperationId) {
+          if (normalizedStatus === 'completed' || normalizedStatus === 'failed') {
             closeLiveUpdates();
-            scheduleReload();
-          }
-          if (normalizedStatus === 'failed') {
-            closeLiveUpdates();
+            scheduleSectionRefresh();
           }
         };
 
@@ -913,8 +955,8 @@
           }
 
           closeLiveUpdates();
+          clearScheduledRefresh();
           activeOperationId = '';
-          reloadScheduled = false;
           updateOperationCard({
             action: form.action.includes('/restore') ? 'restore' : 'create',
             label: fallbackLabel,
@@ -971,18 +1013,36 @@
           }
         };
 
-        if (createForm) {
-          createForm.addEventListener('submit', (event) => {
-            event.preventDefault();
-            submitBackupForm(createForm, 'Creating backup');
-          });
-        }
+        document.addEventListener('submit', (event) => {
+          const form = event.target;
+          if (!(form instanceof window.HTMLFormElement)) return;
 
-        restoreForms.forEach((form) => {
-          form.addEventListener('submit', (event) => {
+          if (form.matches(createFormSelector)) {
+            const checked = form.querySelectorAll('input[name="type[]"]:checked');
+            if (!checked.length) {
+              event.preventDefault();
+              window.alert('Select at least one backup type before creating a backup.');
+              return;
+            }
+
+            event.preventDefault();
+            submitBackupForm(form, 'Creating backup');
+            return;
+          }
+
+          if (form.matches(scheduleFormSelector)) {
+            const checked = form.querySelectorAll('input[name="types[]"]:checked');
+            if (checked.length) return;
+
+            event.preventDefault();
+            window.alert('Select at least one backup type before saving an automated backup schedule.');
+            return;
+          }
+
+          if (form.matches(restoreFormSelector)) {
             event.preventDefault();
             submitBackupForm(form, 'Restoring backup');
-          });
+          }
         });
 
         const existingCard = document.getElementById('backupOperationCard');
