@@ -213,6 +213,78 @@ async function fetchMessages(channel, limit = 1000) {
   return messages;
 }
 
+async function fetchGuildRoles(guild) {
+  const fetched = await guild.roles.fetch().catch(() => null);
+  if (fetched?.size) return Array.from(fetched.values());
+  return Array.from(guild.roles?.cache?.values?.() || []);
+}
+
+async function fetchGuildMembers(guild) {
+  const fetched = await guild.members.fetch().catch(() => null);
+  if (fetched?.size) return fetched;
+  return guild.members?.cache || null;
+}
+
+async function fetchGuildChannels(guild) {
+  const fetched = await guild.channels.fetch().catch(() => null);
+  if (fetched?.size) return Array.from(fetched.values());
+  return Array.from(guild.channels?.cache?.values?.() || []);
+}
+
+async function fetchArchivedThreads(channel, options = {}) {
+  const type = String(options.type || 'public');
+  const fetchAll = Boolean(options.fetchAll);
+  const results = [];
+  const seen = new Set();
+  let before = options.before;
+  let hasMore = true;
+
+  while (hasMore) {
+    // eslint-disable-next-line no-await-in-loop
+    const batch = await channel.threads.fetchArchived({
+      type,
+      fetchAll,
+      before,
+      limit: 100
+    }).catch(() => null);
+    if (!batch?.threads?.size) break;
+
+    for (const thread of batch.threads.values()) {
+      if (!thread?.id || seen.has(thread.id)) continue;
+      seen.add(thread.id);
+      results.push(thread);
+    }
+
+    hasMore = Boolean(batch.hasMore) && batch.threads.size >= 100;
+    const lastThread = results.at(-1) || Array.from(batch.threads.values()).at(-1);
+    if (!lastThread) break;
+    before = lastThread;
+  }
+
+  return results;
+}
+
+async function fetchGuildWebhooks(guild, channels = []) {
+  const fromGuild = await guild.fetchWebhooks().catch(() => null);
+  if (fromGuild?.size) return Array.from(fromGuild.values());
+
+  const seen = new Set();
+  const hooks = [];
+  for (const channel of channels) {
+    if (!channel?.isTextBased?.()) continue;
+    if (typeof channel.fetchWebhooks !== 'function') continue;
+    // eslint-disable-next-line no-await-in-loop
+    const fetched = await channel.fetchWebhooks().catch(() => null);
+    if (!fetched?.size) continue;
+    for (const hook of fetched.values()) {
+      if (!hook?.id || seen.has(hook.id)) continue;
+      seen.add(hook.id);
+      hooks.push(hook);
+    }
+  }
+  return hooks;
+}
+
 function serializeOverwrites(channel) {
   try {
     return channel.permissionOverwrites.cache.map((o) => ({
@@ -376,12 +448,12 @@ async function collectThreadsFromChannels(channels, { includeMessages = false, m
     if (!ch?.isTextBased?.()) continue;
     if (!ch.threads) continue;
     const active = await ch.threads.fetchActive().catch(() => null);
-    const archivedPublic = await ch.threads.fetchArchived({ limit: 100 }).catch(() => null);
-    const archivedPrivate = await ch.threads.fetchArchived({ type: 'private', limit: 100 }).catch(() => null);
+    const archivedPublic = await fetchArchivedThreads(ch, { type: 'public' }).catch(() => []);
+    const archivedPrivate = await fetchArchivedThreads(ch, { type: 'private', fetchAll: true }).catch(() => []);
     const all = [
       ...(active?.threads?.values?.() ? Array.from(active.threads.values()) : []),
-      ...(archivedPublic?.threads?.values?.() ? Array.from(archivedPublic.threads.values()) : []),
-      ...(archivedPrivate?.threads?.values?.() ? Array.from(archivedPrivate.threads.values()) : [])
+      ...archivedPublic,
+      ...archivedPrivate
     ];
     for (const t of all) {
       if (!t?.id || seenThreadIds.has(t.id)) continue;
@@ -446,18 +518,28 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
   const needsRoles = options.includeRoles || options.includeRoleAssignments || options.includeBots;
   const needsChannels = options.includeChannels || options.includeMessages || options.includeThreads;
   const needsMembers = options.includeNicknames || options.includeRoleAssignments || options.includeBots;
+  const onCheckpoint = typeof options.onCheckpoint === 'function' ? options.onCheckpoint : null;
+  const checkpoint = async (progress, message) => {
+    if (!onCheckpoint) return;
+    await onCheckpoint({
+      progress: Math.max(0, Math.min(100, Math.floor(Number(progress) || 0))),
+      message: String(message || '').trim()
+    }).catch(() => null);
+  };
 
   if (options.includeServer) data.server = buildServerSnapshot(guild);
 
   let roles = [];
   if (needsRoles) {
-    roles = (await guild.roles.fetch()).map((r) => serializeRole(r));
+    await checkpoint(12, 'Loading roles');
+    roles = (await fetchGuildRoles(guild)).map((r) => serializeRole(r));
   }
   if (options.includeRoles) data.roles = roles;
 
   let members = null;
   if (needsMembers) {
-    members = await guild.members.fetch().catch(() => null);
+    await checkpoint(20, 'Loading members');
+    members = await fetchGuildMembers(guild);
   }
 
   if ((options.includeEmojis || options.includeStickers) && !members) {
@@ -465,12 +547,14 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
   }
 
   if (options.includeNicknames) {
+    await checkpoint(28, 'Capturing nicknames');
     data.nicknames = members
       ? members.map((m) => ({ userId: m.user.id, username: m.user.username, nickname: m.nickname || '' }))
       : [];
   }
 
   if (options.includeRoleAssignments) {
+    await checkpoint(34, 'Capturing role assignments');
     const roleAssignments = [];
     if (members) {
       const byRole = new Map();
@@ -493,6 +577,7 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
   }
 
   if (options.includeBots) {
+    await checkpoint(40, 'Capturing bot roles and info');
     const bots = [];
     if (members) {
       for (const m of members.values()) {
@@ -514,8 +599,8 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
 
   let channels = [];
   if (needsChannels) {
-    const fetched = await guild.channels.fetch().catch(() => null);
-    channels = fetched ? Array.from(fetched.values()).filter((channel) => !channel?.isThread?.()) : [];
+    await checkpoint(46, 'Loading channels');
+    channels = (await fetchGuildChannels(guild)).filter((channel) => !channel?.isThread?.());
   }
 
   if (options.includeChannels) {
@@ -524,6 +609,7 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
 
   let threadBundle = { threads: [], threadMessages: {} };
   if (options.includeThreads || options.includeMessages) {
+    await checkpoint(56, options.includeMessages ? 'Capturing threads and forum posts' : 'Capturing threads');
     threadBundle = await collectThreadsFromChannels(channels, {
       includeMessages: options.includeMessages,
       messageLimit
@@ -535,6 +621,7 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
   }
 
   if (options.includeMessages) {
+    await checkpoint(66, 'Capturing messages and thread history');
     const messageBackups = {};
     if (messageLimit > 0) {
       for (const ch of channels) {
@@ -552,33 +639,36 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
   }
 
   if (options.includeEmojis) {
+    await checkpoint(78, 'Capturing emojis');
     const emojiManager = guild?.emojis;
     data.emojis = emojiManager?.fetch
-      ? (await emojiManager.fetch()).map((e) => ({
+      ? (await emojiManager.fetch().catch(() => null))?.map((e) => ({
           id: e.id,
           name: e.name,
           animated: e.animated,
           url: e.url
-        }))
+        })) || []
       : [];
   }
 
   if (options.includeStickers) {
+    await checkpoint(82, 'Capturing stickers');
     const stickerManager = guild?.stickers;
     data.stickers = stickerManager?.fetch
-      ? (await stickerManager.fetch()).map((sticker) => ({
+      ? (await stickerManager.fetch().catch(() => null))?.map((sticker) => ({
           id: sticker.id,
           name: sticker.name,
           description: sticker.description || '',
           tags: sticker.tags || '',
           format: sticker.format,
           url: sticker.url || ''
-        }))
+        })) || []
       : [];
   }
 
   if (options.includeBans) {
-    data.bans = (await guild.bans.fetch()).map((b) => ({
+    await checkpoint(88, 'Capturing ban list');
+    data.bans = ((await guild.bans.fetch().catch(() => null)) || []).map((b) => ({
       userId: b.user.id,
       username: b.user.username,
       reason: b.reason || '',
@@ -587,7 +677,8 @@ async function collectGuildData(guild, options = {}, messageLimit = 1000) {
   }
 
   if (options.includeWebhooks) {
-    data.webhooks = (await guild.fetchWebhooks()).map((w) => ({
+    await checkpoint(94, 'Capturing webhooks');
+    data.webhooks = (await fetchGuildWebhooks(guild, channels)).map((w) => ({
       id: w.id,
       name: w.name,
       channelId: w.channelId || null,
@@ -712,25 +803,36 @@ async function createBackup({
     }
   });
 
-  await sendBackupLog({
+  await reportProgress(5, `Preparing ${backupType} backup`);
+  void sendBackupLog({
     discordClient,
     guildId,
     channelId: options.channelId,
     content: `🔄 Backup started: **${name || backupType}** (ID: \`${backupId}\`)`
   });
-  await reportProgress(5, `Starting ${backupType} backup`);
-  await sendBackupLog({
-    discordClient,
-    guildId,
-    channelId: options.channelId,
-    content: `⏳ Backup progress 25%: collecting data for **${backupType}**`
-  });
-  await reportProgress(25, `Collecting ${backupType} data`);
 
   try {
     const guild = await discordClient.guilds.fetch(guildId);
-    const data = await collectGuildData(guild, typeOptions, messageLimit);
+    await reportProgress(12, `Collecting ${backupType} data`);
+    void sendBackupLog({
+      discordClient,
+      guildId,
+      channelId: options.channelId,
+      content: `⏳ Backup progress 25%: collecting data for **${backupType}**`
+    });
+    const data = await collectGuildData(
+      guild,
+      {
+        ...typeOptions,
+        onCheckpoint: async ({ progress, message }) => {
+          const scaledProgress = 12 + Math.round((Math.max(0, Math.min(100, Number(progress) || 0)) / 100) * 48);
+          await reportProgress(scaledProgress, message);
+        }
+      },
+      messageLimit
+    );
 
+    await reportProgress(64, 'Writing backup files');
     await writeJson(path.join(dir, 'metadata.json'), {
       backupId,
       guildId,
@@ -759,25 +861,25 @@ async function createBackup({
       }
     }
 
-    await sendBackupLog({
+    await reportProgress(76, 'Compressing archive');
+    void sendBackupLog({
       discordClient,
       guildId,
       channelId: options.channelId,
       content: `⏳ Backup progress 50%: files written`
     });
-    await reportProgress(50, 'Writing backup files');
 
     await zipDirectory(dir, zipPath);
     const zipStats = await fs.stat(zipPath).catch(() => null);
     const size = zipStats?.size || 0;
 
-    await sendBackupLog({
+    void sendBackupLog({
       discordClient,
       guildId,
       channelId: options.channelId,
       content: `⏳ Backup progress 75%: compressed archive ready`
     });
-    await reportProgress(75, 'Compressing archive');
+    await reportProgress(90, 'Finalizing backup');
 
     const stats = buildStats(data);
     await Backup.updateOne(
@@ -801,24 +903,24 @@ async function createBackup({
 
     const sizeMb = size ? `${(size / (1024 * 1024)).toFixed(2)} MB` : '0 MB';
 
-    await sendBackupLog({
+    await reportProgress(100, `Backup complete (${sizeMb})`);
+    void sendBackupLog({
       discordClient,
       guildId,
       channelId: options.channelId,
       content: `✅ Backup complete: **${name || backupType}** (ID: \`${backupId}\`) • ${sizeMb}`
     });
-    await reportProgress(100, `Backup complete (${sizeMb})`);
 
     return { ok: true, backupId, dir, zipPath, size };
   } catch (err) {
     await Backup.updateOne({ backupId }, { $set: { status: 'failed', error: String(err?.message || err) } });
-    await sendBackupLog({
+    await reportProgress(100, `Backup failed: ${String(err?.message || err)}`);
+    void sendBackupLog({
       discordClient,
       guildId,
       channelId: options.channelId,
       content: `❌ Backup failed (ID: \`${backupId}\`): ${String(err?.message || err)}`
     });
-    await reportProgress(100, `Backup failed: ${String(err?.message || err)}`);
     throw err;
   }
 }

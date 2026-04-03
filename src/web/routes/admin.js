@@ -365,7 +365,24 @@ async function handleBackupRestore(req, res, backupId) {
     return res.redirect('/admin/backups');
   }
 
-  const backupMeta = await Backup.findOne({ guildId, backupId }).select('type').lean().catch(() => null);
+  const backupMeta = await Backup.findOne({ guildId, backupId }).select('type status').lean().catch(() => null);
+  const backupStatus = String(backupMeta?.status || '').trim().toLowerCase();
+  if (!backupMeta) {
+    if (wantsJson) return res.status(404).json({ ok: false, reason: 'Backup not found.' });
+    setFlash(req, { type: 'danger', message: 'Backup not found.' });
+    return res.redirect('/admin/backups');
+  }
+  if (backupStatus && backupStatus !== 'completed') {
+    if (wantsJson) {
+      return res.status(400).json({
+        ok: false,
+        reason: 'Backup is not ready to restore yet. Create or finish a completed backup first.'
+      });
+    }
+    setFlash(req, { type: 'warning', message: 'That backup is not completed yet and cannot be restored.' });
+    return res.redirect('/admin/backups');
+  }
+
   const restoreMessages = typeof req.body.restoreMessages === 'undefined'
     ? ['full', 'messages'].includes(String(backupMeta?.type || '').trim().toLowerCase())
     : Boolean(req.body.restoreMessages);
@@ -425,7 +442,7 @@ async function handleBackupRestore(req, res, backupId) {
         backupId,
         options: {
           restoreMessages,
-          maxMessagesPerChannel: restoreMessages ? 200 : 0,
+          maxMessagesPerChannel: restoreMessages ? 1000 : 0,
           restoreBans,
           wipe,
           pruneChannels,

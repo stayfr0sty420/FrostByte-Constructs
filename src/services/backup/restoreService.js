@@ -191,6 +191,13 @@ async function getRestoreWebhookAvatar() {
   return await readFirstExistingFile(RESTORE_WEBHOOK_AVATAR_CANDIDATES);
 }
 
+async function resolveMembersCollection(guild, membersCache = null) {
+  if (membersCache?.size) return membersCache;
+  const fetched = await guild.members.fetch().catch(() => null);
+  if (fetched?.size) return fetched;
+  return guild.members?.cache || null;
+}
+
 async function syncRolePositions(guild, rolesData, roleIdMap, options = {}) {
   const sourceGuildId = String(options.sourceGuildId || '').trim();
   const orderedRoles = [...rolesData]
@@ -729,23 +736,34 @@ async function restoreStickers(guild, stickersData, delayMs = 250) {
   }
 }
 
-async function restoreWebhooks(guild, webhooksData, channelIdMap = new Map(), delayMs = 200) {
+async function restoreWebhooks(guild, webhooksData, channelIdMap = new Map(), options = {}) {
   if (!Array.isArray(webhooksData) || !webhooksData.length) return;
+  const threadStateMap = options.threadStateMap instanceof Map ? options.threadStateMap : new Map();
+  const delayMs = options.delayMs ?? 200;
   const safeDelay = Math.max(0, Math.floor(delayMs || 0));
   const defaultAvatar = await getRestoreWebhookAvatar();
   const channelCache = await guild.channels.fetch().catch(() => null);
   const byChannel = new Map();
 
   for (const hook of webhooksData) {
-    const channelId = channelIdMap.get(String(hook.channelId || '')) || hook.channelId;
-    if (!channelId) continue;
-    if (!byChannel.has(channelId)) byChannel.set(channelId, []);
-    byChannel.get(channelId).push(hook);
+    const originalChannelId = String(hook.channelId || '').trim();
+    const restoredThreadId = threadStateMap.get(originalChannelId)?.channelId || '';
+    const mappedChannelId = restoredThreadId || channelIdMap.get(originalChannelId) || originalChannelId;
+    if (!mappedChannelId) continue;
+
+    const mappedChannel =
+      channelCache?.get?.(mappedChannelId) || guild.channels.cache.get(mappedChannelId) || (await guild.channels.fetch(mappedChannelId).catch(() => null));
+    const webhookTarget = mappedChannel?.isThread?.() ? mappedChannel.parent : mappedChannel;
+    const targetChannelId = String(webhookTarget?.id || '').trim();
+    if (!targetChannelId) continue;
+
+    if (!byChannel.has(targetChannelId)) byChannel.set(targetChannelId, []);
+    byChannel.get(targetChannelId).push(hook);
   }
 
   let createdCount = 0;
   for (const [channelId, hooks] of byChannel.entries()) {
-    const channel = channelCache?.get?.(channelId) || (await guild.channels.fetch(channelId).catch(() => null));
+    const channel = channelCache?.get?.(channelId) || guild.channels.cache.get(channelId) || (await guild.channels.fetch(channelId).catch(() => null));
     if (!channel?.isTextBased?.()) continue;
     if (typeof channel.createWebhook !== 'function') continue;
 
@@ -945,7 +963,7 @@ async function finalizeRestoredThreads(guild, threadStateMap = new Map()) {
 async function restoreNicknames(guild, nicknamesData, membersCache = null, delayMs = 200) {
   if (!Array.isArray(nicknamesData) || !nicknamesData.length) return;
   const safeDelay = Math.max(0, Math.floor(delayMs || 0));
-  const members = membersCache || (await guild.members.fetch().catch(() => null));
+  const members = await resolveMembersCollection(guild, membersCache);
   if (!members) return;
 
   let touched = 0;
@@ -973,7 +991,7 @@ async function restoreNicknames(guild, nicknamesData, membersCache = null, delay
 async function restoreBots(guild, botsData, roleIdMap = new Map(), membersCache = null, delayMs = 200) {
   if (!Array.isArray(botsData) || !botsData.length) return;
   const safeDelay = Math.max(0, Math.floor(delayMs || 0));
-  const members = membersCache || (await guild.members.fetch().catch(() => null));
+  const members = await resolveMembersCollection(guild, membersCache);
   if (!members) return;
 
   let updates = 0;
@@ -984,6 +1002,8 @@ async function restoreBots(guild, botsData, roleIdMap = new Map(), membersCache 
     const nickname = String(botData?.nickname || '').trim();
     if (nickname && member.nickname !== nickname) {
       await member.setNickname(nickname, 'Restore from backup').catch(() => null);
+    } else if (!nickname && member.nickname) {
+      await member.setNickname(null, 'Restore from backup').catch(() => null);
     }
 
     const desiredRoleIds = Array.isArray(botData?.roles)
@@ -1003,34 +1023,54 @@ async function restoreBots(guild, botsData, roleIdMap = new Map(), membersCache 
 async function restoreRoleAssignments(guild, roleAssignments, roleIdMap = new Map(), membersCache = null, delayMs = 200) {
   if (!Array.isArray(roleAssignments) || !roleAssignments.length) return;
   const safeDelay = Math.max(0, Math.floor(delayMs || 0));
-  const members = membersCache || (await guild.members.fetch().catch(() => null));
+  const members = await resolveMembersCollection(guild, membersCache);
   if (!members) return;
 
-  let updates = 0;
+  const desiredRolesByMember = new Map();
+  const restorableRoleIds = new Set();
   for (const entry of roleAssignments) {
     const originalRoleId = String(entry?.roleId || '').trim();
     if (!originalRoleId) continue;
     const newRoleId = roleIdMap.get(originalRoleId) || originalRoleId;
     if (!newRoleId || String(newRoleId) === String(guild.id)) continue;
-    const role = guild.roles.cache.get(newRoleId) || (await guild.roles.fetch(newRoleId).catch(() => null));
-    if (!role) continue;
-    const memberIds = Array.isArray(entry?.members) ? entry.members : [];
-    for (const id of memberIds) {
-      const member = members.get(String(id));
-      if (!member) continue;
-      if (member.roles.cache.has(newRoleId)) continue;
-      try {
-        await member.roles.add(newRoleId, 'Restore from backup');
-        updates += 1;
-        if (safeDelay > 0 && updates % 10 === 0) await sleep(safeDelay);
-      } catch {
-        // ignore
+    restorableRoleIds.add(String(newRoleId));
+    for (const memberId of Array.isArray(entry?.members) ? entry.members : []) {
+      const key = String(memberId || '').trim();
+      if (!key) continue;
+      const current = desiredRolesByMember.get(key) || new Set();
+      current.add(String(newRoleId));
+      desiredRolesByMember.set(key, current);
+    }
+  }
+
+  let updates = 0;
+  for (const member of members.values()) {
+    const memberId = String(member?.id || member?.user?.id || '').trim();
+    if (!memberId) continue;
+    const desiredRoles = desiredRolesByMember.get(memberId) || new Set();
+    const currentRestorable = member.roles.cache
+      .filter((role) => restorableRoleIds.has(String(role.id || '')))
+      .map((role) => String(role.id || ''));
+    const rolesToRemove = currentRestorable.filter((roleId) => !desiredRoles.has(roleId));
+    const rolesToAdd = Array.from(desiredRoles).filter((roleId) => !member.roles.cache.has(roleId));
+
+    try {
+      if (rolesToRemove.length) {
+        await member.roles.remove(rolesToRemove, 'Sync roles from backup').catch(() => null);
+        updates += rolesToRemove.length;
       }
+      if (rolesToAdd.length) {
+        await member.roles.add(rolesToAdd, 'Sync roles from backup').catch(() => null);
+        updates += rolesToAdd.length;
+      }
+      if (safeDelay > 0 && updates > 0 && updates % 10 === 0) await sleep(safeDelay);
+    } catch {
+      // ignore
     }
   }
 }
 
-async function restoreMessages({ guild, backupDir, channelIdMap, threadStateMap = new Map(), maxPerChannel = 200, delayMs = 250 }) {
+async function restoreMessages({ guild, backupDir, channelIdMap, threadStateMap = new Map(), maxPerChannel = 1000, delayMs = 250 }) {
   const messagesDir = path.join(backupDir, 'messages');
   const entries = await fs.readdir(messagesDir).catch(() => []);
   const safeDelay = Math.max(0, Math.floor(delayMs || 0));
@@ -1082,21 +1122,25 @@ async function restoreMessages({ guild, backupDir, channelIdMap, threadStateMap 
           includeAuthorPrefix: !webhookClient,
           fallbackContent: !webhookClient ? `**${normalizedRestoredAuthor(m)}**` : 'Restored message'
         });
+        let sentMessage = null;
         if (webhookClient) {
-          await webhookClient.send({
+          const webhookSent = await webhookClient.send({
             ...payload,
             ...(threadId ? { threadId } : {}),
             username: normalizedRestoredAuthor(m),
             ...(m?.authorAvatarUrl ? { avatarURL: String(m.authorAvatarUrl).trim() } : {})
           });
+          if (webhookSent?.id && typeof channel.messages?.fetch === 'function') {
+            sentMessage = await channel.messages.fetch(webhookSent.id).catch(() => null);
+          }
         } else {
-          const sent = await channel.send(payload);
-          if (Array.isArray(m.reactions) && m.reactions.length) {
-            for (const r of m.reactions.slice(0, 3)) {
-              const emoji = r?.emoji || '';
-              if (!emoji) continue;
-              await sent.react(emoji).catch(() => null);
-            }
+          sentMessage = await channel.send(payload);
+        }
+
+        if (sentMessage && Array.isArray(m.reactions) && m.reactions.length) {
+          const uniqueReactions = [...new Set(m.reactions.map((reaction) => String(reaction?.emoji || '').trim()).filter(Boolean))];
+          for (const emoji of uniqueReactions.slice(0, 5)) {
+            await sentMessage.react(emoji).catch(() => null);
           }
         }
       } catch {
@@ -1190,7 +1234,7 @@ async function restoreBackup({
   backupId,
   options = {
     restoreMessages: false,
-    maxMessagesPerChannel: 200,
+    maxMessagesPerChannel: 1000,
     wipe: false,
     restoreBans: false,
     pruneChannels: true,
@@ -1214,7 +1258,7 @@ async function restoreBackup({
     typeof options.pruneRoles === 'boolean' ? options.pruneRoles : typeof options.pruneChannels === 'boolean' ? options.pruneChannels : true;
   const backup = await Backup.findOne({ guildId: sourceGuildId, backupId });
   if (!backup) return { ok: false, reason: 'Backup not found.' };
-  await reportProgress(5, 'Preparing backup files');
+  await reportProgress(5, 'Checking backup files');
   const backupLocation = await ensureBackupDirectory(backup);
   if (!backupLocation.ok || !backupLocation.backupDir) {
     return { ok: false, reason: backupLocation.reason || 'Backup files are missing on disk. Create a fresh backup and try again.' };
@@ -1233,6 +1277,7 @@ async function restoreBackup({
   });
 
   try {
+    await reportProgress(10, 'Backup files ready');
     await reportProgress(12, 'Loading target server');
     const guild = await discordClient.guilds.fetch(targetGuildId || guildId);
     const rolesPath = path.join(backupDir, 'roles.json');
@@ -1313,38 +1358,41 @@ async function restoreBackup({
       await restoreStickers(guild, stickersData);
     }
 
-    if (hasWebhooks) {
-      await reportProgress(66, 'Restoring webhooks');
-      await restoreWebhooks(guild, webhooksData, channelIdMap);
-    }
-
     let threadStateMap = new Map();
     if (hasThreads) {
-      await reportProgress(74, 'Restoring forum posts and threads');
+      await reportProgress(68, 'Restoring forum posts and threads');
       const forumTagMap = await buildForumTagMap(guild, channelsData, channelIdMap);
       threadStateMap = await restoreThreads(guild, threadsData, channelIdMap, { forumTagMap });
+    }
+
+    if (hasWebhooks) {
+      await reportProgress(76, 'Restoring webhooks');
+      await restoreWebhooks(guild, webhooksData, channelIdMap, { threadStateMap });
     }
 
     let membersCache = null;
     if (hasNicknames || hasRoleAssignments || hasBots) {
       await reportProgress(82, 'Loading members for role and nickname restore');
-      membersCache = await guild.members.fetch().catch(() => null);
+      membersCache = await resolveMembersCollection(guild);
     }
 
     if (hasRoleAssignments) {
+      await reportProgress(86, 'Restoring role assignments');
       await restoreRoleAssignments(guild, roleAssignments, roleIdMap, membersCache);
     }
 
     if (hasNicknames) {
+      await reportProgress(89, 'Restoring nicknames');
       await restoreNicknames(guild, nicknamesData, membersCache);
     }
 
     if (hasBots) {
+      await reportProgress(92, 'Restoring bot roles and info');
       await restoreBots(guild, botsData, roleIdMap, membersCache);
     }
 
     if (options.restoreMessages) {
-      await reportProgress(90, 'Restoring messages');
+      await reportProgress(95, 'Restoring messages and reactions');
       await restoreMessages({
         guild,
         backupDir,
@@ -1359,7 +1407,7 @@ async function restoreBackup({
     }
 
     if (options.restoreBans && hasBans) {
-      await reportProgress(96, 'Restoring ban list');
+      await reportProgress(98, 'Restoring ban list');
       const bansData = await readJson(bansPath).catch(() => []);
       await restoreBans(guild, bansData);
     }

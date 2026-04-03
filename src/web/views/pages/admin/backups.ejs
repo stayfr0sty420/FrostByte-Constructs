@@ -76,6 +76,7 @@
       <script id="backupOperationInitialData" type="application/json"><%- JSON.stringify(activeOperation || null).replace(/</g, '\\u003c') %></script>
 
       <% const channelNameById = new Map((channels || []).map((c) => [c.id, c.name])); %>
+      <% const restorableBackups = (backups || []).filter((b) => String(b.status || '').toLowerCase() === 'completed'); %>
 
       <section class="backup-hero">
         <div class="backup-hero-grid">
@@ -133,14 +134,14 @@
                 <h2 class="h6 text-uppercase text-muted">Restore Backup</h2>
                 <form method="post" action="/admin/backups/restore" class="backup-form">
                   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                  <% if (!backups.length) { %>
-                    <p class="text-muted small mb-2">No backups yet. Create one first.</p>
+                  <% if (!restorableBackups.length) { %>
+                    <p class="text-muted small mb-2">No completed backups are ready to restore yet.</p>
                     <button class="btn btn-outline-primary w-100" type="submit" disabled>Restore Backup</button>
                   <% } else { %>
                     <div class="row g-2">
                       <div class="col-12">
                         <select class="form-select" name="backupId" required>
-                          <% backups.forEach(b => { %>
+                          <% restorableBackups.forEach(b => { %>
                             <option value="<%= b.backupId %>"><%= b.name || b.type %> — <%= b.backupId %></option>
                           <% }) %>
                         </select>
@@ -424,18 +425,23 @@
                     <td data-label="Created" class="text-muted small"><span class="backup-cell-text"><%= formatDate(b.createdAt) || '—' %></span></td>
                     <td data-label="Actions" class="text-end">
                       <div class="backup-actions">
-                        <a class="btn btn-outline-secondary btn-sm icon-btn" href="/admin/backups/download/<%= b.backupId %>" title="Download" aria-label="Download">⬇️</a>
+                        <% if (String(b.status || '').toLowerCase() === 'completed') { %>
+                          <a class="btn btn-outline-secondary btn-sm icon-btn" href="/admin/backups/download/<%= b.backupId %>" title="Download" aria-label="Download">⬇️</a>
+                        <% } else { %>
+                          <button class="btn btn-outline-secondary btn-sm icon-btn" type="button" disabled title="Backup not ready" aria-label="Backup not ready">⬇️</button>
+                        <% } %>
                         <form method="post" action="/admin/backups/restore/<%= b.backupId %>" class="d-inline">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <button
                             class="btn btn-outline-primary btn-sm icon-btn"
                             type="submit"
+                            <%= String(b.status || '').toLowerCase() === 'completed' ? '' : 'disabled' %>
                             data-confirm="Restore roles/channels from this backup?"
                             data-confirm-title="Quick restore?"
                             data-confirm-ok="Restore"
                             data-confirm-cancel="Cancel"
-                            title="Quick Restore"
-                            aria-label="Quick Restore"
+                            title="<%= String(b.status || '').toLowerCase() === 'completed' ? 'Quick Restore' : 'Backup not ready' %>"
+                            aria-label="<%= String(b.status || '').toLowerCase() === 'completed' ? 'Quick Restore' : 'Backup not ready' %>"
                           >
                             ⚡
                           </button>
