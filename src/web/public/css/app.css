@@ -581,6 +581,11 @@ code {
   gap: 1rem;
 }
 
+.auth-card .form-text {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .auth-form .btn {
   display: inline-flex;
   align-items: center;
@@ -687,6 +692,43 @@ code {
 .auth-inline-link:hover,
 .auth-inline-link:focus {
   color: #fff;
+}
+
+.auth-qr-panel {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  padding: 0.35rem;
+}
+
+.auth-qr-image {
+  width: min(100%, 260px);
+  height: auto;
+}
+
+.auth-setup-meta {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.auth-setup-meta__label {
+  font-weight: 600;
+}
+
+.auth-setup-key {
+  display: block;
+  width: 100%;
+  padding: 0.8rem 0.95rem;
+  border-radius: 14px;
+  background: rgba(12, 5, 8, 0.88);
+  border: 1px solid rgba(239, 68, 68, 0.16);
+  color: rgba(255, 228, 230, 0.92);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .btn-with-icon {
@@ -1451,6 +1493,15 @@ code {
 
   .auth-card h2 {
     font-size: 1.8rem;
+  }
+
+  .auth-qr-image {
+    width: min(100%, 220px);
+  }
+
+  .auth-setup-key {
+    font-size: 0.8rem;
+    padding: 0.7rem 0.8rem;
   }
 
   .header-actions,

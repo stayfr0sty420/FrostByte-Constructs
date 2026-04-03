@@ -49,7 +49,7 @@ const {
   applyVerifiedRoles,
   applyJoinGate
 } = require('../../services/discord/discordService');
-const { createBackup, deleteBackup, ensureBackupArchive } = require('../../services/backup/backupService');
+const { createBackup, deleteBackup, ensureBackupArchive, inspectBackupAvailability } = require('../../services/backup/backupService');
 const { restoreBackup } = require('../../services/backup/restoreService');
 const {
   createBackupOperation,
@@ -116,6 +116,36 @@ function wantsJsonResponse(req) {
   const accept = String(req.headers.accept || '').toLowerCase();
   const requestedWith = String(req.headers['x-requested-with'] || '').toLowerCase();
   return requestedWith === 'xmlhttprequest' || accept.includes('application/json');
+}
+
+function resolveActiveBackupOperation(req) {
+  const guildId = String(req.session?.activeGuildId || '').trim();
+  if (!guildId) return null;
+
+  const sessionOperationId = String(req.session?.backupOperationId || '').trim();
+  let activeOperation = sessionOperationId ? getBackupOperation(sessionOperationId) : null;
+  if (activeOperation && activeOperation.guildId !== guildId) {
+    delete req.session.backupOperationId;
+    activeOperation = null;
+  }
+
+  if (!activeOperation) {
+    const runningOperation = getRunningBackupOperationByGuild(guildId);
+    if (runningOperation) {
+      req.session.backupOperationId = runningOperation.operationId;
+      activeOperation = runningOperation;
+    }
+  }
+
+  if (activeOperation && ['completed', 'failed'].includes(String(activeOperation.status || '').toLowerCase())) {
+    const completedAt = activeOperation.completedAt ? new Date(activeOperation.completedAt).getTime() : 0;
+    if (completedAt && Date.now() - completedAt > 15000) {
+      delete req.session.backupOperationId;
+      return null;
+    }
+  }
+
+  return activeOperation && activeOperation.guildId === guildId ? activeOperation : null;
 }
 
 async function logAccountAudit(req, { status = 'success', stage = 'account-update', reason = '' } = {}) {
@@ -2372,26 +2402,7 @@ router.post('/economy/users/exp-all', requireAdmin, requireGuild, async (req, re
 // Backups
 router.get('/backups', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
-  const activeOperationId = String(req.session.backupOperationId || '').trim();
-  let activeOperation = activeOperationId ? getBackupOperation(activeOperationId) : null;
-  if (activeOperation && activeOperation.guildId !== guildId) {
-    delete req.session.backupOperationId;
-    activeOperation = null;
-  }
-  if (!activeOperation) {
-    const runningOperation = getRunningBackupOperationByGuild(guildId);
-    if (runningOperation) {
-      req.session.backupOperationId = runningOperation.operationId;
-      activeOperation = runningOperation;
-    }
-  }
-  if (activeOperation && ['completed', 'failed'].includes(String(activeOperation.status || '').toLowerCase())) {
-    const completedAt = activeOperation.completedAt ? new Date(activeOperation.completedAt).getTime() : 0;
-    if (completedAt && Date.now() - completedAt > 15000) {
-      delete req.session.backupOperationId;
-      activeOperation = null;
-    }
-  }
+  const activeOperation = resolveActiveBackupOperation(req);
   const [cfg, backups, schedules, channels] = await Promise.all([
     getOrCreateGuildConfig(guildId),
     Backup.find({ guildId }).sort({ createdAt: -1 }).limit(50),
@@ -2400,15 +2411,16 @@ router.get('/backups', requireAdmin, requireGuild, async (req, res) => {
   ]);
   const flash = req.session.flash || null;
   delete req.session.flash;
-  const labeledBackups = (backups || []).map((b) => {
+  const labeledBackups = await Promise.all((backups || []).map(async (b) => {
     const meta = b.metadata || {};
     const source =
       String(meta.source || '').trim() ||
       (String(b.createdBy || '').toLowerCase().includes('schedule') ? 'automated' : '') ||
       (String(b.name || '').startsWith('Auto ') ? 'automated' : '') ||
       'manual';
-    return { ...b.toObject?.() ? b.toObject() : b, source };
-  });
+    const availability = await inspectBackupAvailability(b);
+    return { ...(b.toObject?.() ? b.toObject() : b), source, availability };
+  }));
 
   const labeledSchedules = (schedules || []).map((s) => {
     const cronExpr = s.interval || s.cron || '';
@@ -2620,6 +2632,11 @@ router.post('/backups/delete/:id', requireAdmin, requireGuild, async (req, res) 
   const id = req.params.id;
   await deleteBackup({ guildId, backupId: id });
   return res.redirect('/admin/backups');
+});
+
+router.get('/backups/operations/active', requireAdmin, requireGuild, async (req, res) => {
+  const operation = resolveActiveBackupOperation(req);
+  return res.json({ ok: true, operation, serverTime: new Date().toISOString() });
 });
 
 router.get('/backups/operations/:id', requireAdmin, requireGuild, async (req, res) => {

@@ -500,6 +500,19 @@ async function post2FAVerify(req, res) {
       reason: 'Invalid authenticator code.'
     });
     const locked = user.lockUntil && user.lockUntil.getTime() > Date.now();
+    let qrCodeDataUrl = '';
+    let setupKey = '';
+    if (payload.purpose === 'admin-login-2fa-setup' && payload.secret) {
+      const issuer = String(env.ADMIN_TOTP_ISSUER || 'Rodstarkian Suite').trim() || 'Rodstarkian Suite';
+      const otpauth = speakeasy.otpauthURL({
+        secret: String(payload.secret),
+        label: `${issuer} (${user.email})`,
+        issuer,
+        encoding: 'base32'
+      });
+      qrCodeDataUrl = await QRCode.toDataURL(otpauth).catch(() => '');
+      setupKey = String(payload.secret || '').trim();
+    }
     return renderLogin(res, {
       status: locked ? 423 : 401,
       viewMode,
@@ -507,6 +520,8 @@ async function post2FAVerify(req, res) {
       returnTo: payload.returnTo,
       challengeToken: ['admin-login-2fa', 'admin-login-2fa-code-only'].includes(payload.purpose) ? authToken : '',
       setupToken: payload.purpose === 'admin-login-2fa-setup' ? authToken : '',
+      qrCodeDataUrl,
+      setupKey,
       error: locked
         ? 'Account temporarily locked due to too many failed attempts. Please try again later.'
         : 'Invalid authenticator code. Please try again.'

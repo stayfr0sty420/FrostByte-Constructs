@@ -3,7 +3,13 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const Backup = require('../../../../db/models/Backup');
 const { env } = require('../../../../config/env');
-const { createBackup, deleteBackup, normalizeBackupType, ensureBackupArchive } = require('../../../../services/backup/backupService');
+const {
+  createBackup,
+  deleteBackup,
+  normalizeBackupType,
+  ensureBackupArchive,
+  inspectBackupAvailability
+} = require('../../../../services/backup/backupService');
 const { restoreBackup } = require('../../../../services/backup/restoreService');
 const { safeReply } = require('../../../shared/util/reply');
 
@@ -116,11 +122,13 @@ module.exports = {
 
     if (sub === 'list') {
       const backups = await Backup.find({ guildId }).sort({ createdAt: -1 }).limit(10);
-      const lines = backups.map((b) => {
+      const lines = await Promise.all(backups.map(async (b) => {
         const size = b.size ? `${(b.size / (1024 * 1024)).toFixed(2)} MB` : '0 MB';
         const archived = b.archived ? ' (archived)' : '';
-        return `• \`${b.backupId}\` — **${b.name || b.type}** — ${b.status}${archived} — ${size}`;
-      });
+        const availability = await inspectBackupAvailability(b);
+        const health = availability?.state ? ` — ${String(availability.state).toUpperCase()}` : '';
+        return `• \`${b.backupId}\` — **${b.name || b.type}** — ${b.status}${archived}${health} — ${size}`;
+      }));
       const embed = new EmbedBuilder()
         .setTitle('Backups')
         .setColor(0x3498db)
@@ -133,6 +141,7 @@ module.exports = {
       const id = interaction.options.getString('id', true);
       const backup = await Backup.findOne({ guildId, backupId: id });
       if (!backup) return await safeReply(interaction, { content: 'Backup not found.', ephemeral: true });
+      const availability = await inspectBackupAvailability(backup);
       const size = backup.size ? `${(backup.size / (1024 * 1024)).toFixed(2)} MB` : '0 MB';
       const embed = new EmbedBuilder()
         .setTitle('Backup Info')
@@ -141,9 +150,11 @@ module.exports = {
           { name: 'ID', value: `\`${backup.backupId}\``, inline: true },
           { name: 'Type', value: backup.type, inline: true },
           { name: 'Status', value: backup.status, inline: true },
+          { name: 'Health', value: String(availability?.state || 'unknown'), inline: true },
           { name: 'Size', value: size, inline: true },
           { name: 'Archived', value: backup.archived ? 'yes' : 'no', inline: true },
-          { name: 'Created', value: backup.createdAt?.toISOString?.() || '', inline: false }
+          { name: 'Created', value: backup.createdAt?.toISOString?.() || '', inline: false },
+          ...(availability?.reason ? [{ name: 'Availability', value: availability.reason, inline: false }] : [])
         )
         .setTimestamp();
       return await safeReply(interaction, { embeds: [embed], ephemeral: true });

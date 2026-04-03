@@ -60,7 +60,7 @@ function formatDurationBetween(startValue, endValue = new Date(), options = {}) 
   const end = endValue instanceof Date ? endValue : new Date(endValue);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '';
 
-  let remainingSeconds = Math.max(1, Math.round((end.getTime() - start.getTime()) / 1000));
+  const totalSeconds = Math.max(1, Math.round((end.getTime() - start.getTime()) / 1000));
   const maxParts = Math.max(1, Math.floor(Number(options.maxParts) || 2));
   const units = [
     ['year', 365 * 24 * 60 * 60],
@@ -71,6 +71,16 @@ function formatDurationBetween(startValue, endValue = new Date(), options = {}) 
     ['minute', 60],
     ['second', 1]
   ];
+
+  if (options.roundUp && maxParts === 1) {
+    for (const [label, size] of units) {
+      if (totalSeconds < size * 0.85 && size !== 1) continue;
+      const count = Math.max(1, Math.round(totalSeconds / size));
+      return `${count} ${label}${count === 1 ? '' : 's'}`;
+    }
+  }
+
+  let remainingSeconds = totalSeconds;
   const parts = [];
 
   for (const [label, size] of units) {

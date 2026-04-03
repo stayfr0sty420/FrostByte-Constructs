@@ -77,7 +77,7 @@
       <div id="backupsPageContent">
 
       <% const channelNameById = new Map((channels || []).map((c) => [c.id, c.name])); %>
-      <% const restorableBackups = (backups || []).filter((b) => String(b.status || '').toLowerCase() === 'completed'); %>
+      <% const restorableBackups = (backups || []).filter((b) => String(b.status || '').toLowerCase() === 'completed' && b.availability?.canRestore); %>
 
       <section class="backup-hero">
         <div class="backup-hero-grid">
@@ -136,7 +136,9 @@
                 <form method="post" action="/admin/backups/restore" class="backup-form">
                   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                   <% if (!restorableBackups.length) { %>
-                    <p class="text-muted small mb-2">No completed backups are ready to restore yet.</p>
+                    <p class="text-muted small mb-2">
+                      <%= backups.length ? 'No completed backups are currently safe to restore. Check the Health column below for missing or invalid backups.' : 'No completed backups are ready to restore yet.' %>
+                    </p>
                     <button class="btn btn-outline-primary w-100" type="submit" disabled>Restore Backup</button>
                   <% } else { %>
                     <div class="row g-2">
@@ -395,6 +397,7 @@
                   <th>Name</th>
                   <th>Type</th>
                   <th>Status</th>
+                  <th>Health</th>
                   <th>Size</th>
                   <th>Archived</th>
                   <th>Source</th>
@@ -405,17 +408,28 @@
               <tbody>
                 <% if (!backups.length) { %>
                   <tr>
-                    <td colspan="9" class="text-muted small">No backups found yet. Create one above to get started.</td>
+                    <td colspan="10" class="text-muted small">No backups found yet. Create one above to get started.</td>
                   </tr>
                 <% } %>
                 <% backups.forEach(b => { %>
                   <tr>
                     <td data-label="ID"><code><%= b.backupId %></code></td>
-                    <td data-label="Name"><span class="backup-cell-text"><%= b.name || b.type %></span></td>
+                    <td data-label="Name">
+                      <span class="backup-cell-text"><%= b.name || b.type %></span>
+                      <% if (b.availability?.reason) { %>
+                        <div class="text-muted small mt-1"><%= b.availability.reason %></div>
+                      <% } %>
+                    </td>
                     <td data-label="Type"><span class="backup-cell-text"><%= b.type %></span></td>
                     <td data-label="Status">
                       <span class="badge backup-status-badge <%= b.status === 'completed' ? 'text-bg-success' : (b.status === 'failed' ? 'text-bg-danger' : 'text-bg-warning') %>">
                         <%= b.status %>
+                      </span>
+                    </td>
+                    <td data-label="Health">
+                      <% const healthState = String(b.availability?.state || '').toLowerCase(); %>
+                      <span class="badge <%= healthState === 'ready' ? 'text-bg-success' : (healthState === 'processing' ? 'text-bg-primary' : (healthState === 'failed' ? 'text-bg-danger' : 'text-bg-warning')) %>">
+                        <%= healthState || 'unknown' %>
                       </span>
                     </td>
                     <td data-label="Size" class="text-muted small"><span class="backup-cell-text"><%= b.size ? (b.size / (1024 * 1024)).toFixed(2) + ' MB' : '0 MB' %></span></td>
@@ -426,23 +440,23 @@
                     <td data-label="Created" class="text-muted small"><span class="backup-cell-text"><%= formatDate(b.createdAt) || '—' %></span></td>
                     <td data-label="Actions" class="text-end">
                       <div class="backup-actions">
-                        <% if (String(b.status || '').toLowerCase() === 'completed') { %>
+                        <% if (String(b.status || '').toLowerCase() === 'completed' && b.availability?.canDownload) { %>
                           <a class="btn btn-outline-secondary btn-sm icon-btn" href="/admin/backups/download/<%= b.backupId %>" title="Download" aria-label="Download">⬇️</a>
                         <% } else { %>
-                          <button class="btn btn-outline-secondary btn-sm icon-btn" type="button" disabled title="Backup not ready" aria-label="Backup not ready">⬇️</button>
+                          <button class="btn btn-outline-secondary btn-sm icon-btn" type="button" disabled title="<%= b.availability?.reason || 'Backup not ready' %>" aria-label="Backup not ready">⬇️</button>
                         <% } %>
                         <form method="post" action="/admin/backups/restore/<%= b.backupId %>" class="d-inline">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <button
                             class="btn btn-outline-primary btn-sm icon-btn"
                             type="submit"
-                            <%= String(b.status || '').toLowerCase() === 'completed' ? '' : 'disabled' %>
+                            <%= String(b.status || '').toLowerCase() === 'completed' && b.availability?.canRestore ? '' : 'disabled' %>
                             data-confirm="Restore roles/channels from this backup?"
                             data-confirm-title="Quick restore?"
                             data-confirm-ok="Restore"
                             data-confirm-cancel="Cancel"
-                            title="<%= String(b.status || '').toLowerCase() === 'completed' ? 'Quick Restore' : 'Backup not ready' %>"
-                            aria-label="<%= String(b.status || '').toLowerCase() === 'completed' ? 'Quick Restore' : 'Backup not ready' %>"
+                            title="<%= String(b.status || '').toLowerCase() === 'completed' && b.availability?.canRestore ? 'Quick Restore' : (b.availability?.reason || 'Backup not ready') %>"
+                            aria-label="<%= String(b.status || '').toLowerCase() === 'completed' && b.availability?.canRestore ? 'Quick Restore' : 'Backup not ready' %>"
                           >
                             ⚡
                           </button>
@@ -481,6 +495,7 @@
         const createFormSelector = 'form[action="/admin/backups/create"]';
         const restoreFormSelector = 'form[action="/admin/backups/restore"], form[action^="/admin/backups/restore/"]';
         const scheduleFormSelector = 'form[action="/admin/backups/schedules"]';
+        const activeOperationEndpoint = '/admin/backups/operations/active';
         if (!mount || !contentMount) return;
 
         let initialOperation = null;
@@ -493,6 +508,8 @@
         let stream = null;
         let pollTimer = null;
         let watchdogTimer = null;
+        let discoveryTimer = null;
+        let discoveryAttempts = 0;
         let refreshTimer = null;
         let refreshRequest = null;
         let activeOperationId = '';
@@ -721,6 +738,13 @@
           });
         };
 
+        const clearDiscoveryTimer = () => {
+          if (discoveryTimer) {
+            window.clearTimeout(discoveryTimer);
+            discoveryTimer = null;
+          }
+        };
+
         const closeLiveUpdates = () => {
           if (stream) {
             stream.close();
@@ -794,6 +818,44 @@
           }, 1400);
         };
 
+        const scheduleOperationDiscovery = (delayMs = 1800) => {
+          clearDiscoveryTimer();
+          discoveryTimer = window.setTimeout(async () => {
+            discoveryTimer = null;
+            if (String(currentOperation?.status || '').toLowerCase() === 'running') return;
+            if (typeof window.fetch !== 'function') return;
+
+            try {
+              const response = await fetch(activeOperationEndpoint, {
+                headers: { Accept: 'application/json' },
+                credentials: 'same-origin',
+                cache: 'no-store'
+              });
+              if (!response.ok) throw new Error('active_operation_failed');
+              const payload = await response.json();
+              if (!payload?.ok) throw new Error('active_operation_invalid');
+              if (!payload.operation) {
+                discoveryAttempts += 1;
+                if (discoveryAttempts < 6) scheduleOperationDiscovery(4500);
+                return;
+              }
+
+              discoveryAttempts = 0;
+              updateOperationCard(payload.operation, {
+                source: 'poll',
+                contactAt: payload.serverTime || Date.now()
+              });
+
+              if (String(payload.operation.status || '').toLowerCase() === 'running' && payload.operation.operationId) {
+                subscribeToOperation(payload.operation.operationId);
+              }
+            } catch (_error) {
+              discoveryAttempts += 1;
+              if (discoveryAttempts < 6) scheduleOperationDiscovery(6000);
+            }
+          }, Math.max(250, Number(delayMs) || 0));
+        };
+
         const updateOperationCard = (operation, { source = '', contactAt = 0, touch = true } = {}) => {
           if (!operation) return;
           const incomingOperationId = String(operation.operationId || '').trim();
@@ -847,6 +909,8 @@
 
           if (touch) {
             if (normalizedStatus === 'running') {
+              discoveryAttempts = 0;
+              clearDiscoveryTimer();
               touchConnection(source || transportMode || 'stream', contactAt || operation.updatedAt || Date.now());
             } else if (contactAt) {
               lastContactAt = timestampToMs(contactAt) || lastContactAt;
@@ -862,6 +926,7 @@
           if (normalizedStatus === 'completed' || normalizedStatus === 'failed') {
             closeLiveUpdates();
             scheduleSectionRefresh();
+            scheduleOperationDiscovery(4000);
           }
         };
 
@@ -914,9 +979,11 @@
 
         const subscribeToOperation = (operationId) => {
           if (!operationId) return;
+          clearDiscoveryTimer();
           closeLiveUpdates();
           activeOperationId = operationId;
           setConnectionState('connecting', { mode: 'stream' });
+          void pollOperation(operationId, { suppressReconnect: true });
 
           if (typeof window.EventSource !== 'function') {
             setConnectionState('reconnecting', { mode: 'poll' });
@@ -956,6 +1023,8 @@
 
           closeLiveUpdates();
           clearScheduledRefresh();
+          clearDiscoveryTimer();
+          discoveryAttempts = 0;
           activeOperationId = '';
           updateOperationCard({
             action: form.action.includes('/restore') ? 'restore' : 'create',
@@ -988,6 +1057,7 @@
                 touch: false
               });
               subscribeToOperation(payload.operation.operationId);
+              scheduleOperationDiscovery(3000);
               return;
             }
             if (!response.ok || !payload?.ok || !payload.operation) {
@@ -999,6 +1069,7 @@
               touch: false
             });
             subscribeToOperation(payload.operation.operationId);
+            scheduleOperationDiscovery(3000);
           } catch (error) {
             updateOperationCard({
               action: form.action.includes('/restore') ? 'restore' : 'create',
@@ -1010,6 +1081,7 @@
               startedAt: new Date().toISOString(),
               completedAt: new Date().toISOString()
             }, { touch: false });
+            scheduleOperationDiscovery(4000);
           }
         };
 
@@ -1057,7 +1129,10 @@
             subscribeToOperation(existingId);
           } else {
             renderOperationHealth();
+            scheduleOperationDiscovery(1500);
           }
+        } else {
+          scheduleOperationDiscovery(800);
         }
       })();
     </script>

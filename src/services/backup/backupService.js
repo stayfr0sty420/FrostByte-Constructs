@@ -1,11 +1,14 @@
 const fs = require('fs/promises');
+const os = require('os');
 const path = require('path');
+const AdmZip = require('adm-zip');
 const archiver = require('archiver');
 const { createWriteStream } = require('fs');
 const { ChannelType } = require('discord.js');
 const { nanoid } = require('nanoid');
 const Backup = require('../../db/models/Backup');
 const GuildConfig = require('../../db/models/GuildConfig');
+const { env } = require('../../config/env');
 const { logger } = require('../../config/logger');
 const { sendLog } = require('../discord/loggingService');
 
@@ -24,8 +27,26 @@ const VALID_BACKUP_TYPES = new Set([
 ]);
 const FORUM_LIKE_TYPES = new Set([ChannelType.GuildForum, ChannelType.GuildMedia].filter((value) => Number.isFinite(value)));
 
-function backupsRoot() {
+function stableBackupsRoot() {
+  const configured = String(env.BACKUP_STORAGE_DIR || '').trim();
+  if (configured) return path.resolve(configured);
+  if (process.platform === 'win32') {
+    const appData = String(process.env.APPDATA || '').trim();
+    if (appData) return path.join(appData, 'Rodstarkian Suite', 'backups');
+  }
+  return path.join(os.homedir(), '.rodstarkian-suite', 'backups');
+}
+
+function legacyBackupsRoot() {
   return path.join(process.cwd(), 'backups');
+}
+
+function backupRootCandidates() {
+  return uniquePaths([stableBackupsRoot(), legacyBackupsRoot()]);
+}
+
+function backupsRoot() {
+  return backupRootCandidates()[0] || legacyBackupsRoot();
 }
 
 async function pathExists(targetPath, kind = 'any') {
@@ -59,8 +80,46 @@ function buildGuildBackupsDir(guildId) {
   return safeGuildId ? path.join(backupsRoot(), safeGuildId) : backupsRoot();
 }
 
+function buildGuildBackupsDirs(guildId) {
+  const safeGuildId = String(guildId || '').trim();
+  return uniquePaths(backupRootCandidates().map((rootPath) => (safeGuildId ? path.join(rootPath, safeGuildId) : rootPath)));
+}
+
+async function findExistingBackupArchivePath(backup, options = {}) {
+  const guildBackupsDirs = buildGuildBackupsDirs(backup?.guildId);
+  const storedZipPath = String(backup?.zipPath || '').trim();
+  const storedZipName = storedZipPath ? path.basename(storedZipPath) : '';
+  const backupId = String(backup?.backupId || '').trim();
+  const dirPath = String(options.dirPath || '').trim();
+  const dirZipPath = dirPath ? path.join(path.dirname(dirPath), `${path.basename(dirPath)}.zip`) : '';
+
+  const directCandidates = uniquePaths([
+    storedZipPath,
+    ...guildBackupsDirs.map((guildBackupsDir) => (storedZipName ? path.join(guildBackupsDir, storedZipName) : '')),
+    dirZipPath
+  ]);
+
+  for (const candidate of directCandidates) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await pathExists(candidate, 'file')) return candidate;
+  }
+
+  if (!backupId) return '';
+
+  for (const guildBackupsDir of guildBackupsDirs) {
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await pathExists(guildBackupsDir, 'dir'))) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const entries = await fs.readdir(guildBackupsDir, { withFileTypes: true }).catch(() => []);
+    const matchedZip = entries.find((entry) => entry.isFile() && entry.name.startsWith(`${backupId}_`) && entry.name.endsWith('.zip'));
+    if (matchedZip) return path.join(guildBackupsDir, matchedZip.name);
+  }
+
+  return '';
+}
+
 async function findExistingBackupDirectory(backup) {
-  const guildBackupsDir = buildGuildBackupsDir(backup?.guildId);
+  const guildBackupsDirs = buildGuildBackupsDirs(backup?.guildId);
   const storedZipPath = String(backup?.zipPath || '').trim();
   const storedDirPath = String(backup?.filePath || backup?.path || '').trim();
   const storedDirName = storedDirPath ? path.basename(storedDirPath) : '';
@@ -69,8 +128,10 @@ async function findExistingBackupDirectory(backup) {
 
   const directCandidates = uniquePaths([
     storedDirPath,
-    storedDirName ? path.join(guildBackupsDir, storedDirName) : '',
-    storedZipBase ? path.join(guildBackupsDir, storedZipBase) : ''
+    ...guildBackupsDirs.flatMap((guildBackupsDir) => [
+      storedDirName ? path.join(guildBackupsDir, storedDirName) : '',
+      storedZipBase ? path.join(guildBackupsDir, storedZipBase) : ''
+    ])
   ]);
 
   for (const candidate of directCandidates) {
@@ -78,11 +139,18 @@ async function findExistingBackupDirectory(backup) {
     if (await pathExists(candidate, 'dir')) return candidate;
   }
 
-  if (!backupId || !(await pathExists(guildBackupsDir, 'dir'))) return '';
+  if (!backupId) return '';
 
-  const entries = await fs.readdir(guildBackupsDir, { withFileTypes: true }).catch(() => []);
-  const match = entries.find((entry) => entry.isDirectory() && entry.name.startsWith(`${backupId}_`));
-  return match ? path.join(guildBackupsDir, match.name) : '';
+  for (const guildBackupsDir of guildBackupsDirs) {
+    // eslint-disable-next-line no-await-in-loop
+    if (!(await pathExists(guildBackupsDir, 'dir'))) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const entries = await fs.readdir(guildBackupsDir, { withFileTypes: true }).catch(() => []);
+    const match = entries.find((entry) => entry.isDirectory() && entry.name.startsWith(`${backupId}_`));
+    if (match) return path.join(guildBackupsDir, match.name);
+  }
+
+  return '';
 }
 
 async function syncBackupLocation(backup, updates = {}) {
@@ -102,47 +170,35 @@ async function ensureBackupArchive(backup) {
   if (!backup) return { ok: false, reason: 'Backup not found.' };
 
   const guildBackupsDir = buildGuildBackupsDir(backup.guildId);
-  const storedZipPath = String(backup.zipPath || '').trim();
-  const storedZipName = storedZipPath ? path.basename(storedZipPath) : '';
   const backupId = String(backup.backupId || '').trim();
   const dirPath = await findExistingBackupDirectory(backup);
-  const dirZipPath = dirPath ? path.join(path.dirname(dirPath), `${path.basename(dirPath)}.zip`) : '';
 
-  const directCandidates = uniquePaths([
-    storedZipPath,
-    storedZipName ? path.join(guildBackupsDir, storedZipName) : '',
-    dirZipPath
-  ]);
-
-  for (const candidate of directCandidates) {
-    // eslint-disable-next-line no-await-in-loop
-    if (await pathExists(candidate, 'file')) {
-      const stats = await fs.stat(candidate).catch(() => null);
-      await syncBackupLocation(backup, {
-        zipPath: candidate,
-        size: stats?.size || backup.size || 0,
-        ...(dirPath ? { path: dirPath, filePath: dirPath } : {})
-      });
-      return { ok: true, zipPath: candidate, size: stats?.size || 0, regenerated: false };
+  const archivePath = await findExistingBackupArchivePath(backup, { dirPath });
+  if (archivePath) {
+    const manifestPath = dirPath ? path.join(dirPath, 'manifest.json') : '';
+    const manifest = manifestPath && (await pathExists(manifestPath, 'file')) ? await readJson(manifestPath).catch(() => null) : null;
+    const validation = validateBackupZipArchive(archivePath, manifest);
+    if (!validation.ok) {
+      return { ok: false, reason: validation.reason || 'Backup archive failed validation.' };
     }
-  }
-
-  if (backupId && (await pathExists(guildBackupsDir, 'dir'))) {
-    const entries = await fs.readdir(guildBackupsDir, { withFileTypes: true }).catch(() => []);
-    const matchedZip = entries.find((entry) => entry.isFile() && entry.name.startsWith(`${backupId}_`) && entry.name.endsWith('.zip'));
-    if (matchedZip) {
-      const candidate = path.join(guildBackupsDir, matchedZip.name);
-      const stats = await fs.stat(candidate).catch(() => null);
-      await syncBackupLocation(backup, {
-        zipPath: candidate,
-        size: stats?.size || backup.size || 0,
-        ...(dirPath ? { path: dirPath, filePath: dirPath } : {})
-      });
-      return { ok: true, zipPath: candidate, size: stats?.size || 0, regenerated: false };
-    }
+    const stats = await fs.stat(archivePath).catch(() => null);
+    await syncBackupLocation(backup, {
+      zipPath: archivePath,
+      size: stats?.size || backup.size || 0,
+      ...(dirPath ? { path: dirPath, filePath: dirPath } : {})
+    });
+    return { ok: true, zipPath: archivePath, size: stats?.size || 0, regenerated: false };
   }
 
   if (dirPath) {
+    const metadataExists = await pathExists(path.join(dirPath, 'metadata.json'), 'file');
+    if (!metadataExists) {
+      return {
+        ok: false,
+        reason: 'Backup folder is incomplete on disk. This backup is no longer safe to download or restore.'
+      };
+    }
+    const dirZipPath = path.join(path.dirname(dirPath), `${path.basename(dirPath)}.zip`);
     const rebuildZipPath = dirZipPath || path.join(guildBackupsDir, `${backupId || path.basename(dirPath)}.zip`);
     await zipDirectory(dirPath, rebuildZipPath);
     const stats = await fs.stat(rebuildZipPath).catch(() => null);
@@ -163,6 +219,75 @@ async function ensureBackupArchive(backup) {
   };
 }
 
+async function inspectBackupAvailability(backup) {
+  const normalizedStatus = String(backup?.status || '').trim().toLowerCase();
+  if (!backup) {
+    return {
+      state: 'missing',
+      canDownload: false,
+      canRestore: false,
+      reason: 'Backup record is missing.'
+    };
+  }
+
+  if (normalizedStatus && normalizedStatus !== 'completed') {
+    return {
+      state: normalizedStatus === 'failed' ? 'failed' : 'processing',
+      canDownload: false,
+      canRestore: false,
+      reason: normalizedStatus === 'failed' ? String(backup?.error || 'Backup failed.') : 'Backup is still being created.'
+    };
+  }
+
+  const dirPath = await findExistingBackupDirectory(backup);
+  const archivePath = await findExistingBackupArchivePath(backup, { dirPath });
+  const metadataPath = dirPath ? path.join(dirPath, 'metadata.json') : '';
+  const manifestPath = dirPath ? path.join(dirPath, 'manifest.json') : '';
+  const hasMetadata = metadataPath ? await pathExists(metadataPath, 'file') : false;
+  const hasManifest = manifestPath ? await pathExists(manifestPath, 'file') : false;
+
+  if (archivePath) {
+    const manifest = hasManifest ? await readJson(manifestPath).catch(() => null) : null;
+    const validation = validateBackupZipArchive(archivePath, manifest);
+    if (!validation.ok) {
+      return {
+        state: 'invalid',
+        canDownload: false,
+        canRestore: false,
+        reason: validation.reason || 'Backup archive failed validation.'
+      };
+    }
+
+    return {
+      state: 'ready',
+      canDownload: true,
+      canRestore: true,
+      reason: '',
+      zipPath: archivePath,
+      hasManifest,
+      hasMetadata
+    };
+  }
+
+  if (dirPath && hasMetadata) {
+    return {
+      state: 'ready',
+      canDownload: true,
+      canRestore: true,
+      reason: 'Archive file is missing, but the extracted backup folder is intact and the zip can be rebuilt on demand.',
+      hasManifest,
+      hasMetadata
+    };
+  }
+
+  return {
+    state: 'missing',
+    canDownload: false,
+    canRestore: false,
+    reason: 'Backup files are missing on disk. This backup is no longer safe to restore or download.'
+  };
+}
+
 function timestampSlug(d = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(
@@ -174,6 +299,11 @@ async function ensureDir(p) {
   await fs.mkdir(p, { recursive: true });
 }
 
+async function readJson(filePath) {
+  const raw = await fs.readFile(filePath, 'utf8');
+  return JSON.parse(raw);
+}
+
 async function writeJson(filePath, data) {
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8');
 }
@@ -181,6 +311,57 @@ async function writeJson(filePath, data) {
 async function writeJsonIf(dir, fileName, data) {
   if (data === undefined) return;
   await writeJson(path.join(dir, fileName), data);
+}
+
+function buildBackupManifest({ backupId, guildId, backupType, createdAt, stats, files = [] } = {}) {
+  return {
+    formatVersion: 2,
+    backupId: String(backupId || '').trim(),
+    guildId: String(guildId || '').trim(),
+    backupType: String(backupType || '').trim() || 'full',
+    createdAt: String(createdAt || new Date().toISOString()),
+    stats: stats && typeof stats === 'object' ? stats : {},
+    files: Array.isArray(files)
+      ? files.map((file) => String(file || '').trim()).filter(Boolean)
+      : []
+  };
+}
+
+function normalizeZipEntryName(value) {
+  return String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .trim();
+}
+
+function validateBackupZipArchive(zipPath, manifest = null) {
+  try {
+    const archive = new AdmZip(zipPath);
+    const entryNames = new Set(
+      archive
+        .getEntries()
+        .map((entry) => normalizeZipEntryName(entry.entryName))
+        .filter(Boolean)
+    );
+    const requiredEntries = new Set(['metadata.json']);
+    if (manifest) requiredEntries.add('manifest.json');
+    if (manifest && Array.isArray(manifest.files)) {
+      for (const file of manifest.files) {
+        const normalized = normalizeZipEntryName(file);
+        if (normalized) requiredEntries.add(normalized);
+      }
+    }
+
+    for (const entryName of requiredEntries) {
+      if (!entryNames.has(entryName)) {
+        return { ok: false, reason: `Backup archive is missing ${entryName}.` };
+      }
+    }
+
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: `Backup archive validation failed: ${String(err?.message || err)}` };
+  }
 }
 
 async function zipDirectory(sourceDir, outPath) {
@@ -461,6 +642,27 @@ async function collectThreadsFromChannels(channels, { includeMessages = false, m
       if (!t?.id || seenThreadIds.has(t.id)) continue;
       seenThreadIds.add(t.id);
       const starterMessage = await t.fetchStarterMessage?.().catch(() => null);
+      let serializedStarter = starterMessage ? serializeMessage(starterMessage) : null;
+      let serializedThreadMessages = [];
+
+      if (includeMessages && messageLimit > 0 && t?.messages?.fetch) {
+        const msgs = await fetchMessages(t, messageLimit).catch(() => []);
+        serializedThreadMessages = sortStoredMessages(msgs.map((m) => serializeMessage(m)));
+        if (starterMessage?.id && !serializedThreadMessages.some((message) => message.id === starterMessage.id)) {
+          serializedThreadMessages.push(serializeMessage(starterMessage));
+          serializedThreadMessages = sortStoredMessages(serializedThreadMessages);
+        }
+        if (!serializedStarter && serializedThreadMessages.length) {
+          serializedStarter = serializedThreadMessages[0];
+        }
+      } else if (!serializedStarter && t?.messages?.fetch) {
+        const sampledMessages = await fetchMessages(t, 200).catch(() => []);
+        const serializedSample = sortStoredMessages(sampledMessages.map((m) => serializeMessage(m)));
+        if (serializedSample.length) {
+          serializedStarter = serializedSample[0];
+        }
+      }
+
       threads.push({
         id: t.id,
         name: t.name,
@@ -477,17 +679,12 @@ async function collectThreadsFromChannels(channels, { includeMessages = false, m
         ownerId: String(t.ownerId || '').trim(),
         messageCount: Number.isFinite(Number(t.messageCount)) ? Number(t.messageCount) : null,
         memberCount: Number.isFinite(Number(t.memberCount)) ? Number(t.memberCount) : null,
-        starterMessageId: starterMessage?.id || '',
-        starterMessage: starterMessage ? serializeMessage(starterMessage) : null
+        starterMessageId: serializedStarter?.id || starterMessage?.id || '',
+        starterMessage: serializedStarter
       });
 
-      if (includeMessages && messageLimit > 0 && t?.messages?.fetch) {
-        const msgs = await fetchMessages(t, messageLimit).catch(() => []);
-        const serialized = msgs.map((m) => serializeMessage(m));
-        if (starterMessage?.id && !serialized.some((message) => message.id === starterMessage.id)) {
-          serialized.push(serializeMessage(starterMessage));
-        }
-        threadMessages[t.id] = sortStoredMessages(serialized);
+      if (includeMessages && messageLimit > 0) {
+        threadMessages[t.id] = serializedThreadMessages;
       }
     }
   }
@@ -825,6 +1022,7 @@ async function createBackup({
 
   try {
     const guild = await discordClient.guilds.fetch(guildId);
+    const createdAt = new Date().toISOString();
     await reportProgress(12, `Collecting ${backupType} data`);
     void sendBackupLog({
       discordClient,
@@ -845,33 +1043,54 @@ async function createBackup({
     );
 
     await reportProgress(64, 'Writing backup files');
+    const stats = buildStats(data);
+    const manifestFiles = ['metadata.json'];
     await writeJson(path.join(dir, 'metadata.json'), {
       backupId,
       guildId,
       name: name || `${backupType} backup`,
       type: backupType,
-      createdAt: new Date().toISOString(),
-      createdBy
+      createdAt,
+      createdBy,
+      storageVersion: 2
     });
-    await writeJsonIf(dir, 'server.json', data.server);
-    await writeJsonIf(dir, 'roles.json', data.roles);
-    await writeJsonIf(dir, 'channels.json', data.channels);
-    await writeJsonIf(dir, 'emojis.json', data.emojis);
-    await writeJsonIf(dir, 'stickers.json', data.stickers);
-    await writeJsonIf(dir, 'webhooks.json', data.webhooks);
-    await writeJsonIf(dir, 'bans.json', data.bans);
-    await writeJsonIf(dir, 'nicknames.json', data.nicknames);
-    await writeJsonIf(dir, 'threads.json', data.threads);
-    await writeJsonIf(dir, 'bots.json', data.bots);
-    await writeJsonIf(dir, 'role_assignments.json', data.roleAssignments);
+    const writeTrackedJson = async (fileName, value) => {
+      if (value === undefined) return;
+      await writeJson(path.join(dir, fileName), value);
+      manifestFiles.push(fileName);
+    };
+    await writeTrackedJson('server.json', data.server);
+    await writeTrackedJson('roles.json', data.roles);
+    await writeTrackedJson('channels.json', data.channels);
+    await writeTrackedJson('emojis.json', data.emojis);
+    await writeTrackedJson('stickers.json', data.stickers);
+    await writeTrackedJson('webhooks.json', data.webhooks);
+    await writeTrackedJson('bans.json', data.bans);
+    await writeTrackedJson('nicknames.json', data.nicknames);
+    await writeTrackedJson('threads.json', data.threads);
+    await writeTrackedJson('bots.json', data.bots);
+    await writeTrackedJson('role_assignments.json', data.roleAssignments);
 
     if (data.messages) {
       const messagesDir = path.join(dir, 'messages');
       await ensureDir(messagesDir);
       for (const [channelId, msgs] of Object.entries(data.messages)) {
+        const messageFileName = `messages/${channelId}.json`;
         await writeJson(path.join(messagesDir, `${channelId}.json`), msgs);
+        manifestFiles.push(messageFileName);
       }
     }
+
+    const manifest = buildBackupManifest({
+      backupId,
+      guildId,
+      backupType,
+      createdAt,
+      stats,
+      files: manifestFiles
+    });
+    await writeJson(path.join(dir, 'manifest.json'), manifest);
+    manifestFiles.push('manifest.json');
 
     await reportProgress(76, 'Compressing archive');
     void sendBackupLog({
@@ -882,6 +1101,10 @@ async function createBackup({
     });
 
     await zipDirectory(dir, zipPath);
+    const archiveValidation = validateBackupZipArchive(zipPath, { ...manifest, files: manifestFiles });
+    if (!archiveValidation.ok) {
+      throw new Error(archiveValidation.reason || 'Backup archive validation failed.');
+    }
     const zipStats = await fs.stat(zipPath).catch(() => null);
     const size = zipStats?.size || 0;
 
@@ -893,7 +1116,6 @@ async function createBackup({
     });
     await reportProgress(90, 'Finalizing backup');
 
-    const stats = buildStats(data);
     await Backup.updateOne(
       { backupId },
       {
@@ -905,7 +1127,10 @@ async function createBackup({
             options: typeOptions,
             messageLimit,
             scheduleId: scheduleId || '',
-            source: source || ''
+            source: source || '',
+            storageRoot: backupsRoot(),
+            storageVersion: 2,
+            hasManifest: true
           }
         }
       }
@@ -940,8 +1165,16 @@ async function createBackup({
 async function deleteBackup({ guildId, backupId }) {
   const backup = await Backup.findOne({ guildId, backupId });
   if (!backup) return { ok: false, reason: 'Backup not found.' };
+  const dirPath = await findExistingBackupDirectory(backup);
+  const archivePath = await findExistingBackupArchivePath(backup, { dirPath });
   if (backup.path) await fs.rm(backup.path, { recursive: true, force: true }).catch(() => null);
+  if (dirPath && dirPath !== String(backup.path || '').trim()) {
+    await fs.rm(dirPath, { recursive: true, force: true }).catch(() => null);
+  }
   if (backup.zipPath) await fs.rm(backup.zipPath, { force: true }).catch(() => null);
+  if (archivePath && archivePath !== String(backup.zipPath || '').trim()) {
+    await fs.rm(archivePath, { force: true }).catch(() => null);
+  }
   await Backup.deleteOne({ backupId });
   return { ok: true, backup };
 }
@@ -953,5 +1186,7 @@ module.exports = {
   enforceRetention,
   normalizeBackupType,
   ensureBackupArchive,
-  findExistingBackupDirectory
+  findExistingBackupDirectory,
+  findExistingBackupArchivePath,
+  inspectBackupAvailability
 };

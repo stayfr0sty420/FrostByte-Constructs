@@ -57,6 +57,7 @@ const envSchema = z.object({
   VERIFICATION_WEBHOOK_URL: z.string().optional().default(''),
   BACKUP_WEBHOOK_URL: z.string().optional().default(''),
   ECONOMY_WEBHOOK_URL: z.string().optional().default(''),
+  BACKUP_STORAGE_DIR: z.string().optional().default(''),
 
   LOG_JOINS: z.string().optional().default('true'),
   LOG_LEAVES: z.string().optional().default('true'),

@@ -165,6 +165,14 @@ function humanizeDurationMs(inputMs, options = {}) {
     ['second', 1]
   ];
 
+  if (options.roundUp && maxParts === 1) {
+    for (const [label, size] of units) {
+      if (totalSeconds < size * 0.85 && size !== 1) continue;
+      const count = Math.max(1, Math.round(totalSeconds / size));
+      return `${count} ${label}${count === 1 ? '' : 's'}`;
+    }
+  }
+
   let remaining = totalSeconds;
   const parts = [];
   for (const [label, size] of units) {
@@ -450,7 +458,7 @@ function buildCompactAuditDescription(type, fields, fallbackDescription = '', co
         const untilDate = parseDateValue(until);
         const timeoutDuration =
           duration ||
-          (untilDate ? humanizeDurationMs(untilDate.getTime() - referenceTime.getTime(), { maxParts: 1 }) : '') ||
+          (untilDate ? humanizeDurationMs(untilDate.getTime() - referenceTime.getTime(), { maxParts: 1, roundUp: true }) : '') ||
           'an unknown duration';
         return compactText(
           `${user || 'Unknown member'} received a timeout for ${inlineCode(timeoutDuration)}.`,

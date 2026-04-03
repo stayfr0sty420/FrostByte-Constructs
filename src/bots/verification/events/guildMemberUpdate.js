@@ -198,7 +198,7 @@ async function execute(client, oldMember, newMember) {
     addField(embed, 'User', formatUser(newMember.user));
     if (newTimeout) {
       addField(embed, 'Until', formatDate(newTimeout), true);
-      addField(embed, 'Duration', formatDurationBetween(Date.now(), newTimeout, { maxParts: 1 }), true);
+      addField(embed, 'Duration', formatDurationBetween(Date.now(), newTimeout, { maxParts: 1, roundUp: true }), true);
     }
     if (!newTimeout && oldTimeout) addField(embed, 'Previous', formatDate(oldTimeout), true);
     setUserIdentity(embed, newMember.user);

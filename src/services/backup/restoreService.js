@@ -42,10 +42,45 @@ function normalizeExtractedBackupDir(zipPath, backup) {
   return path.join(path.dirname(safeZipPath), path.basename(safeZipPath, path.extname(safeZipPath)));
 }
 
+async function validateBackupDirectoryContents(backupDir) {
+  const safeDir = String(backupDir || '').trim();
+  if (!safeDir) return { ok: false, reason: 'Backup directory is missing.' };
+
+  const metadataPath = path.join(safeDir, 'metadata.json');
+  if (!(await fileExists(metadataPath))) {
+    return { ok: false, reason: 'Backup metadata.json is missing from the extracted backup.' };
+  }
+
+  const manifestPath = path.join(safeDir, 'manifest.json');
+  if (!(await fileExists(manifestPath))) {
+    return { ok: true, hasManifest: false };
+  }
+
+  const manifest = await readJson(manifestPath).catch(() => null);
+  if (!manifest || !Array.isArray(manifest.files)) {
+    return { ok: false, reason: 'Backup manifest.json is invalid or unreadable.' };
+  }
+
+  for (const file of manifest.files) {
+    const normalized = String(file || '').replace(/\\/g, path.sep).trim();
+    if (!normalized) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const exists = await fileExists(path.join(safeDir, normalized));
+    if (!exists) {
+      return { ok: false, reason: `Backup manifest is missing ${String(file)}.` };
+    }
+  }
+
+  return { ok: true, hasManifest: true };
+}
+
 async function ensureBackupDirectory(backup) {
   const existingDir = await findExistingBackupDirectory(backup);
   if (existingDir && (await fileExists(existingDir))) {
-    return { ok: true, backupDir: existingDir, extracted: false };
+    const validation = await validateBackupDirectoryContents(existingDir);
+    if (validation.ok) {
+      return { ok: true, backupDir: existingDir, extracted: false, hasManifest: Boolean(validation.hasManifest) };
+    }
   }
 
   const archive = await ensureBackupArchive(backup);
@@ -71,6 +106,10 @@ async function ensureBackupDirectory(backup) {
       if (nested) {
         const nestedPath = path.join(extractDir, nested.name);
         if (await fileExists(path.join(nestedPath, 'metadata.json'))) {
+          const validation = await validateBackupDirectoryContents(nestedPath);
+          if (!validation.ok) {
+            return { ok: false, reason: validation.reason || 'Backup archive extracted but failed validation.' };
+          }
           await Backup.updateOne(
             { _id: backup._id },
             { $set: { path: nestedPath, filePath: nestedPath, zipPath: archive.zipPath } }
@@ -78,11 +117,16 @@ async function ensureBackupDirectory(backup) {
           backup.path = nestedPath;
           backup.filePath = nestedPath;
           backup.zipPath = archive.zipPath;
-          return { ok: true, backupDir: nestedPath, extracted: true };
+          return { ok: true, backupDir: nestedPath, extracted: true, hasManifest: Boolean(validation.hasManifest) };
         }
       }
 
       return { ok: false, reason: 'Backup archive extracted but metadata.json is missing.' };
+    }
+
+    const validation = await validateBackupDirectoryContents(extractDir);
+    if (!validation.ok) {
+      return { ok: false, reason: validation.reason || 'Backup archive extracted but failed validation.' };
     }
 
     await Backup.updateOne(
@@ -92,7 +136,7 @@ async function ensureBackupDirectory(backup) {
     backup.path = extractDir;
     backup.filePath = extractDir;
     backup.zipPath = archive.zipPath;
-    return { ok: true, backupDir: extractDir, extracted: true };
+    return { ok: true, backupDir: extractDir, extracted: true, hasManifest: Boolean(validation.hasManifest) };
   } catch (err) {
     return { ok: false, reason: `Failed to extract backup archive: ${String(err?.message || err)}` };
   }
@@ -846,7 +890,9 @@ async function buildForumTagMap(guild, channelsData = [], channelIdMap = new Map
     if (!originalParentId || !restoredParentId) continue;
 
     const restoredParent =
-      guild.channels.cache.get(restoredParentId) || (await guild.channels.fetch(restoredParentId).catch(() => null));
+      (await guild.channels.fetch(restoredParentId, { force: true }).catch(() => null)) ||
+      guild.channels.cache.get(restoredParentId) ||
+      null;
     if (!restoredParent) continue;
 
     const restoredTags = Array.isArray(restoredParent.availableTags) ? restoredParent.availableTags : [];

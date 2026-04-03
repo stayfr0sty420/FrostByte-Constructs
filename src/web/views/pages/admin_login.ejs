@@ -89,12 +89,11 @@
               <a class="btn btn-ghost w-100" href="/admin/login">Start Over</a>
             </form>
           <% } else if (viewMode === '2fa-setup') { %>
-            <div class="text-center mb-3">
+            <div class="auth-qr-panel text-center mb-3">
               <img
                 src="<%= qrCodeDataUrl %>"
                 alt="Google Authenticator QR code"
-                class="img-fluid rounded-4 border border-danger-subtle bg-white p-3"
-                style="max-width: 260px;"
+                class="img-fluid rounded-4 border border-danger-subtle bg-white p-3 auth-qr-image"
               />
             </div>
             <form method="post" action="/admin/2fa/verify" class="d-grid gap-3 auth-form">
@@ -104,9 +103,9 @@
                 <label class="form-label">6-Digit Authenticator Code</label>
                 <input class="form-control" type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="123456" autocomplete="one-time-code" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" required />
               </div>
-              <div class="form-text text-start">
-                Manual Setup Key:
-                <strong><%= setupKey %></strong>
+              <div class="form-text text-start auth-setup-meta">
+                <span class="auth-setup-meta__label">Manual Setup Key:</span>
+                <code class="auth-setup-key"><%= setupKey %></code>
               </div>
               <button class="btn btn-primary w-100" type="submit">Enable 2FA & Login</button>
             </form>
