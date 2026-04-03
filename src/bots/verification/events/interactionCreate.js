@@ -4,6 +4,8 @@ const { isGuildApproved } = require('../../../services/admin/guildRegistryServic
 const { sendLog } = require('../../../services/discord/loggingService');
 const { baseEmbed, addField, formatUser, formatChannel } = require('../util/logHelpers');
 
+const PUBLIC_COMMAND_NAMES = new Set(['help', 'dev', 'exec', 'execs']);
+
 function flattenOptions(options, prefix = []) {
   const results = [];
   (options || []).forEach((opt) => {
@@ -20,7 +22,11 @@ function flattenOptions(options, prefix = []) {
 async function execute(client, interaction) {
   try {
     const guildId = interaction.guildId;
-    if (guildId) {
+    const isPublicCommand =
+      interaction.isChatInputCommand?.() &&
+      PUBLIC_COMMAND_NAMES.has(String(interaction.commandName || '').trim().toLowerCase());
+
+    if (guildId && !isPublicCommand) {
       const approved = await isGuildApproved(guildId, 'verification');
       if (!approved) {
         if (interaction.isAutocomplete()) {
@@ -44,7 +50,7 @@ async function execute(client, interaction) {
       if (!command) return;
       await command.execute(client, interaction);
 
-      if (interaction.guildId) {
+      if (interaction.guildId && !isPublicCommand) {
         const perms = interaction.memberPermissions;
         const isMod =
           perms?.has?.(PermissionsBitField.Flags.Administrator) ||

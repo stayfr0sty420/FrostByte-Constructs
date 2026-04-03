@@ -1,9 +1,15 @@
 const { logger } = require('../../../config/logger');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
 
+const PUBLIC_COMMAND_NAMES = new Set(['help', 'dev', 'exec', 'execs']);
+
 async function execute(client, interaction) {
   try {
-    if (interaction.guildId) {
+    const isPublicCommand =
+      interaction.isChatInputCommand?.() &&
+      PUBLIC_COMMAND_NAMES.has(String(interaction.commandName || '').trim().toLowerCase());
+
+    if (interaction.guildId && !isPublicCommand) {
       const approved = await isGuildApproved(interaction.guildId, 'backup');
       if (!approved) {
         if (interaction.isAutocomplete()) {

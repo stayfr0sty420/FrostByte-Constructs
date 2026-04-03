@@ -26,6 +26,141 @@ function backupsRoot() {
   return path.join(process.cwd(), 'backups');
 }
 
+async function pathExists(targetPath, kind = 'any') {
+  const safePath = String(targetPath || '').trim();
+  if (!safePath) return false;
+
+  try {
+    const stats = await fs.stat(safePath);
+    if (kind === 'file') return stats.isFile();
+    if (kind === 'dir') return stats.isDirectory();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function uniquePaths(values = []) {
+  const seen = new Set();
+  const results = [];
+  for (const value of values) {
+    const normalized = String(value || '').trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    results.push(normalized);
+  }
+  return results;
+}
+
+function buildGuildBackupsDir(guildId) {
+  const safeGuildId = String(guildId || '').trim();
+  return safeGuildId ? path.join(backupsRoot(), safeGuildId) : backupsRoot();
+}
+
+async function findExistingBackupDirectory(backup) {
+  const guildBackupsDir = buildGuildBackupsDir(backup?.guildId);
+  const storedZipPath = String(backup?.zipPath || '').trim();
+  const storedDirPath = String(backup?.filePath || backup?.path || '').trim();
+  const storedDirName = storedDirPath ? path.basename(storedDirPath) : '';
+  const storedZipBase = storedZipPath ? path.basename(storedZipPath, path.extname(storedZipPath)) : '';
+  const backupId = String(backup?.backupId || '').trim();
+
+  const directCandidates = uniquePaths([
+    storedDirPath,
+    storedDirName ? path.join(guildBackupsDir, storedDirName) : '',
+    storedZipBase ? path.join(guildBackupsDir, storedZipBase) : ''
+  ]);
+
+  for (const candidate of directCandidates) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await pathExists(candidate, 'dir')) return candidate;
+  }
+
+  if (!backupId || !(await pathExists(guildBackupsDir, 'dir'))) return '';
+
+  const entries = await fs.readdir(guildBackupsDir, { withFileTypes: true }).catch(() => []);
+  const match = entries.find((entry) => entry.isDirectory() && entry.name.startsWith(`${backupId}_`));
+  return match ? path.join(guildBackupsDir, match.name) : '';
+}
+
+async function syncBackupLocation(backup, updates = {}) {
+  const safeUpdates = Object.entries(updates).reduce((acc, [key, value]) => {
+    if (value === undefined) return acc;
+    acc[key] = value;
+    return acc;
+  }, {});
+  if (!Object.keys(safeUpdates).length) return;
+
+  Object.assign(backup, safeUpdates);
+  if (!backup?._id) return;
+  await Backup.updateOne({ _id: backup._id }, { $set: safeUpdates }).catch(() => null);
+}
+
+async function ensureBackupArchive(backup) {
+  if (!backup) return { ok: false, reason: 'Backup not found.' };
+
+  const guildBackupsDir = buildGuildBackupsDir(backup.guildId);
+  const storedZipPath = String(backup.zipPath || '').trim();
+  const storedZipName = storedZipPath ? path.basename(storedZipPath) : '';
+  const backupId = String(backup.backupId || '').trim();
+  const dirPath = await findExistingBackupDirectory(backup);
+  const dirZipPath = dirPath ? path.join(path.dirname(dirPath), `${path.basename(dirPath)}.zip`) : '';
+
+  const directCandidates = uniquePaths([
+    storedZipPath,
+    storedZipName ? path.join(guildBackupsDir, storedZipName) : '',
+    dirZipPath
+  ]);
+
+  for (const candidate of directCandidates) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await pathExists(candidate, 'file')) {
+      const stats = await fs.stat(candidate).catch(() => null);
+      await syncBackupLocation(backup, {
+        zipPath: candidate,
+        size: stats?.size || backup.size || 0,
+        ...(dirPath ? { path: dirPath, filePath: dirPath } : {})
+      });
+      return { ok: true, zipPath: candidate, size: stats?.size || 0, regenerated: false };
+    }
+  }
+
+  if (backupId && (await pathExists(guildBackupsDir, 'dir'))) {
+    const entries = await fs.readdir(guildBackupsDir, { withFileTypes: true }).catch(() => []);
+    const matchedZip = entries.find((entry) => entry.isFile() && entry.name.startsWith(`${backupId}_`) && entry.name.endsWith('.zip'));
+    if (matchedZip) {
+      const candidate = path.join(guildBackupsDir, matchedZip.name);
+      const stats = await fs.stat(candidate).catch(() => null);
+      await syncBackupLocation(backup, {
+        zipPath: candidate,
+        size: stats?.size || backup.size || 0,
+        ...(dirPath ? { path: dirPath, filePath: dirPath } : {})
+      });
+      return { ok: true, zipPath: candidate, size: stats?.size || 0, regenerated: false };
+    }
+  }
+
+  if (dirPath) {
+    const rebuildZipPath = dirZipPath || path.join(guildBackupsDir, `${backupId || path.basename(dirPath)}.zip`);
+    await zipDirectory(dirPath, rebuildZipPath);
+    const stats = await fs.stat(rebuildZipPath).catch(() => null);
+    if (stats?.isFile()) {
+      await syncBackupLocation(backup, {
+        path: dirPath,
+        filePath: dirPath,
+        zipPath: rebuildZipPath,
+        size: stats.size || backup.size || 0
+      });
+      return { ok: true, zipPath: rebuildZipPath, size: stats.size || 0, regenerated: true };
+    }
+  }
+
+  return {
+    ok: false,
+    reason: 'Backup archive is no longer available on disk. Create a new backup to download it again.'
+  };
+}
+
 function timestampSlug(d = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(
@@ -588,4 +723,4 @@ async function deleteBackup({ guildId, backupId }) {
   return { ok: true, backup };
 }
 
-module.exports = { createBackup, deleteBackup, backupsRoot, enforceRetention, normalizeBackupType };
+module.exports = { createBackup, deleteBackup, backupsRoot, enforceRetention, normalizeBackupType, ensureBackupArchive };

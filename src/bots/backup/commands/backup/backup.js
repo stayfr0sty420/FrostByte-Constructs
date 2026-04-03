@@ -3,7 +3,7 @@
 const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const Backup = require('../../../../db/models/Backup');
 const { env } = require('../../../../config/env');
-const { createBackup, deleteBackup, normalizeBackupType } = require('../../../../services/backup/backupService');
+const { createBackup, deleteBackup, normalizeBackupType, ensureBackupArchive } = require('../../../../services/backup/backupService');
 const { restoreBackup } = require('../../../../services/backup/restoreService');
 const { safeReply } = require('../../../shared/util/reply');
 
@@ -200,10 +200,18 @@ module.exports = {
       const backup = await Backup.findOne({ guildId, backupId: id });
       if (!backup) return await safeReply(interaction, { content: 'Backup not found.', ephemeral: true });
 
-      const size = backup.size || 0;
+      const archive = await ensureBackupArchive(backup);
+      if (!archive.ok || !archive.zipPath) {
+        return await safeReply(interaction, {
+          content: archive.reason || 'Backup archive is not available right now.',
+          ephemeral: true
+        });
+      }
+
+      const size = archive.size || backup.size || 0;
       const maxAttach = 8 * 1024 * 1024;
-      if (backup.zipPath && size > 0 && size <= maxAttach) {
-        await safeReply(interaction, { content: `📦 Backup \`${id}\` attached.`, files: [backup.zipPath], ephemeral: true });
+      if (size > 0 && size <= maxAttach) {
+        await safeReply(interaction, { content: `📦 Backup \`${id}\` attached.`, files: [archive.zipPath], ephemeral: true });
         return;
       }
 

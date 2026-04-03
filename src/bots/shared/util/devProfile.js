@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const { AttachmentBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
@@ -15,18 +16,29 @@ const DEV_BANNER_PATH = path.join(REPO_ROOT, 'images', 'branding', 'developer', 
 const RODSTARKIAN_BOT_PATH = path.join(REPO_ROOT, 'images', 'bots', 'Rodstarkian_Bot.png');
 const EXECUTIVE_BANNER_PATH = path.join(REPO_ROOT, 'images', 'branding', 'executive', 'RDSKBots_Background.png');
 const BOT_PROFILE_IMAGE_DIR = path.join(REPO_ROOT, 'images', 'bots', 'profiles');
+const GODS_EYE_FALLBACK_ICON_PATH = path.join(REPO_ROOT, 'images', 'branding', 'gods-eye', 'gods-eye-clear.png');
 
 const BOT_PROFILE_ASSETS = Object.freeze({
   'RoBot': {
-    iconPath: path.join(BOT_PROFILE_IMAGE_DIR, 'robot-clear-profile.png'),
+    iconPaths: [
+      path.join(BOT_PROFILE_IMAGE_DIR, 'robot-clear-profile.png'),
+      path.join(REPO_ROOT, 'images', 'bots', 'robot.png')
+    ],
     attachmentName: 'robot-clear-profile.png'
   },
   'Rodstarkian Vault': {
-    iconPath: path.join(BOT_PROFILE_IMAGE_DIR, 'rodstarkian-vault-clear-profile.png'),
+    iconPaths: [
+      path.join(BOT_PROFILE_IMAGE_DIR, 'rodstarkian-vault-clear-profile.png'),
+      path.join(REPO_ROOT, 'images', 'bots', 'vault.png')
+    ],
     attachmentName: 'rodstarkian-vault-clear-profile.png'
   },
   "God's Eye": {
-    iconPath: path.join(BOT_PROFILE_IMAGE_DIR, 'gods-eye-clear-profile.png'),
+    iconPaths: [
+      path.join(BOT_PROFILE_IMAGE_DIR, 'gods-eye-clear-profile.png'),
+      GODS_EYE_FALLBACK_ICON_PATH,
+      path.join(REPO_ROOT, 'images', 'bots', 'gods-eye.png')
+    ],
     attachmentName: 'gods-eye-clear-profile.png'
   }
 });
@@ -35,16 +47,29 @@ function createAttachment(filePath, name) {
   return new AttachmentBuilder(filePath, { name });
 }
 
+function resolveExistingPath(paths, fallbackPath = RODSTARKIAN_BOT_PATH) {
+  const candidates = Array.isArray(paths) ? paths : [paths];
+  for (const candidate of candidates) {
+    const resolved = String(candidate || '').trim();
+    if (resolved && fs.existsSync(resolved)) return resolved;
+  }
+  return fallbackPath;
+}
+
+function createAttachmentFromCandidates(paths, name, fallbackPath = RODSTARKIAN_BOT_PATH) {
+  return createAttachment(resolveExistingPath(paths, fallbackPath), name);
+}
+
 function createRodstarkianAttachment() {
-  return createAttachment(RODSTARKIAN_BOT_PATH, 'rodstarkian-bot.png');
+  return createAttachmentFromCandidates(RODSTARKIAN_BOT_PATH, 'rodstarkian-bot.png');
 }
 
 function createDevBannerAttachment() {
-  return createAttachment(DEV_BANNER_PATH, 'architect-dossier-banner.png');
+  return createAttachmentFromCandidates(DEV_BANNER_PATH, 'architect-dossier-banner.png');
 }
 
 function createExecutiveBannerAttachment() {
-  return createAttachment(EXECUTIVE_BANNER_PATH, 'rdskbots-background.png');
+  return createAttachmentFromCandidates(EXECUTIVE_BANNER_PATH, 'rdskbots-background.png');
 }
 
 function resolveBotProfileAsset(botName) {
@@ -54,7 +79,7 @@ function resolveBotProfileAsset(botName) {
 
 function createBotProfileIconAttachment(botName, fallbackName) {
   const asset = resolveBotProfileAsset(botName);
-  return createAttachment(asset.iconPath, fallbackName || asset.attachmentName);
+  return createAttachmentFromCandidates(asset.iconPaths, fallbackName || asset.attachmentName, RODSTARKIAN_BOT_PATH);
 }
 
 function buildDevAuthorText(botName) {

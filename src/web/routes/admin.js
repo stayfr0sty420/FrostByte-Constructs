@@ -1,3 +1,4 @@
+const path = require('path');
 const express = require('express');
 const QRCode = require('qrcode');
 const speakeasy = require('speakeasy');
@@ -47,7 +48,7 @@ const {
   applyVerifiedRoles,
   applyJoinGate
 } = require('../../services/discord/discordService');
-const { createBackup, deleteBackup } = require('../../services/backup/backupService');
+const { createBackup, deleteBackup, ensureBackupArchive } = require('../../services/backup/backupService');
 const { restoreBackup } = require('../../services/backup/restoreService');
 const { removeSchedule, upsertSchedule } = require('../../jobs/backupScheduler');
 const { reviewVerification } = require('../../services/verification/verificationService');
@@ -2354,7 +2355,18 @@ router.get('/backups/download/:id', requireAdmin, requireGuild, async (req, res)
   const id = req.params.id;
   const backup = await Backup.findOne({ guildId, backupId: id });
   if (!backup) return res.status(404).send('Not found');
-  return res.download(backup.zipPath);
+
+  const archive = await ensureBackupArchive(backup);
+  if (!archive.ok || !archive.zipPath) {
+    setFlash(req, { type: 'danger', message: archive.reason || 'Backup archive could not be downloaded.' });
+    return res.redirect('/admin/backups');
+  }
+
+  return res.download(archive.zipPath, path.basename(archive.zipPath), (err) => {
+    if (!err || res.headersSent) return;
+    setFlash(req, { type: 'danger', message: 'Backup download failed. Please try again.' });
+    return res.redirect('/admin/backups');
+  });
 });
 
 // Schedules routes removed (feature disabled)
