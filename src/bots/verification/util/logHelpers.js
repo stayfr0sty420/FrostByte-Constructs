@@ -124,6 +124,51 @@ function baseEmbed(title, description = '') {
   return embed;
 }
 
+function formatEmojiClipboardValue(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return ':unknown:';
+  const mentionMatch = raw.match(/^<a?:([^:>]+):\d+>$/);
+  const name = mentionMatch ? mentionMatch[1] : raw.replace(/^:+|:+$/g, '').trim();
+  if (!name) return ':unknown:';
+  return `:${name}:`;
+}
+
+function buildEmojiAuditEmbed(type, values = {}) {
+  const key = String(type || '').trim().toLowerCase();
+  const emojiName = formatEmojiClipboardValue(values.name || values.after || values.emoji || values.id || 'unknown');
+  const beforeName = formatEmojiClipboardValue(values.before || 'unknown');
+  const afterName = formatEmojiClipboardValue(values.after || values.name || values.emoji || values.id || 'unknown');
+  const embed = new EmbedBuilder().setTimestamp(new Date(values.timestamp || Date.now()));
+
+  if (key === 'emoji_create') {
+    embed
+      .setColor(0x22c55e)
+      .setTitle('✨ Emoji Created')
+      .setDescription(`New emoji has been created: \`${emojiName}\``);
+  } else if (key === 'emoji_update') {
+    embed
+      .setColor(0x3b82f6)
+      .setTitle('🪄 Emoji Updated')
+      .setDescription(`\`${beforeName}\` was changed to \`${afterName}\``);
+  } else if (key === 'emoji_delete') {
+    embed
+      .setColor(0xef4444)
+      .setTitle('🧼 Emoji Deleted')
+      .setDescription(`The emoji \`${emojiName}\` has been deleted!`);
+  } else {
+    embed
+      .setColor(LOG_COLOR)
+      .setTitle('Emoji Updated')
+      .setDescription(truncate(String(values.description || ''), 2048) || 'No details available.');
+  }
+
+  if (values.id) {
+    embed.setFooter({ text: `ID: ${values.id}` });
+  }
+
+  return embed;
+}
+
 function addField(embed, name, value, inline = false, max = MAX_FIELD) {
   const text = truncate(value, max);
   if (!text) return embed;
@@ -146,5 +191,7 @@ module.exports = {
   setUserIdentity,
   setEmojiIdentity,
   baseEmbed,
-  addField
+  addField,
+  formatEmojiClipboardValue,
+  buildEmojiAuditEmbed
 };

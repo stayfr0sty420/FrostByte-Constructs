@@ -2,7 +2,7 @@
 
 const { sendLog } = require('../../../services/discord/loggingService');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
-const { baseEmbed, addField, setEmojiIdentity } = require('../util/logHelpers');
+const { buildEmojiAuditEmbed } = require('../util/logHelpers');
 
 async function execute(client, emoji) {
   const guildId = emoji?.guild?.id;
@@ -10,11 +10,11 @@ async function execute(client, emoji) {
   const approved = await isGuildApproved(guildId, 'verification');
   if (!approved) return;
 
-  const embed = baseEmbed('Emoji Deleted');
-  addField(embed, 'Emoji', emoji.toString ? emoji.toString() : emoji.name || 'unknown');
-  addField(embed, 'Name', emoji.name || 'unknown', true);
-  addField(embed, 'Emoji ID', emoji.id, true);
-  setEmojiIdentity(embed, emoji);
+  const embed = buildEmojiAuditEmbed('emoji_delete', {
+    name: emoji?.name || '',
+    emoji: emoji?.toString ? emoji.toString() : (emoji?.name || ''),
+    id: emoji?.id || ''
+  });
 
   await sendLog({
     discordClient: client,
@@ -22,7 +22,8 @@ async function execute(client, emoji) {
     type: 'emoji_delete',
     webhookCategory: 'verification',
     content: `Emoji deleted: ${emoji?.name || emoji?.id || 'unknown'}`,
-    embeds: [embed]
+    embeds: [embed],
+    embedsAlreadyCompact: true
   }).catch(() => null);
 }
 

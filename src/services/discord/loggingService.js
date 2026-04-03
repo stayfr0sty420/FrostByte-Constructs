@@ -527,7 +527,17 @@ function buildCompactAuditEmbed(type, embed) {
   return compact.toJSON();
 }
 
-async function sendLog({ discordClient, guildId, type, content, embeds = [], webhookCategory = '', channelIdOverride = '', skipBotBranding = false }) {
+async function sendLog({
+  discordClient,
+  guildId,
+  type,
+  content,
+  embeds = [],
+  webhookCategory = '',
+  channelIdOverride = '',
+  skipBotBranding = false,
+  embedsAlreadyCompact = false
+}) {
   const cfg = await getOrCreateGuildConfig(guildId);
   if (!isLogTypeEnabled(cfg.logs || {}, type)) return { ok: true, skipped: true };
 
@@ -553,7 +563,9 @@ async function sendLog({ discordClient, guildId, type, content, embeds = [], web
         : []);
 
   const outgoingEmbeds =
-    isCompact && sourceEmbeds.length
+    embedsAlreadyCompact
+      ? sourceEmbeds
+      : isCompact && sourceEmbeds.length
       ? sourceEmbeds.map((embed) => buildCompactAuditEmbed(type, embed)).filter(Boolean)
       : sourceEmbeds;
   const outgoingContent = undefined;

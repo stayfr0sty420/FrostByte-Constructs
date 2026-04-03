@@ -2,7 +2,7 @@
 
 const { sendLog } = require('../../../services/discord/loggingService');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
-const { baseEmbed, addField, setEmojiIdentity } = require('../util/logHelpers');
+const { buildEmojiAuditEmbed } = require('../util/logHelpers');
 
 async function execute(client, oldEmoji, newEmoji) {
   const guildId = newEmoji?.guild?.id || oldEmoji?.guild?.id;
@@ -12,12 +12,12 @@ async function execute(client, oldEmoji, newEmoji) {
 
   if (oldEmoji.name === newEmoji.name) return;
 
-  const embed = baseEmbed('Emoji Name Changed');
-  addField(embed, 'Emoji', newEmoji.toString ? newEmoji.toString() : newEmoji.name || 'unknown');
-  addField(embed, 'Before', oldEmoji.name || 'unknown', true);
-  addField(embed, 'After', newEmoji.name || 'unknown', true);
-  addField(embed, 'Emoji ID', newEmoji.id, true);
-  setEmojiIdentity(embed, newEmoji);
+  const embed = buildEmojiAuditEmbed('emoji_update', {
+    before: oldEmoji?.name || '',
+    after: newEmoji?.name || '',
+    emoji: newEmoji?.toString ? newEmoji.toString() : (newEmoji?.name || ''),
+    id: newEmoji?.id || ''
+  });
 
   await sendLog({
     discordClient: client,
@@ -25,7 +25,8 @@ async function execute(client, oldEmoji, newEmoji) {
     type: 'emoji_update',
     webhookCategory: 'verification',
     content: `Emoji name changed: ${newEmoji?.name || newEmoji?.id || 'unknown'}`,
-    embeds: [embed]
+    embeds: [embed],
+    embedsAlreadyCompact: true
   }).catch(() => null);
 }
 
