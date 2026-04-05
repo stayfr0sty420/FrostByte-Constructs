@@ -2773,7 +2773,21 @@ code {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: flex-start;
   gap: 0.55rem;
+}
+
+.user-whitelist-state {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.user-whitelist-note {
+  font-size: 0.78rem;
+  color: rgba(229, 231, 235, 0.62);
 }
 
 .user-action-form {
@@ -2798,6 +2812,12 @@ code {
 
 .user-action-input {
   min-width: 0;
+}
+
+.user-action-form .btn:disabled,
+.user-action-form .form-control:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 @media (max-width: 1200px) {
@@ -2944,6 +2964,10 @@ code {
     width: 100%;
     justify-content: flex-start;
   }
+
+  .user-whitelist-state {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 576px) {
@@ -2964,6 +2988,11 @@ code {
     width: 100%;
     flex-direction: column;
     gap: 0.6rem;
+  }
+
+  .user-whitelist-state {
+    align-items: flex-start;
+    gap: 0.4rem;
   }
 
   .user-action-form,

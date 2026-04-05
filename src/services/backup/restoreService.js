@@ -15,6 +15,7 @@ const RESTORE_WEBHOOK_AVATAR_CANDIDATES = [
 const FORUM_LIKE_TYPES = new Set([ChannelType.GuildForum, ChannelType.GuildMedia].filter((value) => Number.isFinite(value)));
 const TEXT_CHANNEL_TYPES = new Set([ChannelType.GuildText, ChannelType.GuildAnnouncement, ...FORUM_LIKE_TYPES]);
 const VOICE_CHANNEL_TYPES = new Set([ChannelType.GuildVoice, ChannelType.GuildStageVoice]);
+const THREAD_AUTO_ARCHIVE_DURATIONS = new Set([60, 1440, 4320, 10080]);
 
 async function fileExists(filePath) {
   try {
@@ -944,6 +945,44 @@ async function buildStoredMessagePayload(message, options = {}) {
   };
 }
 
+function normalizeThreadAutoArchiveDuration(value, parent = null) {
+  const requested = Math.floor(Number(value) || 0);
+  if (THREAD_AUTO_ARCHIVE_DURATIONS.has(requested)) return requested;
+
+  const parentDefault = Math.floor(Number(parent?.defaultAutoArchiveDuration) || 0);
+  if (THREAD_AUTO_ARCHIVE_DURATIONS.has(parentDefault)) return parentDefault;
+
+  return undefined;
+}
+
+async function createThreadWithFallback(threadManager, payload = {}, parent = null) {
+  const candidates = [
+    normalizeThreadAutoArchiveDuration(payload?.autoArchiveDuration, parent),
+    normalizeThreadAutoArchiveDuration(parent?.defaultAutoArchiveDuration, parent),
+    undefined
+  ];
+  const attemptedDurations = new Set();
+  let lastError = null;
+
+  for (const duration of candidates) {
+    const key = duration === undefined ? '__default__' : String(duration);
+    if (attemptedDurations.has(key)) continue;
+    attemptedDurations.add(key);
+
+    const nextPayload = { ...payload };
+    if (duration === undefined) delete nextPayload.autoArchiveDuration;
+    else nextPayload.autoArchiveDuration = duration;
+
+    try {
+      return await threadManager.create(nextPayload);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error('Thread creation failed');
+}
+
 function compareStoredMessages(left, right) {
   const leftTimestamp = Number(left?.createdTimestamp || 0);
   const rightTimestamp = Number(right?.createdTimestamp || 0);
@@ -951,6 +990,45 @@ function compareStoredMessages(left, right) {
     return leftTimestamp - rightTimestamp;
   }
   return String(left?.id || '').localeCompare(String(right?.id || ''));
+}
+
+function compareStoredThreads(left, right) {
+  const leftTimestamp = Number(left?.createdTimestamp || 0);
+  const rightTimestamp = Number(right?.createdTimestamp || 0);
+  if (leftTimestamp && rightTimestamp && leftTimestamp !== rightTimestamp) {
+    return leftTimestamp - rightTimestamp;
+  }
+  return String(left?.id || '').localeCompare(String(right?.id || ''));
+}
+
+function resolveRestoredMessageChannelId({ oldChannelId = '', message = null, channelIdMap = new Map(), threadStateMap = new Map() } = {}) {
+  const fileChannelId = String(oldChannelId || '').trim();
+  const messageChannelId = String(message?.channelId || '').trim();
+  const messageThreadId = String(message?.threadId || '').trim();
+  const isThreadMessage = Boolean(message?.isThreadMessage) || Boolean(messageThreadId);
+
+  const threadCandidates = [
+    messageThreadId,
+    isThreadMessage ? messageChannelId : '',
+    threadStateMap.has(fileChannelId) ? fileChannelId : ''
+  ];
+
+  for (const candidate of threadCandidates) {
+    const safeCandidate = String(candidate || '').trim();
+    if (!safeCandidate) continue;
+    const mappedThreadId = threadStateMap.get(safeCandidate)?.channelId;
+    if (mappedThreadId) return mappedThreadId;
+  }
+
+  const channelCandidates = [messageChannelId, fileChannelId];
+  for (const candidate of channelCandidates) {
+    const safeCandidate = String(candidate || '').trim();
+    if (!safeCandidate) continue;
+    const mappedChannelId = channelIdMap.get(safeCandidate);
+    if (mappedChannelId) return mappedChannelId;
+  }
+
+  return messageChannelId || fileChannelId;
 }
 
 async function restoreThreads(guild, threadsData, channelIdMap = new Map(), options = {}) {
@@ -965,9 +1043,10 @@ async function restoreThreads(guild, threadsData, channelIdMap = new Map(), opti
   const safeDelay = Math.max(0, Math.floor(options.delayMs ?? 200));
   const forumTagMap = options.forumTagMap instanceof Map ? options.forumTagMap : new Map();
   const channelCache = await guild.channels.fetch().catch(() => null);
+  const orderedThreads = [...threadsData].sort(compareStoredThreads);
   let createdCount = 0;
 
-  for (const t of threadsData) {
+  for (const t of orderedThreads) {
     const parentId = channelIdMap.get(String(t.parentId || '')) || t.parentId;
     if (!parentId) {
       stats.skipped += 1;
@@ -980,7 +1059,7 @@ async function restoreThreads(guild, threadsData, channelIdMap = new Map(), opti
     }
 
     const name = String(t?.name || 'restored-thread').slice(0, 100);
-    const autoArchiveDuration = t?.autoArchiveDuration || undefined;
+    const autoArchiveDuration = normalizeThreadAutoArchiveDuration(t?.autoArchiveDuration, parent);
 
     try {
       let thread = null;
@@ -995,13 +1074,13 @@ async function restoreThreads(guild, threadsData, channelIdMap = new Map(), opti
               .map((tagId) => forumTagMap.get(`${String(t.parentId || '')}:${String(tagId || '')}`))
               .filter(Boolean)
           : undefined;
-        thread = await parent.threads.create({
+        thread = await createThreadWithFallback(parent.threads, {
           name,
           autoArchiveDuration,
           appliedTags: appliedTags?.length ? appliedTags : undefined,
           rateLimitPerUser: t?.rateLimitPerUser ?? undefined,
           message: starterPayload
-        });
+        }, parent);
         starterWasRestored = true;
       } else {
         const threadType = Number.isFinite(Number(t?.type))
@@ -1010,14 +1089,14 @@ async function restoreThreads(guild, threadsData, channelIdMap = new Map(), opti
             ? ChannelType.AnnouncementThread
             : ChannelType.PublicThread;
         if (threadType === ChannelType.PrivateThread) {
-          thread = await parent.threads.create({
+          thread = await createThreadWithFallback(parent.threads, {
             name,
             autoArchiveDuration,
             type: ChannelType.PrivateThread,
             invitable: typeof t?.invitable === 'boolean' ? t.invitable : undefined,
             rateLimitPerUser: t?.rateLimitPerUser ?? undefined,
             reason: 'Restore from backup'
-          });
+          }, parent);
           if (thread) {
             const sentStarter = await thread.send(starterPayload).catch(() => null);
             starterWasRestored = Boolean(sentStarter);
@@ -1028,22 +1107,22 @@ async function restoreThreads(guild, threadsData, channelIdMap = new Map(), opti
             stats.failed += 1;
             continue;
           }
-          thread = await parent.threads.create({
+          thread = await createThreadWithFallback(parent.threads, {
             name,
             autoArchiveDuration,
             startMessage: starter.id,
             rateLimitPerUser: t?.rateLimitPerUser ?? undefined,
             reason: 'Restore from backup'
-          });
+          }, parent);
           starterWasRestored = true;
         } else {
-          thread = await parent.threads.create({
+          thread = await createThreadWithFallback(parent.threads, {
             name,
             autoArchiveDuration,
             type: ChannelType.PublicThread,
             rateLimitPerUser: t?.rateLimitPerUser ?? undefined,
             reason: 'Restore from backup'
-          });
+          }, parent);
           if (thread) {
             const sentStarter = await thread.send(starterPayload).catch(() => null);
             starterWasRestored = Boolean(sentStarter);
@@ -1277,18 +1356,6 @@ async function restoreMessages({ guild, backupDir, channelIdMap, threadStateMap 
     if (!file.endsWith('.json')) continue;
     const oldChannelId = file.replace('.json', '');
     const threadState = threadStateMap.get(oldChannelId);
-    const newChannelId = threadState?.channelId || channelIdMap.get(oldChannelId) || oldChannelId;
-    if (!newChannelId) {
-      stats.channelsSkipped += 1;
-      continue;
-    }
-
-    const channel = channelCache?.get?.(newChannelId) || (await guild.channels.fetch(newChannelId).catch(() => null));
-    if (!channel?.isTextBased?.()) {
-      stats.channelsSkipped += 1;
-      continue;
-    }
-
     const data = await readJson(path.join(messagesDir, file)).catch(() => []);
     const skipMessageIds = new Set((threadState?.skipMessageIds || []).map((value) => String(value || '').trim()).filter(Boolean));
     const orderedMessages = Array.isArray(data)
@@ -1304,6 +1371,24 @@ async function restoreMessages({ guild, backupDir, channelIdMap, threadStateMap 
       stats.channelsSkipped += 1;
       continue;
     }
+
+    const newChannelId = resolveRestoredMessageChannelId({
+      oldChannelId,
+      message: msgs[0],
+      channelIdMap,
+      threadStateMap
+    });
+    if (!newChannelId) {
+      stats.channelsSkipped += 1;
+      continue;
+    }
+
+    const channel = channelCache?.get?.(newChannelId) || (await guild.channels.fetch(newChannelId).catch(() => null));
+    if (!channel?.isTextBased?.()) {
+      stats.channelsSkipped += 1;
+      continue;
+    }
+
     stats.channelsProcessed += 1;
 
     const webhookTarget = channel.isThread?.() ? channel.parent : channel;
@@ -1712,14 +1797,14 @@ async function restoreBackup({
       membersCache = await resolveMembersCollection(guild);
     }
 
-    if (hasNicknames) {
-      await reportProgress(86, 'Restoring nicknames');
-      restoreSummary.nicknames = await restoreNicknames(guild, nicknamesData, membersCache);
+    if (hasBots) {
+      await reportProgress(85, 'Restoring bot roles and info');
+      restoreSummary.bots = await restoreBots(guild, botsData, roleIdMap, membersCache);
     }
 
-    if (hasBots) {
-      await reportProgress(89, 'Restoring bot roles and info');
-      restoreSummary.bots = await restoreBots(guild, botsData, roleIdMap, membersCache);
+    if (hasNicknames) {
+      await reportProgress(88, 'Restoring nicknames');
+      restoreSummary.nicknames = await restoreNicknames(guild, nicknamesData, membersCache);
     }
 
     if (hasRoleAssignments) {

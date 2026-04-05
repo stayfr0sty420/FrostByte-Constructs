@@ -767,6 +767,8 @@ async function collectThreadsFromChannels(channels, { includeMessages = false, m
 }
 
 function serializeMessage(m) {
+  const channel = m?.channel || null;
+  const isThreadMessage = Boolean(channel?.isThread?.());
   return {
     id: m.id,
     authorId: m.author?.id || '',
@@ -778,6 +780,11 @@ function serializeMessage(m) {
     editedTimestamp: m.editedTimestamp || null,
     attachments: m.attachments?.map((a) => ({ name: a.name, url: a.url, size: a.size })) || [],
     embeds: m.embeds?.map((e) => e.toJSON?.() || {}) || [],
+    channelId: channel?.id || '',
+    parentChannelId: channel?.parentId || '',
+    threadId: isThreadMessage ? channel?.id || '' : '',
+    channelType: channel?.type ?? null,
+    isThreadMessage,
     reactions:
       m.reactions?.cache?.map((r) => ({
         emoji: r.emoji?.id || r.emoji?.name || '',

@@ -118,9 +118,10 @@
         <div class="card-body">
           <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
             <div>
-              <h2 class="h6 mb-1">Credit Grant Whitelist</h2>
+              <h2 class="h6 mb-1">Economy Action Whitelist</h2>
               <div class="text-muted small">
-                Whitelisted users can run <code>/grant</code> or <code>robo grant</code> to add Rodstarkian Credits to other users.
+                Whitelisted users can run <code>/grant</code> or <code>robo grant</code>, and only whitelisted members can receive the manual
+                give/deduct Credits or EXP actions below. Economy Booster stays unrestricted.
               </div>
             </div>
             <span class="badge text-bg-secondary"><%= (whitelistEntries || []).length %> whitelisted</span>
@@ -240,6 +241,15 @@
                     <td class="text-end user-actions-cell" data-label="Actions">
                       <div class="user-actions-grid">
                         <% const isWhitelisted = whitelistSet.has(String(u.discordId)); %>
+                        <div class="user-whitelist-state">
+                          <span class="badge <%= isWhitelisted ? 'text-bg-success' : 'text-bg-secondary' %>">
+                            <%= isWhitelisted ? 'Action enabled' : 'Whitelist required' %>
+                          </span>
+                          <% if (!isWhitelisted) { %>
+                            <div class="user-whitelist-note">Whitelist this user first to unlock manual Credits and EXP actions.</div>
+                          <% } %>
+                        </div>
+
                         <form method="post" action="/admin/economy/users/whitelist/<%= isWhitelisted ? 'remove' : 'add' %>" class="user-action-form user-action-form--toggle">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
@@ -262,15 +272,41 @@
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
-                          <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="+ credits" required />
-                          <button class="btn btn-success btn-sm icon-btn" type="submit" title="Grant credits" aria-label="Grant credits">➕</button>
+                          <input
+                            class="form-control form-control-sm user-action-input"
+                            name="amount"
+                            type="number"
+                            min="1"
+                            step="1"
+                            placeholder="Give credits"
+                            <%= isWhitelisted ? '' : 'disabled' %>
+                            required
+                          />
+                          <button
+                            class="btn btn-success btn-sm icon-btn"
+                            type="submit"
+                            title="<%= isWhitelisted ? 'Grant credits' : 'Whitelist required' %>"
+                            aria-label="Grant credits"
+                            <%= isWhitelisted ? '' : 'disabled' %>
+                          >
+                            ➕
+                          </button>
                         </form>
 
                         <form method="post" action="/admin/economy/users/deduct" class="user-action-form user-action-form--wide">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
-                          <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="- credits" required />
+                          <input
+                            class="form-control form-control-sm user-action-input"
+                            name="amount"
+                            type="number"
+                            min="1"
+                            step="1"
+                            placeholder="Deduct credits"
+                            <%= isWhitelisted ? '' : 'disabled' %>
+                            required
+                          />
                           <button
                             class="btn btn-outline-danger btn-sm icon-btn"
                             type="submit"
@@ -278,28 +314,67 @@
                             data-confirm-title="Deduct credits?"
                             data-confirm-ok="Deduct"
                             data-confirm-cancel="Cancel"
-                            title="Deduct credits"
+                            title="<%= isWhitelisted ? 'Deduct credits' : 'Whitelist required' %>"
                             aria-label="Deduct credits"
+                            <%= isWhitelisted ? '' : 'disabled' %>
                           >
                             ➖
                           </button>
                         </form>
 
-                        <form method="post" action="/admin/economy/users/gift" class="user-action-form user-action-form--compact">
-                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                          <input type="hidden" name="discordId" value="<%= u.discordId %>" />
-                          <input type="hidden" name="username" value="<%= u.username || '' %>" />
-                            <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="credits" required />
-                            <button class="btn btn-outline-primary btn-sm icon-btn" type="submit" title="Provide credits" aria-label="Provide credits">🎁</button>
-                          </form>
-
                         <form method="post" action="/admin/economy/users/exp" class="user-action-form user-action-form--compact">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
-                            <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="+ exp" required />
-                            <button class="btn btn-outline-info btn-sm icon-btn" type="submit" title="Provide EXP" aria-label="Provide EXP">⚡</button>
-                          </form>
+                          <input
+                            class="form-control form-control-sm user-action-input"
+                            name="amount"
+                            type="number"
+                            min="1"
+                            step="1"
+                            placeholder="Give EXP"
+                            <%= isWhitelisted ? '' : 'disabled' %>
+                            required
+                          />
+                          <button
+                            class="btn btn-outline-info btn-sm icon-btn"
+                            type="submit"
+                            title="<%= isWhitelisted ? 'Grant EXP' : 'Whitelist required' %>"
+                            aria-label="Provide EXP"
+                            <%= isWhitelisted ? '' : 'disabled' %>
+                          >
+                            ⚡
+                          </button>
+                        </form>
+
+                        <form method="post" action="/admin/economy/users/exp/deduct" class="user-action-form user-action-form--compact">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <input type="hidden" name="discordId" value="<%= u.discordId %>" />
+                          <input type="hidden" name="username" value="<%= u.username || '' %>" />
+                          <input
+                            class="form-control form-control-sm user-action-input"
+                            name="amount"
+                            type="number"
+                            min="1"
+                            step="1"
+                            placeholder="Deduct EXP"
+                            <%= isWhitelisted ? '' : 'disabled' %>
+                            required
+                          />
+                          <button
+                            class="btn btn-outline-secondary btn-sm icon-btn"
+                            type="submit"
+                            title="<%= isWhitelisted ? 'Deduct EXP' : 'Whitelist required' %>"
+                            aria-label="Deduct EXP"
+                            data-confirm="Deduct EXP from this user?"
+                            data-confirm-title="Deduct EXP?"
+                            data-confirm-ok="Deduct"
+                            data-confirm-cancel="Cancel"
+                            <%= isWhitelisted ? '' : 'disabled' %>
+                          >
+                            📉
+                          </button>
+                        </form>
                       </div>
                     </td>
                   </tr>

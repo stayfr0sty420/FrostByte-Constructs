@@ -65,6 +65,7 @@ const { reviewVerification } = require('../../services/verification/verification
 const { sendLog } = require('../../services/discord/loggingService');
 const { LOG_SECTIONS, assignLogSettings, normalizeChannelOverrides } = require('../../services/discord/logDefinitions');
 const { getEconomyAccountGuildId, getEconomyAccountScope } = require('../../services/economy/accountScope');
+const { applyExpDelta, requiredExpForLevel, totalAccumulatedExp } = require('../../services/economy/levelService');
 const { ensureVoiceConnection, disconnectVoice } = require('../../jobs/voiceScheduler');
 const { buildVerifyPanelMessage, buildVerifyPanelRow } = require('../../bots/verification/util/verifyMessages');
 const { createPasskeyRegistrationOptions, verifyPasskeyRegistration } = require('../utils/passkeyService');
@@ -285,6 +286,97 @@ async function verifySecurityChallenge({ user, password = '', code = '', backupC
 
 function isSnowflake(id) {
   return /^\d{15,22}$/.test(String(id || '').trim());
+}
+
+function normalizeCoinGrantWhitelistEntries(entries = []) {
+  return [...new Set((Array.isArray(entries) ? entries : []).map((value) => String(value || '').trim()).filter(isSnowflake))].slice(0, 200);
+}
+
+function buildEconomyUserLabel(discordId, username = '') {
+  const safeId = String(discordId || '').trim();
+  const safeUsername = String(username || '').trim();
+  return safeUsername ? `${safeUsername} (${safeId})` : safeId;
+}
+
+async function getCoinGrantWhitelistDetails(guildId) {
+  const cfg = await getOrCreateGuildConfig(guildId);
+  const whitelist = normalizeCoinGrantWhitelistEntries(cfg.economy?.coinGrantWhitelist || []);
+  return {
+    cfg,
+    whitelist,
+    whitelistSet: new Set(whitelist)
+  };
+}
+
+async function ensureWhitelistedEconomyTarget(req, { guildId, discordId, username = '', actionLabel = 'run this action' } = {}) {
+  const safeDiscordId = String(discordId || '').trim();
+  if (!safeDiscordId) return false;
+
+  const { whitelistSet } = await getCoinGrantWhitelistDetails(guildId);
+  if (whitelistSet.has(safeDiscordId)) return true;
+
+  const label = buildEconomyUserLabel(safeDiscordId, username);
+  setFlash(req, {
+    type: 'warning',
+    message: `${label} must be on the whitelist before you can ${actionLabel}. Bulk Economy Booster actions are not affected.`
+  });
+  return false;
+}
+
+function formatExpProgress(user) {
+  const level = Math.max(1, Math.floor(Number(user?.level) || 1));
+  const exp = Math.max(0, Math.floor(Number(user?.exp) || 0));
+  const needed = requiredExpForLevel(level);
+  return `Level ${level.toLocaleString('en-US')} • ${exp.toLocaleString('en-US')}/${needed.toLocaleString('en-US')} EXP`;
+}
+
+async function getOrCreateEconomyUserDoc({ accountGuildId, discordId, username = '' } = {}) {
+  const safeDiscordId = String(discordId || '').trim();
+  const safeUsername = String(username || '').trim();
+  let user = await User.findOne({ guildId: accountGuildId, discordId: safeDiscordId });
+
+  if (!user) {
+    user = new User({
+      guildId: accountGuildId,
+      discordId: safeDiscordId,
+      username: safeUsername
+    });
+    return user;
+  }
+
+  if (safeUsername && !String(user.username || '').trim()) {
+    user.username = safeUsername;
+  }
+
+  return user;
+}
+
+async function applyAdminExpChange({ accountGuildId, discordId, username = '', amount = 0, allowCreate = false } = {}) {
+  const safeDiscordId = String(discordId || '').trim();
+  const safeAmount = Math.trunc(Number(amount) || 0);
+  if (!safeDiscordId || !safeAmount) return { ok: false, reason: 'invalid_request' };
+
+  const user = allowCreate
+    ? await getOrCreateEconomyUserDoc({ accountGuildId, discordId: safeDiscordId, username })
+    : await User.findOne({ guildId: accountGuildId, discordId: safeDiscordId });
+
+  if (!user) {
+    return { ok: false, reason: 'missing_user' };
+  }
+
+  if (safeAmount < 0) {
+    const availableExp = totalAccumulatedExp(user.level, user.exp);
+    if (availableExp < Math.abs(safeAmount)) {
+      return { ok: false, reason: 'insufficient_exp', availableExp };
+    }
+  }
+
+  const result = applyExpDelta(user, safeAmount);
+  if (!String(user.username || '').trim() && String(username || '').trim()) {
+    user.username = String(username).trim();
+  }
+  await user.save();
+  return { ok: true, user, result };
 }
 
 async function leaveGuildIfPresent(client, guildId) {
@@ -2032,9 +2124,7 @@ router.get('/economy/users', requireAdmin, requireGuild, async (req, res) => {
   const limit = 100;
   const skip = (page - 1) * limit;
 
-  const cfg = await getOrCreateGuildConfig(guildId);
-  const whitelist = Array.isArray(cfg.economy?.coinGrantWhitelist) ? cfg.economy.coinGrantWhitelist : [];
-  const whitelistUnique = [...new Set(whitelist.map((v) => String(v || '').trim()).filter(isSnowflake))].slice(0, 200);
+  const { whitelist: whitelistUnique } = await getCoinGrantWhitelistDetails(guildId);
   const whitelistDbUsers = whitelistUnique.length
     ? await User.find({ guildId: accountGuildId, discordId: { $in: whitelistUnique } }).select('discordId username').lean()
     : [];
@@ -2081,8 +2171,8 @@ router.post('/economy/users/whitelist/add', requireAdmin, requireGuild, async (r
     return res.redirect('/admin/economy/users');
   }
 
-  const cfg = await getOrCreateGuildConfig(guildId);
-  const set = new Set((cfg.economy?.coinGrantWhitelist || []).map((v) => String(v || '').trim()).filter(isSnowflake));
+  const { cfg } = await getCoinGrantWhitelistDetails(guildId);
+  const set = new Set(normalizeCoinGrantWhitelistEntries(cfg.economy?.coinGrantWhitelist || []));
   const before = set.size;
   set.add(discordId);
   cfg.economy.coinGrantWhitelist = [...set];
@@ -2111,8 +2201,8 @@ router.post('/economy/users/whitelist/remove', requireAdmin, requireGuild, async
     return res.redirect('/admin/economy/users');
   }
 
-  const cfg = await getOrCreateGuildConfig(guildId);
-  const set = new Set((cfg.economy?.coinGrantWhitelist || []).map((v) => String(v || '').trim()).filter(isSnowflake));
+  const { cfg } = await getCoinGrantWhitelistDetails(guildId);
+  const set = new Set(normalizeCoinGrantWhitelistEntries(cfg.economy?.coinGrantWhitelist || []));
   const had = set.delete(discordId);
   cfg.economy.coinGrantWhitelist = [...set];
   if (had) await cfg.save();
@@ -2145,6 +2235,9 @@ router.post('/economy/users/grant', requireAdmin, requireGuild, async (req, res)
   }
   if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
+    return res.redirect('/admin/economy/users');
+  }
+  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'grant credits' }))) {
     return res.redirect('/admin/economy/users');
   }
 
@@ -2194,6 +2287,9 @@ router.post('/economy/users/deduct', requireAdmin, requireGuild, async (req, res
   }
   if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
+    return res.redirect('/admin/economy/users');
+  }
+  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'deduct credits' }))) {
     return res.redirect('/admin/economy/users');
   }
 
@@ -2249,6 +2345,9 @@ router.post('/economy/users/gift', requireAdmin, requireGuild, async (req, res) 
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
     return res.redirect('/admin/economy/users');
   }
+  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'grant credits' }))) {
+    return res.redirect('/admin/economy/users');
+  }
 
   const user = await User.findOneAndUpdate(
     { guildId: accountGuildId, discordId },
@@ -2298,17 +2397,27 @@ router.post('/economy/users/exp', requireAdmin, requireGuild, async (req, res) =
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
     return res.redirect('/admin/economy/users');
   }
+  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'grant EXP' }))) {
+    return res.redirect('/admin/economy/users');
+  }
 
-  const user = await User.findOneAndUpdate(
-    { guildId: accountGuildId, discordId },
-    { $setOnInsert: { guildId: accountGuildId, discordId, username: '' }, $inc: { exp: safeAmount } },
-    { upsert: true, new: true, setDefaultsOnInsert: true }
-  );
+  const expChange = await applyAdminExpChange({
+    accountGuildId,
+    discordId,
+    username,
+    amount: safeAmount,
+    allowCreate: true
+  });
+  if (!expChange.ok || !expChange.user) {
+    setFlash(req, { type: 'danger', message: 'Failed to grant EXP to this user.' });
+    return res.redirect('/admin/economy/users');
+  }
+  const user = expChange.user;
 
   await Transaction.create({
     guildId,
     discordId,
-    type: 'admin_exp',
+    type: 'admin_exp_grant',
     amount: safeAmount,
     balanceAfter: user.balance ?? 0,
     bankAfter: user.bank ?? 0,
@@ -2320,10 +2429,77 @@ router.post('/economy/users/exp', requireAdmin, requireGuild, async (req, res) =
     guildId,
     type: 'economy',
     webhookCategory: 'economy',
-    content: `**Experience Granted**\n**Member:** ${label}\n**Amount:** +${safeAmount.toLocaleString('en-US')} EXP\n**By:** ${actor}`
+    content: `**Experience Granted**\n**Member:** ${label}\n**Amount:** +${safeAmount.toLocaleString(
+      'en-US'
+    )} EXP\n**Progress:** ${formatExpProgress(user)}\n**By:** ${actor}`
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Granted ${safeAmount.toLocaleString('en-US')} EXP to ${label}.` });
+  return res.redirect('/admin/economy/users');
+});
+
+router.post('/economy/users/exp/deduct', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const accountGuildId = getEconomyAccountGuildId(guildId);
+  const discordId = String(req.body.discordId || '').trim();
+  const username = String(req.body.username || '').trim();
+  const label = username ? `${username} (${discordId})` : discordId;
+  const actor = adminDisplayName(req.adminUser);
+  const amount = Math.floor(Number(req.body.amount) || 0);
+  const safeAmount = Math.min(1_000_000_000, Math.max(0, amount));
+
+  if (!isSnowflake(discordId)) {
+    setFlash(req, { type: 'warning', message: 'Valid Discord ID is required.' });
+    return res.redirect('/admin/economy/users');
+  }
+  if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
+    setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
+    return res.redirect('/admin/economy/users');
+  }
+  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'deduct EXP' }))) {
+    return res.redirect('/admin/economy/users');
+  }
+
+  const expChange = await applyAdminExpChange({
+    accountGuildId,
+    discordId,
+    username,
+    amount: -safeAmount,
+    allowCreate: false
+  });
+  if (!expChange.ok) {
+    const message =
+      expChange.reason === 'missing_user'
+        ? 'User not found.'
+        : expChange.reason === 'insufficient_exp'
+          ? 'User does not have enough total EXP to deduct that amount.'
+          : 'Failed to deduct EXP from this user.';
+    setFlash(req, { type: 'danger', message });
+    return res.redirect('/admin/economy/users');
+  }
+
+  const user = expChange.user;
+  await Transaction.create({
+    guildId,
+    discordId,
+    type: 'admin_exp_deduct',
+    amount: -safeAmount,
+    balanceAfter: user.balance ?? 0,
+    bankAfter: user.bank ?? 0,
+    details: { admin: req.adminUser.email }
+  }).catch(() => null);
+
+  await sendLog({
+    discordClient: req.app.locals.discord.economy,
+    guildId,
+    type: 'economy',
+    webhookCategory: 'economy',
+    content: `**Experience Deducted**\n**Member:** ${label}\n**Amount:** -${safeAmount.toLocaleString(
+      'en-US'
+    )} EXP\n**Progress:** ${formatExpProgress(user)}\n**By:** ${actor}`
+  }).catch(() => null);
+
+  setFlash(req, { type: 'success', message: `Deducted ${safeAmount.toLocaleString('en-US')} EXP from ${label}.` });
   return res.redirect('/admin/economy/users');
 });
 
@@ -2374,13 +2550,43 @@ router.post('/economy/users/exp-all', requireAdmin, requireGuild, async (req, re
     return res.redirect('/admin/economy/users');
   }
 
-  const result = await User.updateMany({ guildId: accountGuildId }, { $inc: { exp: safeAmount } });
-  const modified = Number(result?.modifiedCount ?? result?.nModified ?? 0);
-
-  if (!modified) {
+  const usersToBoost = await User.find({ guildId: accountGuildId });
+  if (!usersToBoost.length) {
     setFlash(req, { type: 'info', message: 'No users found to grant EXP.' });
     return res.redirect('/admin/economy/users');
   }
+
+  const now = new Date();
+  const operations = [];
+  let modified = 0;
+  let leveledUp = 0;
+
+  for (const user of usersToBoost) {
+    const result = applyExpDelta(user, safeAmount);
+    if (!result.expAdded) continue;
+    modified += 1;
+    leveledUp += Number(result.leveledUp || 0);
+    operations.push({
+      updateOne: {
+        filter: { _id: user._id },
+        update: {
+          $set: {
+            level: user.level,
+            exp: user.exp,
+            statPoints: user.statPoints,
+            updatedAt: now
+          }
+        }
+      }
+    });
+  }
+
+  if (!operations.length) {
+    setFlash(req, { type: 'info', message: 'No users found to grant EXP.' });
+    return res.redirect('/admin/economy/users');
+  }
+
+  await User.bulkWrite(operations);
 
   await sendLog({
     discordClient: req.app.locals.discord.economy,
@@ -2389,7 +2595,7 @@ router.post('/economy/users/exp-all', requireAdmin, requireGuild, async (req, re
     webhookCategory: 'economy',
     content: `**Bulk Experience Granted**\n**Members Affected:** ${Number(modified || 0).toLocaleString(
       'en-US'
-    )}\n**Amount Per Member:** +${safeAmount.toLocaleString('en-US')} EXP\n**By:** ${actor}`
+    )}\n**Amount Per Member:** +${safeAmount.toLocaleString('en-US')} EXP\n**Levels Gained:** ${leveledUp.toLocaleString('en-US')}\n**By:** ${actor}`
   }).catch(() => null);
 
   setFlash(req, {
