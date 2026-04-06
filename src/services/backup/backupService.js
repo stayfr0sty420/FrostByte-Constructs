@@ -26,6 +26,19 @@ const VALID_BACKUP_TYPES = new Set([
   'bots'
 ]);
 const FORUM_LIKE_TYPES = new Set([ChannelType.GuildForum, ChannelType.GuildMedia].filter((value) => Number.isFinite(value)));
+const BACKUP_DATA_FILES = new Set([
+  'server.json',
+  'roles.json',
+  'channels.json',
+  'emojis.json',
+  'stickers.json',
+  'webhooks.json',
+  'bans.json',
+  'nicknames.json',
+  'threads.json',
+  'bots.json',
+  'role_assignments.json'
+]);
 
 function stableBackupsRoot() {
   const configured = String(env.BACKUP_STORAGE_DIR || '').trim();
@@ -83,6 +96,61 @@ function buildGuildBackupsDir(guildId) {
 function buildGuildBackupsDirs(guildId) {
   const safeGuildId = String(guildId || '').trim();
   return uniquePaths(backupRootCandidates().map((rootPath) => (safeGuildId ? path.join(rootPath, safeGuildId) : rootPath)));
+}
+
+function normalizeBackupEntryName(value) {
+  return String(value || '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .trim();
+}
+
+function isBackupPayloadEntryName(value) {
+  const normalized = normalizeBackupEntryName(value);
+  if (!normalized) return false;
+  if (BACKUP_DATA_FILES.has(normalized)) return true;
+  return /^messages\/[^/]+\.json$/i.test(normalized);
+}
+
+async function collectBackupPayloadFiles(dirPath) {
+  const safeDirPath = String(dirPath || '').trim();
+  if (!safeDirPath) return [];
+
+  const payloadFiles = [];
+  for (const fileName of BACKUP_DATA_FILES) {
+    // eslint-disable-next-line no-await-in-loop
+    if (await pathExists(path.join(safeDirPath, fileName), 'file')) payloadFiles.push(fileName);
+  }
+
+  const messagesDir = path.join(safeDirPath, 'messages');
+  if (await pathExists(messagesDir, 'dir')) {
+    const messageEntries = await fs.readdir(messagesDir, { withFileTypes: true }).catch(() => []);
+    for (const entry of messageEntries) {
+      if (!entry.isFile()) continue;
+      if (!entry.name.endsWith('.json')) continue;
+      payloadFiles.push(normalizeBackupEntryName(path.join('messages', entry.name)));
+    }
+  }
+
+  return uniquePaths(payloadFiles);
+}
+
+function buildSyntheticBackupMetadata(backup) {
+  const createdAtSource = backup?.createdAt || backup?.timestamp || new Date();
+  const createdAtDate = createdAtSource instanceof Date ? createdAtSource : new Date(createdAtSource || Date.now());
+  const createdAt = Number.isNaN(createdAtDate.getTime()) ? new Date().toISOString() : createdAtDate.toISOString();
+
+  return {
+    backupId: String(backup?.backupId || '').trim(),
+    guildId: String(backup?.guildId || '').trim(),
+    name: String(backup?.name || backup?.type || 'backup').trim() || 'backup',
+    type: String(backup?.type || 'full').trim() || 'full',
+    createdAt,
+    createdBy: String(backup?.createdBy || '').trim(),
+    storageVersion: 1,
+    repairedAt: new Date().toISOString(),
+    repairedFrom: 'legacy-backup-recovery'
+  };
 }
 
 async function findExistingBackupArchivePath(backup, options = {}) {
@@ -166,12 +234,42 @@ async function syncBackupLocation(backup, updates = {}) {
   await Backup.updateOne({ _id: backup._id }, { $set: safeUpdates }).catch(() => null);
 }
 
+async function ensureBackupDirectoryMetadata(backup, dirPath, options = {}) {
+  const safeDirPath = String(dirPath || '').trim();
+  if (!safeDirPath) {
+    return { ok: false, reason: 'Backup folder is missing.' };
+  }
+
+  const payloadFiles = await collectBackupPayloadFiles(safeDirPath);
+  if (!payloadFiles.length) {
+    return {
+      ok: false,
+      reason: 'Backup folder is incomplete on disk. This backup is no longer safe to download or restore.'
+    };
+  }
+
+  const metadataPath = path.join(safeDirPath, 'metadata.json');
+  const hasMetadata = await pathExists(metadataPath, 'file');
+  if (hasMetadata) {
+    return { ok: true, hasMetadata: true, generated: false, payloadFiles };
+  }
+
+  if (!options.writeMetadata) {
+    return { ok: true, hasMetadata: false, generated: false, payloadFiles, legacy: true };
+  }
+
+  await writeJson(metadataPath, buildSyntheticBackupMetadata(backup));
+  return { ok: true, hasMetadata: true, generated: true, payloadFiles, legacy: true };
+}
+
 async function ensureBackupArchive(backup) {
   if (!backup) return { ok: false, reason: 'Backup not found.' };
 
   const guildBackupsDir = buildGuildBackupsDir(backup.guildId);
   const backupId = String(backup.backupId || '').trim();
   const dirPath = await findExistingBackupDirectory(backup);
+  const directoryState = dirPath ? await ensureBackupDirectoryMetadata(backup, dirPath, { writeMetadata: true }) : null;
+  let lastArchiveValidationReason = '';
 
   const archivePath = await findExistingBackupArchivePath(backup, { dirPath });
   if (archivePath) {
@@ -179,28 +277,46 @@ async function ensureBackupArchive(backup) {
     const manifest = manifestPath && (await pathExists(manifestPath, 'file')) ? await readJson(manifestPath).catch(() => null) : null;
     const validation = validateBackupZipArchive(archivePath, manifest);
     if (!validation.ok) {
-      return { ok: false, reason: validation.reason || 'Backup archive failed validation.' };
+      lastArchiveValidationReason = validation.reason || 'Backup archive failed validation.';
+    } else {
+      const stats = await fs.stat(archivePath).catch(() => null);
+      await syncBackupLocation(backup, {
+        zipPath: archivePath,
+        size: stats?.size || backup.size || 0,
+        ...(dirPath ? { path: dirPath, filePath: dirPath } : {})
+      });
+      return {
+        ok: true,
+        zipPath: archivePath,
+        size: stats?.size || 0,
+        regenerated: false,
+        repaired: Boolean(validation.legacy)
+      };
     }
-    const stats = await fs.stat(archivePath).catch(() => null);
-    await syncBackupLocation(backup, {
-      zipPath: archivePath,
-      size: stats?.size || backup.size || 0,
-      ...(dirPath ? { path: dirPath, filePath: dirPath } : {})
-    });
-    return { ok: true, zipPath: archivePath, size: stats?.size || 0, regenerated: false };
   }
 
   if (dirPath) {
-    const metadataExists = await pathExists(path.join(dirPath, 'metadata.json'), 'file');
-    if (!metadataExists) {
+    if (!directoryState?.ok) {
       return {
         ok: false,
-        reason: 'Backup folder is incomplete on disk. This backup is no longer safe to download or restore.'
+        reason:
+          directoryState?.reason ||
+          lastArchiveValidationReason ||
+          'Backup folder is incomplete on disk. This backup is no longer safe to download or restore.'
       };
     }
     const dirZipPath = path.join(path.dirname(dirPath), `${path.basename(dirPath)}.zip`);
     const rebuildZipPath = dirZipPath || path.join(guildBackupsDir, `${backupId || path.basename(dirPath)}.zip`);
     await zipDirectory(dirPath, rebuildZipPath);
+    const manifestPath = path.join(dirPath, 'manifest.json');
+    const manifest = (await pathExists(manifestPath, 'file')) ? await readJson(manifestPath).catch(() => null) : null;
+    const rebuiltValidation = validateBackupZipArchive(rebuildZipPath, manifest);
+    if (!rebuiltValidation.ok) {
+      return {
+        ok: false,
+        reason: rebuiltValidation.reason || lastArchiveValidationReason || 'Backup archive failed validation.'
+      };
+    }
     const stats = await fs.stat(rebuildZipPath).catch(() => null);
     if (stats?.isFile()) {
       await syncBackupLocation(backup, {
@@ -209,13 +325,19 @@ async function ensureBackupArchive(backup) {
         zipPath: rebuildZipPath,
         size: stats.size || backup.size || 0
       });
-      return { ok: true, zipPath: rebuildZipPath, size: stats.size || 0, regenerated: true };
+      return {
+        ok: true,
+        zipPath: rebuildZipPath,
+        size: stats.size || 0,
+        regenerated: true,
+        repaired: Boolean(lastArchiveValidationReason || directoryState?.generated || rebuiltValidation.legacy)
+      };
     }
   }
 
   return {
     ok: false,
-    reason: 'Backup archive is no longer available on disk. Create a new backup to download it again.'
+    reason: lastArchiveValidationReason || 'Backup archive is no longer available on disk. Create a new backup to download it again.'
   };
 }
 
@@ -241,15 +363,34 @@ async function inspectBackupAvailability(backup) {
 
   const dirPath = await findExistingBackupDirectory(backup);
   const archivePath = await findExistingBackupArchivePath(backup, { dirPath });
+  const directoryState = dirPath ? await ensureBackupDirectoryMetadata(backup, dirPath, { writeMetadata: true }) : null;
   const metadataPath = dirPath ? path.join(dirPath, 'metadata.json') : '';
   const manifestPath = dirPath ? path.join(dirPath, 'manifest.json') : '';
-  const hasMetadata = metadataPath ? await pathExists(metadataPath, 'file') : false;
+  const hasMetadata = directoryState?.hasMetadata || (metadataPath ? await pathExists(metadataPath, 'file') : false);
   const hasManifest = manifestPath ? await pathExists(manifestPath, 'file') : false;
 
   if (archivePath) {
     const manifest = hasManifest ? await readJson(manifestPath).catch(() => null) : null;
     const validation = validateBackupZipArchive(archivePath, manifest);
-    if (!validation.ok) {
+    if (validation.ok) {
+      const stats = await fs.stat(archivePath).catch(() => null);
+      await syncBackupLocation(backup, {
+        ...(dirPath ? { path: dirPath, filePath: dirPath } : {}),
+        zipPath: archivePath,
+        size: stats?.size || backup.size || 0
+      });
+      return {
+        state: 'ready',
+        canDownload: true,
+        canRestore: true,
+        reason: '',
+        zipPath: archivePath,
+        hasManifest,
+        hasMetadata
+      };
+    }
+
+    if (!directoryState?.ok) {
       return {
         state: 'invalid',
         canDownload: false,
@@ -257,24 +398,18 @@ async function inspectBackupAvailability(backup) {
         reason: validation.reason || 'Backup archive failed validation.'
       };
     }
-
-    return {
-      state: 'ready',
-      canDownload: true,
-      canRestore: true,
-      reason: '',
-      zipPath: archivePath,
-      hasManifest,
-      hasMetadata
-    };
   }
 
-  if (dirPath && hasMetadata) {
+  if (dirPath && directoryState?.ok) {
+    await syncBackupLocation(backup, {
+      path: dirPath,
+      filePath: dirPath
+    });
     return {
       state: 'ready',
       canDownload: true,
       canRestore: true,
-      reason: 'Archive file is missing, but the extracted backup folder is intact and the zip can be rebuilt on demand.',
+      reason: 'Archive file is missing or needs repair, but the extracted backup folder is intact and the zip can be rebuilt on demand.',
       hasManifest,
       hasMetadata
     };
@@ -328,10 +463,7 @@ function buildBackupManifest({ backupId, guildId, backupType, createdAt, stats, 
 }
 
 function normalizeZipEntryName(value) {
-  return String(value || '')
-    .replace(/\\/g, '/')
-    .replace(/^\/+/, '')
-    .trim();
+  return normalizeBackupEntryName(value);
 }
 
 function validateBackupZipArchive(zipPath, manifest = null) {
@@ -343,7 +475,8 @@ function validateBackupZipArchive(zipPath, manifest = null) {
         .map((entry) => normalizeZipEntryName(entry.entryName))
         .filter(Boolean)
     );
-    const requiredEntries = new Set(['metadata.json']);
+    const payloadEntries = Array.from(entryNames).filter((entryName) => isBackupPayloadEntryName(entryName));
+    const requiredEntries = new Set();
     if (manifest) requiredEntries.add('manifest.json');
     if (manifest && Array.isArray(manifest.files)) {
       for (const file of manifest.files) {
@@ -358,7 +491,15 @@ function validateBackupZipArchive(zipPath, manifest = null) {
       }
     }
 
-    return { ok: true };
+    if (!payloadEntries.length) {
+      return { ok: false, reason: 'Backup archive does not contain any restorable data files.' };
+    }
+
+    if (!entryNames.has('metadata.json') && !manifest) {
+      return { ok: true, legacy: true };
+    }
+
+    return { ok: true, legacy: !entryNames.has('metadata.json') };
   } catch (err) {
     return { ok: false, reason: `Backup archive validation failed: ${String(err?.message || err)}` };
   }
@@ -1269,6 +1410,7 @@ module.exports = {
   enforceRetention,
   normalizeBackupType,
   ensureBackupArchive,
+  ensureBackupDirectoryMetadata,
   findExistingBackupDirectory,
   findExistingBackupArchivePath,
   inspectBackupAvailability

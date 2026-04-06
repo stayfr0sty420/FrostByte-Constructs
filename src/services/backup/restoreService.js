@@ -5,7 +5,7 @@ const { WebhookClient, ChannelType } = require('discord.js');
 const Backup = require('../../db/models/Backup');
 const { logger } = require('../../config/logger');
 const { sendLog } = require('../discord/loggingService');
-const { ensureBackupArchive, findExistingBackupDirectory } = require('./backupService');
+const { ensureBackupArchive, ensureBackupDirectoryMetadata, findExistingBackupDirectory } = require('./backupService');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 const RESTORE_WEBHOOK_AVATAR_CANDIDATES = [
@@ -78,6 +78,7 @@ async function validateBackupDirectoryContents(backupDir) {
 async function ensureBackupDirectory(backup) {
   const existingDir = await findExistingBackupDirectory(backup);
   if (existingDir && (await fileExists(existingDir))) {
+    await ensureBackupDirectoryMetadata(backup, existingDir, { writeMetadata: true }).catch(() => null);
     const validation = await validateBackupDirectoryContents(existingDir);
     if (validation.ok) {
       return { ok: true, backupDir: existingDir, extracted: false, hasManifest: Boolean(validation.hasManifest) };
@@ -100,12 +101,14 @@ async function ensureBackupDirectory(backup) {
     const zip = new AdmZip(archive.zipPath);
     zip.extractAllTo(extractDir, true);
 
+    await ensureBackupDirectoryMetadata(backup, extractDir, { writeMetadata: true }).catch(() => null);
     const metadataPath = path.join(extractDir, 'metadata.json');
     if (!(await fileExists(metadataPath))) {
       const children = await fs.readdir(extractDir, { withFileTypes: true }).catch(() => []);
       const nested = children.find((entry) => entry.isDirectory());
       if (nested) {
         const nestedPath = path.join(extractDir, nested.name);
+        await ensureBackupDirectoryMetadata(backup, nestedPath, { writeMetadata: true }).catch(() => null);
         if (await fileExists(path.join(nestedPath, 'metadata.json'))) {
           const validation = await validateBackupDirectoryContents(nestedPath);
           if (!validation.ok) {
@@ -881,6 +884,10 @@ async function restoreWebhooks(guild, webhooksData, channelIdMap = new Map(), op
   return stats;
 }
 
+function normalizeForumTagName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
 async function buildForumTagMap(guild, channelsData = [], channelIdMap = new Map()) {
   const tagMap = new Map();
 
@@ -897,13 +904,22 @@ async function buildForumTagMap(guild, channelsData = [], channelIdMap = new Map
     if (!restoredParent) continue;
 
     const restoredTags = Array.isArray(restoredParent.availableTags) ? restoredParent.availableTags : [];
+    const restoredTagsByName = new Map(
+      restoredTags
+        .map((tag) => [normalizeForumTagName(tag?.name), tag])
+        .filter(([name, tag]) => name && tag?.id)
+    );
     const originalTags = Array.isArray(channelData.availableTags) ? channelData.availableTags : [];
-    for (const originalTag of originalTags) {
+    for (const [index, originalTag] of originalTags.entries()) {
       const originalTagId = String(originalTag?.id || '').trim();
       const originalTagName = String(originalTag?.name || '').trim();
       if (!originalTagId || !originalTagName) continue;
 
-      const restoredTag = restoredTags.find((tag) => String(tag?.name || '').trim() === originalTagName);
+      const restoredTag =
+        restoredTagsByName.get(normalizeForumTagName(originalTagName)) ||
+        restoredTags.find((tag) => String(tag?.name || '').trim() === originalTagName) ||
+        restoredTags[index] ||
+        null;
       if (restoredTag?.id) {
         tagMap.set(`${originalParentId}:${originalTagId}`, restoredTag.id);
       }
@@ -1221,6 +1237,7 @@ async function restoreBots(guild, botsData, roleIdMap = new Map(), membersCache 
     expected: Array.isArray(botsData) ? botsData.length : 0,
     nicknamesChanged: 0,
     rolesAdded: 0,
+    rolesRemoved: 0,
     missing: 0,
     failed: 0
   };
@@ -1230,6 +1247,15 @@ async function restoreBots(guild, botsData, roleIdMap = new Map(), membersCache 
   if (!members) {
     stats.missing = stats.expected;
     return stats;
+  }
+
+  const restorableBotRoleIds = new Set();
+  for (const botData of botsData) {
+    for (const roleId of Array.isArray(botData?.roles) ? botData.roles : []) {
+      const mappedRoleId = roleIdMap.get(String(roleId)) || String(roleId || '').trim();
+      if (!mappedRoleId || String(mappedRoleId) === String(guild.id)) continue;
+      restorableBotRoleIds.add(String(mappedRoleId));
+    }
   }
 
   let updates = 0;
@@ -1249,18 +1275,33 @@ async function restoreBots(guild, botsData, roleIdMap = new Map(), membersCache 
       stats.nicknamesChanged += 1;
     }
 
-    const desiredRoleIds = Array.isArray(botData?.roles)
-      ? botData.roles
-          .map((roleId) => roleIdMap.get(String(roleId)))
-          .filter((roleId) => roleId && String(roleId) !== String(guild.id))
-      : [];
-    for (const roleId of desiredRoleIds) {
-      if (member.roles.cache.has(roleId)) continue;
-      await member.roles.add(roleId, 'Restore bot roles from backup').catch(() => null);
-      updates += 1;
-      stats.rolesAdded += 1;
-      if (safeDelay > 0 && updates % 10 === 0) await sleep(safeDelay);
+    const desiredRoleIds = Array.from(
+      new Set(
+        Array.isArray(botData?.roles)
+          ? botData.roles
+              .map((roleId) => roleIdMap.get(String(roleId)))
+              .filter((roleId) => roleId && String(roleId) !== String(guild.id))
+          : []
+      )
+    );
+
+    const currentRestorable = member.roles.cache
+      .filter((role) => restorableBotRoleIds.has(String(role.id || '')))
+      .map((role) => String(role.id || ''));
+    const rolesToRemove = currentRestorable.filter((roleId) => !desiredRoleIds.includes(roleId));
+    const rolesToAdd = desiredRoleIds.filter((roleId) => !member.roles.cache.has(roleId));
+
+    if (rolesToRemove.length) {
+      await member.roles.remove(rolesToRemove, 'Restore bot roles from backup').catch(() => null);
+      updates += rolesToRemove.length;
+      stats.rolesRemoved += rolesToRemove.length;
     }
+    if (rolesToAdd.length) {
+      await member.roles.add(rolesToAdd, 'Restore bot roles from backup').catch(() => null);
+      updates += rolesToAdd.length;
+      stats.rolesAdded += rolesToAdd.length;
+    }
+    if (safeDelay > 0 && updates > 0 && updates % 10 === 0) await sleep(safeDelay);
   }
 
   return stats;
@@ -1300,6 +1341,11 @@ async function restoreRoleAssignments(guild, roleAssignments, roleIdMap = new Ma
   let updates = 0;
   let membersTouched = 0;
   const targetMemberIds = new Set(desiredRolesByMember.keys());
+  for (const member of members.values()) {
+    const hasRestorableRole = member.roles.cache.some((role) => restorableRoleIds.has(String(role.id || '')));
+    if (hasRestorableRole) targetMemberIds.add(String(member.id || ''));
+  }
+
   for (const memberId of targetMemberIds) {
     const member = await resolveMemberWithFallback(guild, members, memberId);
     if (!member) {
@@ -1518,8 +1564,8 @@ function buildRestoreSummaryText(summary = {}) {
   if (roleAssignmentStats.rolesAdded || roleAssignmentStats.rolesRemoved) {
     bits.push(`role sync +${Number(roleAssignmentStats.rolesAdded || 0)}/-${Number(roleAssignmentStats.rolesRemoved || 0)}`);
   }
-  if (botStats.rolesAdded || botStats.nicknamesChanged) {
-    bits.push(`bot sync +${Number(botStats.rolesAdded || 0)} roles`);
+  if (botStats.rolesAdded || botStats.rolesRemoved || botStats.nicknamesChanged) {
+    bits.push(`bot sync +${Number(botStats.rolesAdded || 0)}/-${Number(botStats.rolesRemoved || 0)} roles`);
   }
   if (banStats.restored) {
     bits.push(`bans ${Number(banStats.restored || 0)}/${Number(banStats.expected || 0)}`);
@@ -1712,6 +1758,7 @@ async function restoreBackup({
       bots: defaultRestoreCounter(Array.isArray(botsData) ? botsData.length : 0, {
         nicknamesChanged: 0,
         rolesAdded: 0,
+        rolesRemoved: 0,
         missing: 0,
         failed: 0
       }),

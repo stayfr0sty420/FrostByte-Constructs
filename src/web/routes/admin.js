@@ -119,6 +119,16 @@ function wantsJsonResponse(req) {
   return requestedWith === 'xmlhttprequest' || accept.includes('application/json');
 }
 
+function parseCheckboxValue(value, defaultValue = false) {
+  if (typeof value === 'undefined') return Boolean(defaultValue);
+  const raw = Array.isArray(value) ? value.at(-1) : value;
+  const normalized = String(raw || '').trim().toLowerCase();
+  if (!normalized) return false;
+  if (['1', 'true', 'on', 'yes'].includes(normalized)) return true;
+  if (['0', 'false', 'off', 'no'].includes(normalized)) return false;
+  return Boolean(raw);
+}
+
 function resolveActiveBackupOperation(req) {
   const guildId = String(req.session?.activeGuildId || '').trim();
   if (!guildId) return null;
@@ -487,7 +497,7 @@ async function handleBackupRestore(req, res, backupId) {
     return res.redirect('/admin/backups');
   }
 
-  const backupMeta = await Backup.findOne({ guildId, backupId }).select('name type status').lean().catch(() => null);
+  const backupMeta = await Backup.findOne({ guildId, backupId }).lean().catch(() => null);
   const backupStatus = String(backupMeta?.status || '').trim().toLowerCase();
   if (!backupMeta) {
     if (wantsJson) return res.status(404).json({ ok: false, reason: 'Backup not found.' });
@@ -504,16 +514,27 @@ async function handleBackupRestore(req, res, backupId) {
     setFlash(req, { type: 'warning', message: 'That backup is not completed yet and cannot be restored.' });
     return res.redirect('/admin/backups');
   }
+  const availability = await inspectBackupAvailability(backupMeta);
+  if (!availability?.canRestore) {
+    if (wantsJson) {
+      return res.status(400).json({
+        ok: false,
+        reason: availability?.reason || 'Backup files are not healthy enough to restore.'
+      });
+    }
+    setFlash(req, { type: 'warning', message: availability?.reason || 'That backup is not healthy enough to restore.' });
+    return res.redirect('/admin/backups');
+  }
 
   const restoreMessages = typeof req.body.restoreMessages === 'undefined'
     ? ['full', 'messages'].includes(String(backupMeta?.type || '').trim().toLowerCase())
-    : Boolean(req.body.restoreMessages);
+    : parseCheckboxValue(req.body.restoreMessages);
   const restoreBans = typeof req.body.restoreBans === 'undefined'
     ? ['full', 'bans'].includes(String(backupMeta?.type || '').trim().toLowerCase())
-    : Boolean(req.body.restoreBans);
-  const wipe = Boolean(req.body.wipe);
+    : parseCheckboxValue(req.body.restoreBans);
+  const wipe = parseCheckboxValue(req.body.wipe);
   const pruneOpt = req.body.prune;
-  const pruneChannels = typeof pruneOpt === 'undefined' ? true : Boolean(pruneOpt);
+  const pruneChannels = typeof pruneOpt === 'undefined' ? true : parseCheckboxValue(pruneOpt);
   const targetGuildId = String(req.body.targetGuildId || '').trim();
   const sourceGuild = await fetchGuildFromClients(req.app.locals.discord, guildId).catch(() => null);
   const sourceGuildName = String(sourceGuild?.name || res.locals.activeGuildName || guildId).trim() || guildId;

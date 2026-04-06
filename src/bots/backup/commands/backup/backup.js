@@ -162,8 +162,15 @@ module.exports = {
 
     if (sub === 'restore') {
       const id = interaction.options.getString('id', true);
-      const backup = await Backup.findOne({ guildId, backupId: id }).select('type').lean();
+      const backup = await Backup.findOne({ guildId, backupId: id }).select('type status').lean();
       if (!backup) return await safeReply(interaction, { content: 'Backup not found.', ephemeral: true });
+      const availability = await inspectBackupAvailability(backup);
+      if (String(backup.status || '').trim().toLowerCase() !== 'completed' || !availability?.canRestore) {
+        return await safeReply(interaction, {
+          content: availability?.reason || 'That backup is not completed and ready to restore yet.',
+          ephemeral: true
+        });
+      }
       const restoreMessagesOpt = interaction.options.getBoolean('messages');
       const restoreBansOpt = interaction.options.getBoolean('bans');
       const backupType = String(backup.type || '').trim().toLowerCase();
