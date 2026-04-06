@@ -2185,7 +2185,7 @@ router.post('/economy/users/whitelist/add', requireAdmin, requireGuild, async (r
   const guildId = req.session.activeGuildId;
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
-  const label = username ? `${username} (${discordId})` : discordId;
+  const label = buildEconomyUserLabel(discordId, username);
   const actor = adminDisplayName(req.adminUser);
   if (!isSnowflake(discordId)) {
     setFlash(req, { type: 'warning', message: 'Valid Discord ID is required.' });
@@ -2196,8 +2196,13 @@ router.post('/economy/users/whitelist/add', requireAdmin, requireGuild, async (r
   const set = new Set(normalizeCoinGrantWhitelistEntries(cfg.economy?.coinGrantWhitelist || []));
   const before = set.size;
   set.add(discordId);
+  if (set.size === before) {
+    setFlash(req, { type: 'info', message: `${label} is already on the economy action whitelist.` });
+    return res.redirect('/admin/economy/users');
+  }
+
   cfg.economy.coinGrantWhitelist = [...set];
-  if (set.size !== before) await cfg.save();
+  await cfg.save();
 
   await sendLog({
     discordClient: req.app.locals.discord.economy,
@@ -2207,7 +2212,7 @@ router.post('/economy/users/whitelist/add', requireAdmin, requireGuild, async (r
     content: `**Economy Action Whitelist Updated**\n**Action:** Added\n**User:** ${label}\n**By:** ${actor}`
   }).catch(() => null);
 
-  setFlash(req, { type: 'success', message: `Whitelisted ${label} for credit grants.` });
+  setFlash(req, { type: 'success', message: `Added ${label} to the economy action whitelist.` });
   return res.redirect('/admin/economy/users');
 });
 
@@ -2215,7 +2220,7 @@ router.post('/economy/users/whitelist/remove', requireAdmin, requireGuild, async
   const guildId = req.session.activeGuildId;
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
-  const label = username ? `${username} (${discordId})` : discordId;
+  const label = buildEconomyUserLabel(discordId, username);
   const actor = adminDisplayName(req.adminUser);
   if (!isSnowflake(discordId)) {
     setFlash(req, { type: 'warning', message: 'Valid Discord ID is required.' });
@@ -2225,8 +2230,13 @@ router.post('/economy/users/whitelist/remove', requireAdmin, requireGuild, async
   const { cfg } = await getCoinGrantWhitelistDetails(guildId);
   const set = new Set(normalizeCoinGrantWhitelistEntries(cfg.economy?.coinGrantWhitelist || []));
   const had = set.delete(discordId);
+  if (!had) {
+    setFlash(req, { type: 'info', message: `${label} is not on the economy action whitelist.` });
+    return res.redirect('/admin/economy/users');
+  }
+
   cfg.economy.coinGrantWhitelist = [...set];
-  if (had) await cfg.save();
+  await cfg.save();
 
   await sendLog({
     discordClient: req.app.locals.discord.economy,
@@ -2236,7 +2246,7 @@ router.post('/economy/users/whitelist/remove', requireAdmin, requireGuild, async
     content: `**Economy Action Whitelist Updated**\n**Action:** Removed\n**User:** ${label}\n**By:** ${actor}`
   }).catch(() => null);
 
-  setFlash(req, { type: 'info', message: `Removed ${label} from credit grants whitelist.` });
+  setFlash(req, { type: 'success', message: `Removed ${label} from the economy action whitelist.` });
   return res.redirect('/admin/economy/users');
 });
 

@@ -2769,25 +2769,43 @@ code {
   min-width: 360px;
 }
 
+.user-actions-panel {
+  display: grid;
+  gap: 0.75rem;
+  justify-items: end;
+}
+
+.user-whitelist-bar {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
 .user-actions-grid {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   align-items: flex-start;
   gap: 0.55rem;
+  width: 100%;
 }
 
 .user-whitelist-state {
-  flex: 1 1 100%;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.6rem;
+  flex: 1 1 240px;
+  min-width: 0;
+  display: grid;
+  gap: 0.4rem;
+  justify-items: end;
+  text-align: right;
 }
 
 .user-whitelist-note {
   font-size: 0.78rem;
   color: rgba(229, 231, 235, 0.62);
+  max-width: 25rem;
 }
 
 .user-action-form {
@@ -2797,7 +2815,17 @@ code {
 }
 
 .user-action-form--toggle {
-  grid-template-columns: 1fr;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  flex: 0 0 auto;
+}
+
+.user-whitelist-toggle-btn {
+  width: 36px;
+  height: 32px;
+  padding: 0;
+  line-height: 1;
 }
 
 .user-action-form--wide {
@@ -2988,8 +3016,17 @@ code {
     justify-content: flex-start;
   }
 
-  .user-whitelist-state {
+  .user-actions-panel {
+    justify-items: stretch;
+  }
+
+  .user-whitelist-bar {
     justify-content: flex-start;
+  }
+
+  .user-whitelist-state {
+    justify-items: start;
+    text-align: left;
   }
 }
 
@@ -3027,7 +3064,7 @@ code {
 
   .user-action-form--toggle {
     width: auto;
-    grid-template-columns: 1fr;
+    justify-content: flex-start;
   }
 
   .user-action-form .btn {
