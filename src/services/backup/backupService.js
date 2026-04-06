@@ -95,7 +95,12 @@ function buildGuildBackupsDir(guildId) {
 
 function buildGuildBackupsDirs(guildId) {
   const safeGuildId = String(guildId || '').trim();
-  return uniquePaths(backupRootCandidates().map((rootPath) => (safeGuildId ? path.join(rootPath, safeGuildId) : rootPath)));
+  return uniquePaths(
+    backupRootCandidates().flatMap((rootPath) => [
+      safeGuildId ? path.join(rootPath, safeGuildId) : rootPath,
+      rootPath
+    ])
+  );
 }
 
 function normalizeBackupEntryName(value) {
@@ -153,6 +158,133 @@ function buildSyntheticBackupMetadata(backup) {
   };
 }
 
+function normalizeBackupLookupToken(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function buildBackupLookupTokens(backup) {
+  const storedDirPath = String(backup?.filePath || backup?.path || '').trim();
+  const storedDirName = storedDirPath ? path.basename(storedDirPath) : '';
+  const storedZipPath = String(backup?.zipPath || '').trim();
+  const storedZipBase = storedZipPath ? path.basename(storedZipPath, path.extname(storedZipPath)) : '';
+  const tokens = new Set();
+  for (const value of [
+    backup?.backupId,
+    storedDirName,
+    storedZipBase,
+    storedDirName ? storedDirName.split('_')[0] : '',
+    storedZipBase ? storedZipBase.split('_')[0] : ''
+  ]) {
+    const token = normalizeBackupLookupToken(value);
+    if (token) tokens.add(token);
+  }
+  return tokens;
+}
+
+function backupRecordMatchesMetadata(metadata, backup) {
+  if (!metadata || typeof metadata !== 'object') return false;
+
+  const guildId = String(backup?.guildId || '').trim();
+  const metadataGuildId = String(metadata?.guildId || '').trim();
+  if (guildId && metadataGuildId && metadataGuildId !== guildId) return false;
+
+  const backupTokens = buildBackupLookupTokens(backup);
+  const metadataTokens = new Set(
+    [metadata?.backupId, metadata?.name, metadata?.type]
+      .map((value) => normalizeBackupLookupToken(value))
+      .filter(Boolean)
+  );
+
+  for (const token of metadataTokens) {
+    if (backupTokens.has(token)) return true;
+  }
+
+  return false;
+}
+
+async function readBackupMetadataFromFile(filePath) {
+  const safePath = String(filePath || '').trim();
+  if (!safePath || !(await pathExists(safePath, 'file'))) return null;
+  return await readJson(safePath).catch(() => null);
+}
+
+function findZipMetadataEntry(entries = []) {
+  const normalizedEntries = entries
+    .map((entry) => ({
+      entry,
+      name: normalizeBackupEntryName(entry?.entryName)
+    }))
+    .filter((item) => item.name);
+
+  return (
+    normalizedEntries.find((item) => item.name === 'metadata.json')?.entry ||
+    normalizedEntries.find((item) => /^[^/]+\/metadata\.json$/i.test(item.name))?.entry ||
+    normalizedEntries.find((item) => /(^|\/)metadata\.json$/i.test(item.name))?.entry ||
+    null
+  );
+}
+
+function readBackupMetadataFromZipArchive(zipPath) {
+  try {
+    const archive = new AdmZip(zipPath);
+    const metadataEntry = findZipMetadataEntry(archive.getEntries());
+    if (!metadataEntry) return null;
+    return JSON.parse(archive.readAsText(metadataEntry, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function listFilesByExtension(rootPath, extension = '.zip', maxDepth = 2) {
+  const safeRootPath = String(rootPath || '').trim();
+  const safeExtension = String(extension || '').trim().toLowerCase();
+  if (!safeRootPath || !(await pathExists(safeRootPath, 'dir'))) return [];
+
+  const results = [];
+  const visit = async (currentPath, depth) => {
+    if (depth > maxDepth) return;
+    const entries = await fs.readdir(currentPath, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const nextPath = path.join(currentPath, entry.name);
+      if (entry.isFile() && entry.name.toLowerCase().endsWith(safeExtension)) {
+        results.push(nextPath);
+        continue;
+      }
+      if (entry.isDirectory()) {
+        // eslint-disable-next-line no-await-in-loop
+        await visit(nextPath, depth + 1);
+      }
+    }
+  };
+
+  await visit(safeRootPath, 0);
+  return uniquePaths(results);
+}
+
+async function listDirectories(rootPath, maxDepth = 2) {
+  const safeRootPath = String(rootPath || '').trim();
+  if (!safeRootPath || !(await pathExists(safeRootPath, 'dir'))) return [];
+
+  const results = [];
+  const visit = async (currentPath, depth) => {
+    if (depth > maxDepth) return;
+    const entries = await fs.readdir(currentPath, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const nextPath = path.join(currentPath, entry.name);
+      results.push(nextPath);
+      // eslint-disable-next-line no-await-in-loop
+      await visit(nextPath, depth + 1);
+    }
+  };
+
+  await visit(safeRootPath, 0);
+  return uniquePaths(results);
+}
+
 async function findExistingBackupArchivePath(backup, options = {}) {
   const guildBackupsDirs = buildGuildBackupsDirs(backup?.guildId);
   const storedZipPath = String(backup?.zipPath || '').trim();
@@ -181,6 +313,16 @@ async function findExistingBackupArchivePath(backup, options = {}) {
     const entries = await fs.readdir(guildBackupsDir, { withFileTypes: true }).catch(() => []);
     const matchedZip = entries.find((entry) => entry.isFile() && entry.name.startsWith(`${backupId}_`) && entry.name.endsWith('.zip'));
     if (matchedZip) return path.join(guildBackupsDir, matchedZip.name);
+  }
+
+  for (const guildBackupsDir of guildBackupsDirs) {
+    // eslint-disable-next-line no-await-in-loop
+    const zipFiles = await listFilesByExtension(guildBackupsDir, '.zip', 2);
+    for (const zipFile of zipFiles) {
+      // eslint-disable-next-line no-await-in-loop
+      const metadata = readBackupMetadataFromZipArchive(zipFile);
+      if (backupRecordMatchesMetadata(metadata, backup)) return zipFile;
+    }
   }
 
   return '';
@@ -216,6 +358,23 @@ async function findExistingBackupDirectory(backup) {
     const entries = await fs.readdir(guildBackupsDir, { withFileTypes: true }).catch(() => []);
     const match = entries.find((entry) => entry.isDirectory() && entry.name.startsWith(`${backupId}_`));
     if (match) return path.join(guildBackupsDir, match.name);
+  }
+
+  for (const guildBackupsDir of guildBackupsDirs) {
+    // eslint-disable-next-line no-await-in-loop
+    const directories = await listDirectories(guildBackupsDir, 2);
+    for (const directory of directories) {
+      // eslint-disable-next-line no-await-in-loop
+      const metadata = await readBackupMetadataFromFile(path.join(directory, 'metadata.json'));
+      if (backupRecordMatchesMetadata(metadata, backup)) return directory;
+
+      const directoryToken = normalizeBackupLookupToken(path.basename(directory));
+      if (!directoryToken) continue;
+      if (!buildBackupLookupTokens(backup).has(directoryToken)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const payloadFiles = await collectBackupPayloadFiles(directory);
+      if (payloadFiles.length) return directory;
+    }
   }
 
   return '';
@@ -466,40 +625,92 @@ function normalizeZipEntryName(value) {
   return normalizeBackupEntryName(value);
 }
 
+function zipRootPrefixes(entryNames = []) {
+  const prefixes = new Set(['']);
+  for (const entryName of entryNames) {
+    const normalized = normalizeZipEntryName(entryName);
+    const slashIndex = normalized.indexOf('/');
+    if (slashIndex > 0) prefixes.add(`${normalized.slice(0, slashIndex + 1)}`);
+  }
+  return Array.from(prefixes);
+}
+
+function stripZipRootPrefix(entryName, prefix = '') {
+  const normalized = normalizeZipEntryName(entryName);
+  if (!prefix) return normalized;
+  if (!normalized.startsWith(prefix)) return '';
+  return normalized.slice(prefix.length);
+}
+
 function validateBackupZipArchive(zipPath, manifest = null) {
   try {
     const archive = new AdmZip(zipPath);
-    const entryNames = new Set(
-      archive
-        .getEntries()
-        .map((entry) => normalizeZipEntryName(entry.entryName))
-        .filter(Boolean)
+    const entryNames = Array.from(
+      new Set(
+        archive
+          .getEntries()
+          .map((entry) => normalizeZipEntryName(entry.entryName))
+          .filter(Boolean)
+      )
     );
-    const payloadEntries = Array.from(entryNames).filter((entryName) => isBackupPayloadEntryName(entryName));
-    const requiredEntries = new Set();
-    if (manifest) requiredEntries.add('manifest.json');
+    const prefixes = zipRootPrefixes(entryNames);
+
+    for (const prefix of prefixes) {
+      const relativeEntryNames = new Set(
+        entryNames
+          .map((entryName) => stripZipRootPrefix(entryName, prefix))
+          .filter(Boolean)
+      );
+      const payloadEntries = Array.from(relativeEntryNames).filter((entryName) => isBackupPayloadEntryName(entryName));
+      const requiredEntries = new Set();
+      if (manifest) requiredEntries.add('manifest.json');
+      if (manifest && Array.isArray(manifest.files)) {
+        for (const file of manifest.files) {
+          const normalized = normalizeZipEntryName(file);
+          if (normalized) requiredEntries.add(normalized);
+        }
+      }
+
+      let missingRequiredEntry = '';
+      for (const entryName of requiredEntries) {
+        if (!relativeEntryNames.has(entryName)) {
+          missingRequiredEntry = entryName;
+          break;
+        }
+      }
+
+      if (missingRequiredEntry) continue;
+      if (!payloadEntries.length) continue;
+
+      const hasMetadata = relativeEntryNames.has('metadata.json');
+      if (!hasMetadata && !manifest) {
+        return { ok: true, legacy: true, rootPrefix: prefix };
+      }
+
+      return { ok: true, legacy: !hasMetadata, rootPrefix: prefix };
+    }
+
+    const fallbackRequiredEntries = new Set();
+    if (manifest) fallbackRequiredEntries.add('manifest.json');
     if (manifest && Array.isArray(manifest.files)) {
       for (const file of manifest.files) {
         const normalized = normalizeZipEntryName(file);
-        if (normalized) requiredEntries.add(normalized);
+        if (normalized) fallbackRequiredEntries.add(normalized);
       }
     }
 
-    for (const entryName of requiredEntries) {
-      if (!entryNames.has(entryName)) {
+    for (const entryName of fallbackRequiredEntries) {
+      if (!entryNames.includes(entryName)) {
         return { ok: false, reason: `Backup archive is missing ${entryName}.` };
       }
     }
 
+    const payloadEntries = entryNames.filter((entryName) => isBackupPayloadEntryName(entryName));
     if (!payloadEntries.length) {
       return { ok: false, reason: 'Backup archive does not contain any restorable data files.' };
     }
 
-    if (!entryNames.has('metadata.json') && !manifest) {
-      return { ok: true, legacy: true };
-    }
-
-    return { ok: true, legacy: !entryNames.has('metadata.json') };
+    return { ok: false, reason: 'Backup archive structure is unsupported or incomplete.' };
   } catch (err) {
     return { ok: false, reason: `Backup archive validation failed: ${String(err?.message || err)}` };
   }
