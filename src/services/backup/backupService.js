@@ -988,7 +988,13 @@ async function collectThreadsFromChannels(channels, { includeMessages = false, m
   const threads = [];
   const threadMessages = {};
   const seenThreadIds = new Set();
-  const eligibleChannels = Array.isArray(channels) ? channels.filter((ch) => ch?.isTextBased?.() && ch?.threads) : [];
+  const eligibleChannels = Array.isArray(channels)
+    ? channels.filter((ch) => {
+        const isTextChannel = Boolean(ch?.isTextBased?.());
+        const isForumLike = FORUM_LIKE_TYPES.has(Number(ch?.type));
+        return (isTextChannel || isForumLike) && ch?.threads && typeof ch.threads.fetchActive === 'function';
+      })
+    : [];
   const totalChannels = eligibleChannels.length;
   let processedChannels = 0;
   let processedThreads = 0;
@@ -1077,6 +1083,7 @@ async function collectThreadsFromChannels(channels, { includeMessages = false, m
         name: t.name,
         parentId: t.parentId,
         parentType: ch.type,
+        isForumPost: FORUM_LIKE_TYPES.has(Number(ch?.type)),
         archived: t.archived,
         locked: t.locked,
         type: t.type,
