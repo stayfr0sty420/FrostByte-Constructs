@@ -37,10 +37,22 @@ async function ensureDirectory(dirPath) {
 
 function normalizeExtractedBackupDir(zipPath, backup) {
   const storedDir = String(backup?.filePath || backup?.path || '').trim();
-  if (storedDir) return storedDir;
   const safeZipPath = String(zipPath || '').trim();
-  if (!safeZipPath) return '';
-  return path.join(path.dirname(safeZipPath), path.basename(safeZipPath, path.extname(safeZipPath)));
+  const derivedDir = safeZipPath ? path.join(path.dirname(safeZipPath), path.basename(safeZipPath, path.extname(safeZipPath))) : '';
+  if (!storedDir) return derivedDir;
+  if (!safeZipPath) return storedDir;
+
+  const normalizedStoredDir = path.resolve(storedDir);
+  const normalizedDerivedDir = derivedDir ? path.resolve(derivedDir) : '';
+  if (!normalizedDerivedDir) return normalizedStoredDir;
+
+  const storedParent = path.dirname(normalizedStoredDir);
+  const zipParent = path.dirname(path.resolve(safeZipPath));
+  if (normalizedStoredDir === normalizedDerivedDir || storedParent === zipParent) {
+    return normalizedStoredDir;
+  }
+
+  return normalizedDerivedDir;
 }
 
 async function validateBackupDirectoryContents(backupDir) {

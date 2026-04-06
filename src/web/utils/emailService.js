@@ -3,6 +3,7 @@ const { env } = require('../../config/env');
 const { buildPasswordResetOtpEmail } = require('./emailTemplates');
 
 let cachedTransporter = null;
+const SUPPORT_SENDER_NAME = 'Rodstarkian Bots Support';
 
 function isEmailConfigured() {
   return Boolean(String(env.EMAIL_USER || '').trim() && String(env.EMAIL_PASS || '').trim());
@@ -20,8 +21,25 @@ function getTransporter() {
   return cachedTransporter;
 }
 
+function extractEmailAddress(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const wrapped = raw.match(/<([^>]+)>/);
+  if (wrapped?.[1]) return wrapped[1].trim();
+  return raw.replace(/^["']+|["']+$/g, '').trim();
+}
+
 function getFromAddress() {
-  return String(env.EMAIL_FROM || env.EMAIL_USER || '').trim();
+  return extractEmailAddress(env.EMAIL_FROM || env.EMAIL_USER || '');
+}
+
+function getFromField() {
+  const address = getFromAddress();
+  if (!address) return '';
+  return {
+    name: SUPPORT_SENDER_NAME,
+    address
+  };
 }
 
 async function sendPasswordResetOtpEmail({ to, otp, recipientName = '', role = 'admin', issuedAt = new Date() }) {
@@ -32,7 +50,7 @@ async function sendPasswordResetOtpEmail({ to, otp, recipientName = '', role = '
   const transporter = getTransporter();
   const message = buildPasswordResetOtpEmail({ to, otp, recipientName, role, issuedAt });
   await transporter.sendMail({
-    from: getFromAddress(),
+    from: getFromField(),
     to: String(to || '').trim(),
     subject: message.subject,
     text: message.text,

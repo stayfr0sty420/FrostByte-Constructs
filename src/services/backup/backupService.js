@@ -3,7 +3,9 @@ const os = require('os');
 const path = require('path');
 const AdmZip = require('adm-zip');
 const archiver = require('archiver');
-const { createWriteStream } = require('fs');
+const mongoose = require('mongoose');
+const { createReadStream, createWriteStream } = require('fs');
+const { pipeline } = require('stream/promises');
 const { ChannelType } = require('discord.js');
 const { nanoid } = require('nanoid');
 const Backup = require('../../db/models/Backup');
@@ -39,6 +41,9 @@ const BACKUP_DATA_FILES = new Set([
   'bots.json',
   'role_assignments.json'
 ]);
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
+const BACKUP_ARCHIVE_BUCKET_NAME = 'backup_archives';
+const archiveMirrorJobs = new Map();
 
 function stableBackupsRoot() {
   const configured = String(env.BACKUP_STORAGE_DIR || '').trim();
@@ -51,15 +56,15 @@ function stableBackupsRoot() {
 }
 
 function legacyBackupsRoot() {
-  return path.join(process.cwd(), 'backups');
+  return path.join(REPO_ROOT, 'backups');
 }
 
-function backupRootCandidates() {
+function baseBackupRootCandidates() {
   return uniquePaths([stableBackupsRoot(), legacyBackupsRoot()]);
 }
 
 function backupsRoot() {
-  return backupRootCandidates()[0] || legacyBackupsRoot();
+  return baseBackupRootCandidates()[0] || legacyBackupsRoot();
 }
 
 async function pathExists(targetPath, kind = 'any') {
@@ -88,15 +93,63 @@ function uniquePaths(values = []) {
   return results;
 }
 
+function normalizeAbsolutePath(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  return path.resolve(normalized);
+}
+
+function deriveBackupStorageRoots(backup) {
+  const roots = [];
+  const guildId = String(backup?.guildId || '').trim();
+  const metadata = backup?.metadata && typeof backup.metadata === 'object' ? backup.metadata : {};
+
+  const pushCandidateRoot = (value) => {
+    const normalized = normalizeAbsolutePath(value);
+    if (normalized) roots.push(normalized);
+  };
+
+  const pushRootsFromPath = (targetPath) => {
+    const resolved = normalizeAbsolutePath(targetPath);
+    if (!resolved) return;
+
+    const parent = path.dirname(resolved);
+    if (parent && parent !== resolved) pushCandidateRoot(parent);
+
+    if (guildId && path.basename(parent) === guildId) {
+      pushCandidateRoot(path.dirname(parent));
+    } else if (guildId && path.basename(resolved) === guildId) {
+      pushCandidateRoot(parent);
+    }
+
+    const grandparent = path.dirname(parent);
+    if (grandparent && grandparent !== parent) pushCandidateRoot(grandparent);
+  };
+
+  pushCandidateRoot(metadata.storageRoot);
+  for (const rootPath of Array.isArray(metadata.storageRoots) ? metadata.storageRoots : []) {
+    pushCandidateRoot(rootPath);
+  }
+
+  pushRootsFromPath(backup?.filePath || backup?.path || '');
+  pushRootsFromPath(backup?.zipPath || '');
+
+  return uniquePaths(roots);
+}
+
+function backupRootCandidates(backup = null) {
+  return uniquePaths([...baseBackupRootCandidates(), ...deriveBackupStorageRoots(backup)]);
+}
+
 function buildGuildBackupsDir(guildId) {
   const safeGuildId = String(guildId || '').trim();
   return safeGuildId ? path.join(backupsRoot(), safeGuildId) : backupsRoot();
 }
 
-function buildGuildBackupsDirs(guildId) {
+function buildGuildBackupsDirs(guildId, backup = null) {
   const safeGuildId = String(guildId || '').trim();
   return uniquePaths(
-    backupRootCandidates().flatMap((rootPath) => [
+    backupRootCandidates(backup).flatMap((rootPath) => [
       safeGuildId ? path.join(rootPath, safeGuildId) : rootPath,
       rootPath
     ])
@@ -238,6 +291,264 @@ function readBackupMetadataFromZipArchive(zipPath) {
   }
 }
 
+function normalizeArchiveStorageMetadata(value) {
+  if (!value || typeof value !== 'object') return null;
+  const provider = String(value.provider || '').trim().toLowerCase();
+  const fileId = String(value.fileId || '').trim();
+  if (provider !== 'mongodb-gridfs' || !fileId) return null;
+
+  return {
+    provider: 'mongodb-gridfs',
+    bucketName: String(value.bucketName || BACKUP_ARCHIVE_BUCKET_NAME).trim() || BACKUP_ARCHIVE_BUCKET_NAME,
+    fileId,
+    filename: String(value.filename || '').trim(),
+    size: Math.max(0, Number(value.size || 0) || 0),
+    storedAt: String(value.storedAt || '').trim()
+  };
+}
+
+function buildArchiveStorageMetadataFromFileDoc(fileDoc) {
+  if (!fileDoc?._id) return null;
+  return {
+    provider: 'mongodb-gridfs',
+    bucketName: BACKUP_ARCHIVE_BUCKET_NAME,
+    fileId: String(fileDoc._id),
+    filename: String(fileDoc.filename || '').trim(),
+    size: Math.max(0, Number(fileDoc.length || 0) || 0),
+    storedAt: fileDoc.uploadDate instanceof Date ? fileDoc.uploadDate.toISOString() : new Date().toISOString()
+  };
+}
+
+function toObjectId(value) {
+  try {
+    return new mongoose.Types.ObjectId(String(value || '').trim());
+  } catch {
+    return null;
+  }
+}
+
+function getBackupArchiveBucket() {
+  const db = mongoose.connection?.db;
+  if (!db) return null;
+  return new mongoose.mongo.GridFSBucket(db, { bucketName: BACKUP_ARCHIVE_BUCKET_NAME });
+}
+
+async function findStoredBackupArchiveFile(backup) {
+  const db = mongoose.connection?.db;
+  const backupId = String(backup?.backupId || '').trim();
+  if (!db || !backupId) return null;
+
+  const filesCollection = db.collection(`${BACKUP_ARCHIVE_BUCKET_NAME}.files`);
+  const archiveStorage = normalizeArchiveStorageMetadata(backup?.metadata?.archiveStorage);
+  const storedFileId = toObjectId(archiveStorage?.fileId);
+  if (storedFileId) {
+    const storedFile = await filesCollection.findOne({ _id: storedFileId }).catch(() => null);
+    if (storedFile) return storedFile;
+  }
+
+  return await filesCollection
+    .find({ 'metadata.backupId': backupId })
+    .sort({ uploadDate: -1 })
+    .limit(1)
+    .next()
+    .catch(() => null);
+}
+
+async function deleteStoredBackupArchiveFile(fileId) {
+  const bucket = getBackupArchiveBucket();
+  const objectId = toObjectId(fileId);
+  if (!bucket || !objectId) return false;
+
+  try {
+    await bucket.delete(objectId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function resolveBackupArchiveOutputPath(backup, dirPath = '') {
+  const safeDirPath = String(dirPath || '').trim();
+  if (safeDirPath) {
+    return path.join(path.dirname(safeDirPath), `${path.basename(safeDirPath)}.zip`);
+  }
+
+  const safeZipPath = String(backup?.zipPath || '').trim();
+  const fallbackName =
+    (safeZipPath ? path.basename(safeZipPath) : '') ||
+    `${String(backup?.backupId || 'backup').trim() || 'backup'}.zip`;
+
+  return path.join(buildGuildBackupsDir(backup?.guildId), fallbackName);
+}
+
+async function storeBackupArchiveInDatabase(backup, zipPath, options = {}) {
+  const safeZipPath = String(zipPath || '').trim();
+  if (!safeZipPath || !(await pathExists(safeZipPath, 'file'))) {
+    return { ok: false, reason: 'Backup archive is missing on disk.' };
+  }
+
+  const bucket = getBackupArchiveBucket();
+  if (!bucket) {
+    return { ok: false, reason: 'Database storage is not connected right now.' };
+  }
+
+  const stats = await fs.stat(safeZipPath).catch(() => null);
+  const existingFile = await findStoredBackupArchiveFile(backup);
+  if (existingFile?._id && Number(existingFile.length || 0) === Number(stats?.size || 0)) {
+    const archiveStorage = buildArchiveStorageMetadataFromFileDoc(existingFile);
+    if (options.persist !== false) {
+      await syncBackupLocation(backup, {
+        metadata: {
+          archiveStorage,
+          archiveMirrorStatus: 'ready',
+          archiveMirrorError: ''
+        }
+      });
+    } else if (backup && typeof backup === 'object') {
+      backup.metadata = {
+        ...(backup.metadata && typeof backup.metadata === 'object' ? backup.metadata : {}),
+        archiveStorage,
+        archiveMirrorStatus: 'ready',
+        archiveMirrorError: ''
+      };
+    }
+
+    return {
+      ok: true,
+      reused: true,
+      archiveStorage
+    };
+  }
+
+  const uploadStream = bucket.openUploadStream(path.basename(safeZipPath), {
+    contentType: 'application/zip',
+    metadata: {
+      backupId: String(backup?.backupId || '').trim(),
+      guildId: String(backup?.guildId || '').trim(),
+      name: String(backup?.name || backup?.type || 'backup').trim() || 'backup',
+      mirroredAt: new Date().toISOString()
+    }
+  });
+  const uploadFileId = uploadStream.id;
+
+  try {
+    await pipeline(createReadStream(safeZipPath), uploadStream);
+  } catch (err) {
+    await deleteStoredBackupArchiveFile(uploadFileId).catch(() => null);
+    return {
+      ok: false,
+      reason: `Failed to mirror backup archive to database storage: ${String(err?.message || err)}`
+    };
+  }
+
+  const archiveStorage = {
+    provider: 'mongodb-gridfs',
+    bucketName: BACKUP_ARCHIVE_BUCKET_NAME,
+    fileId: String(uploadFileId),
+    filename: path.basename(safeZipPath),
+    size: Math.max(0, Number(stats?.size || 0) || 0),
+    storedAt: new Date().toISOString()
+  };
+
+  if (existingFile?._id && String(existingFile._id) !== String(uploadFileId)) {
+    await deleteStoredBackupArchiveFile(existingFile._id).catch(() => null);
+  }
+
+  if (options.persist !== false) {
+    await syncBackupLocation(backup, {
+      metadata: {
+        archiveStorage,
+        archiveMirrorStatus: 'ready',
+        archiveMirrorError: ''
+      }
+    });
+  } else if (backup && typeof backup === 'object') {
+    backup.metadata = {
+      ...(backup.metadata && typeof backup.metadata === 'object' ? backup.metadata : {}),
+      archiveStorage,
+      archiveMirrorStatus: 'ready',
+      archiveMirrorError: ''
+    };
+  }
+
+  return { ok: true, reused: false, archiveStorage };
+}
+
+function mirrorBackupArchiveToDatabaseInBackground(backup, zipPath) {
+  const backupId = String(backup?.backupId || '').trim();
+  if (!backupId || archiveMirrorJobs.has(backupId)) return;
+
+  const job = (async () => {
+    const storedFile = await findStoredBackupArchiveFile(backup).catch(() => null);
+    const archiveStorage = normalizeArchiveStorageMetadata(backup?.metadata?.archiveStorage);
+    if (storedFile?._id && archiveStorage?.fileId === String(storedFile._id)) {
+      return { ok: true, reused: true };
+    }
+    return await storeBackupArchiveInDatabase(backup, zipPath);
+  })()
+    .catch((err) => {
+      logger.warn({ err, backupId }, 'Backup archive mirror failed');
+    })
+    .finally(() => {
+      archiveMirrorJobs.delete(backupId);
+    });
+
+  archiveMirrorJobs.set(backupId, job);
+}
+
+async function restoreBackupArchiveFromDatabase(backup, options = {}) {
+  const storedFile = await findStoredBackupArchiveFile(backup);
+  const bucket = getBackupArchiveBucket();
+  if (!storedFile?._id || !bucket) {
+    return { ok: false, reason: 'Backup archive is not available in database storage.' };
+  }
+
+  const destinationPath = resolveBackupArchiveOutputPath(backup, options.dirPath || '');
+  const tempPath = `${destinationPath}.download-${Date.now()}.tmp`;
+  await ensureDir(path.dirname(destinationPath));
+
+  try {
+    await fs.rm(tempPath, { force: true }).catch(() => null);
+    await pipeline(bucket.openDownloadStream(storedFile._id), createWriteStream(tempPath));
+    const validation = validateBackupZipArchive(tempPath, null);
+    if (!validation.ok) {
+      await fs.rm(tempPath, { force: true }).catch(() => null);
+      return {
+        ok: false,
+        reason: validation.reason || 'Database backup archive failed validation after download.'
+      };
+    }
+
+    await fs.rm(destinationPath, { force: true }).catch(() => null);
+    await fs.rename(tempPath, destinationPath);
+
+    const archiveStorage = buildArchiveStorageMetadataFromFileDoc(storedFile);
+    await syncBackupLocation(backup, {
+      zipPath: destinationPath,
+      size: Math.max(0, Number(storedFile.length || backup?.size || 0) || 0),
+      metadata: {
+        archiveStorage,
+        archiveMirrorStatus: 'ready',
+        archiveMirrorError: ''
+      }
+    });
+
+    return {
+      ok: true,
+      zipPath: destinationPath,
+      size: Math.max(0, Number(storedFile.length || 0) || 0),
+      restoredFromDatabase: true,
+      archiveStorage
+    };
+  } catch (err) {
+    await fs.rm(tempPath, { force: true }).catch(() => null);
+    return {
+      ok: false,
+      reason: `Failed to restore backup archive from database storage: ${String(err?.message || err)}`
+    };
+  }
+}
+
 async function listFilesByExtension(rootPath, extension = '.zip', maxDepth = 2) {
   const safeRootPath = String(rootPath || '').trim();
   const safeExtension = String(extension || '').trim().toLowerCase();
@@ -286,7 +597,7 @@ async function listDirectories(rootPath, maxDepth = 2) {
 }
 
 async function findExistingBackupArchivePath(backup, options = {}) {
-  const guildBackupsDirs = buildGuildBackupsDirs(backup?.guildId);
+  const guildBackupsDirs = buildGuildBackupsDirs(backup?.guildId, backup);
   const storedZipPath = String(backup?.zipPath || '').trim();
   const storedZipName = storedZipPath ? path.basename(storedZipPath) : '';
   const backupId = String(backup?.backupId || '').trim();
@@ -329,7 +640,7 @@ async function findExistingBackupArchivePath(backup, options = {}) {
 }
 
 async function findExistingBackupDirectory(backup) {
-  const guildBackupsDirs = buildGuildBackupsDirs(backup?.guildId);
+  const guildBackupsDirs = buildGuildBackupsDirs(backup?.guildId, backup);
   const storedZipPath = String(backup?.zipPath || '').trim();
   const storedDirPath = String(backup?.filePath || backup?.path || '').trim();
   const storedDirName = storedDirPath ? path.basename(storedDirPath) : '';
@@ -388,6 +699,36 @@ async function syncBackupLocation(backup, updates = {}) {
   }, {});
   if (!Object.keys(safeUpdates).length) return;
 
+  const nextMetadata = (() => {
+    const currentMetadata = backup?.metadata && typeof backup.metadata === 'object' ? backup.metadata : {};
+    const incomingMetadata = safeUpdates.metadata && typeof safeUpdates.metadata === 'object' ? safeUpdates.metadata : {};
+    const mergedMetadata = { ...currentMetadata, ...incomingMetadata };
+    const storageRoots = uniquePaths([
+      normalizeAbsolutePath(mergedMetadata.storageRoot),
+      ...(Array.isArray(mergedMetadata.storageRoots) ? mergedMetadata.storageRoots.map((value) => normalizeAbsolutePath(value)) : []),
+      ...deriveBackupStorageRoots(backup),
+      ...deriveBackupStorageRoots({ ...backup, ...safeUpdates, metadata: mergedMetadata })
+    ]);
+
+    if (storageRoots.length) {
+      mergedMetadata.storageRoot = normalizeAbsolutePath(mergedMetadata.storageRoot) || storageRoots[0];
+      mergedMetadata.storageRoots = storageRoots;
+    }
+
+    return mergedMetadata;
+  })();
+
+  if (
+    safeUpdates.metadata !== undefined ||
+    safeUpdates.path !== undefined ||
+    safeUpdates.filePath !== undefined ||
+    safeUpdates.zipPath !== undefined
+  ) {
+    safeUpdates.metadata = nextMetadata;
+  }
+
+  if (!Object.keys(safeUpdates).length) return;
+
   Object.assign(backup, safeUpdates);
   if (!backup?._id) return;
   await Backup.updateOne({ _id: backup._id }, { $set: safeUpdates }).catch(() => null);
@@ -444,6 +785,7 @@ async function ensureBackupArchive(backup) {
         size: stats?.size || backup.size || 0,
         ...(dirPath ? { path: dirPath, filePath: dirPath } : {})
       });
+      mirrorBackupArchiveToDatabaseInBackground(backup, archivePath);
       return {
         ok: true,
         zipPath: archivePath,
@@ -484,6 +826,7 @@ async function ensureBackupArchive(backup) {
         zipPath: rebuildZipPath,
         size: stats.size || backup.size || 0
       });
+      mirrorBackupArchiveToDatabaseInBackground(backup, rebuildZipPath);
       return {
         ok: true,
         zipPath: rebuildZipPath,
@@ -494,14 +837,32 @@ async function ensureBackupArchive(backup) {
     }
   }
 
+  const restoredArchive = await restoreBackupArchiveFromDatabase(backup, {
+    dirPath: dirPath || path.join(guildBackupsDir, backupId || 'backup')
+  });
+  if (restoredArchive.ok && restoredArchive.zipPath) {
+    return {
+      ok: true,
+      zipPath: restoredArchive.zipPath,
+      size: restoredArchive.size || 0,
+      regenerated: true,
+      repaired: true,
+      restoredFromDatabase: true
+    };
+  }
+
   return {
     ok: false,
-    reason: lastArchiveValidationReason || 'Backup archive is no longer available on disk. Create a new backup to download it again.'
+    reason:
+      restoredArchive.reason ||
+      lastArchiveValidationReason ||
+      'Backup archive is no longer available on disk. If this happened after redeploy, configure BACKUP_STORAGE_DIR or another persistent storage path before creating the next backup.'
   };
 }
 
 async function inspectBackupAvailability(backup) {
   const normalizedStatus = String(backup?.status || '').trim().toLowerCase();
+  const mirrorStatus = String(backup?.metadata?.archiveMirrorStatus || '').trim().toLowerCase();
   if (!backup) {
     return {
       state: 'missing',
@@ -538,6 +899,7 @@ async function inspectBackupAvailability(backup) {
         zipPath: archivePath,
         size: stats?.size || backup.size || 0
       });
+      mirrorBackupArchiveToDatabaseInBackground(backup, archivePath);
       return {
         state: 'ready',
         canDownload: true,
@@ -574,11 +936,34 @@ async function inspectBackupAvailability(backup) {
     };
   }
 
+  const storedArchive = await findStoredBackupArchiveFile(backup);
+  if (storedArchive?._id) {
+    await syncBackupLocation(backup, {
+      size: Math.max(0, Number(storedArchive.length || backup?.size || 0) || 0),
+      metadata: {
+        archiveStorage: buildArchiveStorageMetadataFromFileDoc(storedArchive),
+        archiveMirrorStatus: 'ready',
+        archiveMirrorError: ''
+      }
+    });
+    return {
+      state: 'ready',
+      canDownload: true,
+      canRestore: true,
+      reason: 'Local backup files are missing, but the archive is preserved in database storage and can be rebuilt on demand.',
+      hasManifest: false,
+      hasMetadata: false
+    };
+  }
+
   return {
     state: 'missing',
     canDownload: false,
     canRestore: false,
-    reason: 'Backup files are missing on disk. This backup is no longer safe to restore or download.'
+    reason:
+      mirrorStatus === 'failed'
+        ? 'Backup files are missing on disk and no healthy database archive mirror is available. If this happened after redeploy, set BACKUP_STORAGE_DIR to stable storage before creating the next backup.'
+        : 'Backup files are missing on disk. If this happened after redeploy, create a new backup after configuring BACKUP_STORAGE_DIR or another persistent backup storage path.'
   };
 }
 
@@ -1398,6 +1783,10 @@ async function enforceRetention({ guildId }) {
     try {
       if (b.path) await fs.rm(b.path, { recursive: true, force: true });
       if (b.zipPath) await fs.rm(b.zipPath, { force: true });
+      const storedArchive = await findStoredBackupArchiveFile(b).catch(() => null);
+      if (storedArchive?._id) {
+        await deleteStoredBackupArchiveFile(storedArchive._id).catch(() => null);
+      }
       await Backup.deleteOne({ backupId: b.backupId });
     } catch (err) {
       logger.warn({ err, backupId: b.backupId }, 'Retention delete failed');
@@ -1436,7 +1825,7 @@ async function createBackup({
 
   await ensureDir(dir);
 
-  await Backup.create({
+  const createdBackup = await Backup.create({
     backupId,
     guildId,
     name: name || `${backupType} backup`,
@@ -1450,7 +1839,12 @@ async function createBackup({
     archived: Boolean(options.archive),
     metadata: {
       scheduleId: scheduleId || '',
-      source: source || ''
+      source: source || '',
+      storageRoot: backupsRoot(),
+      storageRoots: uniquePaths([backupsRoot()]),
+      storageVersion: 3,
+      archiveMirrorStatus: 'pending',
+      archiveMirrorError: ''
     }
   });
 
@@ -1549,6 +1943,13 @@ async function createBackup({
     }
     const zipStats = await fs.stat(zipPath).catch(() => null);
     const size = zipStats?.size || 0;
+    const archiveMirror = await storeBackupArchiveInDatabase(createdBackup, zipPath, { persist: false }).catch((err) => ({
+      ok: false,
+      reason: String(err?.message || err)
+    }));
+    if (!archiveMirror.ok && archiveMirror.reason) {
+      logger.warn({ backupId, reason: archiveMirror.reason }, 'Backup archive mirror to database storage failed');
+    }
 
     void sendBackupLog({
       discordClient,
@@ -1558,6 +1959,21 @@ async function createBackup({
     });
     await reportProgress(90, 'Finalizing backup');
 
+    const nextMetadata = {
+      options: typeOptions,
+      messageLimit,
+      scheduleId: scheduleId || '',
+      source: source || '',
+      storageRoot: backupsRoot(),
+      storageVersion: 3,
+      hasManifest: true,
+      archiveMirrorStatus: archiveMirror.ok ? 'ready' : 'failed',
+      archiveMirrorError: archiveMirror.ok ? '' : String(archiveMirror.reason || '').trim()
+    };
+    if (archiveMirror.ok && archiveMirror.archiveStorage) {
+      nextMetadata.archiveStorage = archiveMirror.archiveStorage;
+    }
+
     await Backup.updateOne(
       { backupId },
       {
@@ -1566,13 +1982,14 @@ async function createBackup({
           size,
           stats,
           metadata: {
-            options: typeOptions,
-            messageLimit,
-            scheduleId: scheduleId || '',
-            source: source || '',
-            storageRoot: backupsRoot(),
-            storageVersion: 2,
-            hasManifest: true
+            ...(createdBackup.metadata && typeof createdBackup.metadata === 'object' ? createdBackup.metadata : {}),
+            ...nextMetadata,
+            storageRoots: uniquePaths([
+              backupsRoot(),
+              ...((Array.isArray(createdBackup?.metadata?.storageRoots) ? createdBackup.metadata.storageRoots : []).map((value) =>
+                normalizeAbsolutePath(value)
+              ))
+            ].filter(Boolean))
           }
         }
       }
@@ -1609,6 +2026,7 @@ async function deleteBackup({ guildId, backupId }) {
   if (!backup) return { ok: false, reason: 'Backup not found.' };
   const dirPath = await findExistingBackupDirectory(backup);
   const archivePath = await findExistingBackupArchivePath(backup, { dirPath });
+  const storedArchive = await findStoredBackupArchiveFile(backup).catch(() => null);
   if (backup.path) await fs.rm(backup.path, { recursive: true, force: true }).catch(() => null);
   if (dirPath && dirPath !== String(backup.path || '').trim()) {
     await fs.rm(dirPath, { recursive: true, force: true }).catch(() => null);
@@ -1616,6 +2034,9 @@ async function deleteBackup({ guildId, backupId }) {
   if (backup.zipPath) await fs.rm(backup.zipPath, { force: true }).catch(() => null);
   if (archivePath && archivePath !== String(backup.zipPath || '').trim()) {
     await fs.rm(archivePath, { force: true }).catch(() => null);
+  }
+  if (storedArchive?._id) {
+    await deleteStoredBackupArchiveFile(storedArchive._id).catch(() => null);
   }
   await Backup.deleteOne({ backupId });
   return { ok: true, backup };

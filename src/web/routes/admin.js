@@ -328,7 +328,7 @@ async function ensureWhitelistedEconomyTarget(req, { guildId, discordId, usernam
   const label = buildEconomyUserLabel(safeDiscordId, username);
   setFlash(req, {
     type: 'warning',
-    message: `${label} must be on the whitelist before you can ${actionLabel}. Bulk Economy Booster actions are not affected.`
+    message: `${label} must be on the economy action whitelist before you can ${actionLabel}. Economy Booster actions at the top are not affected.`
   });
   return false;
 }
@@ -2204,7 +2204,7 @@ router.post('/economy/users/whitelist/add', requireAdmin, requireGuild, async (r
     guildId,
     type: 'economy',
     webhookCategory: 'economy',
-    content: `**Credit Grant Whitelist Updated**\n**Action:** Added\n**User:** ${label}\n**By:** ${actor}`
+    content: `**Economy Action Whitelist Updated**\n**Action:** Added\n**User:** ${label}\n**By:** ${actor}`
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Whitelisted ${label} for credit grants.` });
@@ -2233,7 +2233,7 @@ router.post('/economy/users/whitelist/remove', requireAdmin, requireGuild, async
     guildId,
     type: 'economy',
     webhookCategory: 'economy',
-    content: `**Credit Grant Whitelist Updated**\n**Action:** Removed\n**User:** ${label}\n**By:** ${actor}`
+    content: `**Economy Action Whitelist Updated**\n**Action:** Removed\n**User:** ${label}\n**By:** ${actor}`
   }).catch(() => null);
 
   setFlash(req, { type: 'info', message: `Removed ${label} from credit grants whitelist.` });
@@ -2258,7 +2258,7 @@ router.post('/economy/users/grant', requireAdmin, requireGuild, async (req, res)
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
     return res.redirect('/admin/economy/users');
   }
-  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'grant credits' }))) {
+  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'give credits' }))) {
     return res.redirect('/admin/economy/users');
   }
 
@@ -2366,7 +2366,7 @@ router.post('/economy/users/gift', requireAdmin, requireGuild, async (req, res) 
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
     return res.redirect('/admin/economy/users');
   }
-  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'grant credits' }))) {
+  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'give credits' }))) {
     return res.redirect('/admin/economy/users');
   }
 
@@ -2418,7 +2418,7 @@ router.post('/economy/users/exp', requireAdmin, requireGuild, async (req, res) =
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
     return res.redirect('/admin/economy/users');
   }
-  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'grant EXP' }))) {
+  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'give EXP' }))) {
     return res.redirect('/admin/economy/users');
   }
 

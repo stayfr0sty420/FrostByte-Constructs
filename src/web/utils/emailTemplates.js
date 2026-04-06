@@ -100,6 +100,7 @@ function getBaseUrl() {
 
 function buildPasswordResetOtpEmail({ to = '', otp = '', recipientName = '', role = 'admin', issuedAt = new Date() } = {}) {
   const suiteName = String(env.ADMIN_TOTP_ISSUER || 'Rodstarkian Suite').trim() || 'Rodstarkian Suite';
+  const systemName = 'Rodstarkian Bot Ecosystem';
   const websiteUrl = resolveAppUrl();
   const expiresInSeconds = Math.max(1, Math.round(OTP_TTL_MS / 1000));
   const displayName = resolveRecipientName(recipientName, to);
@@ -121,7 +122,7 @@ function buildPasswordResetOtpEmail({ to = '', otp = '', recipientName = '', rol
     `This code expires in ${expiresInSeconds} seconds.`,
     `Admin Email: ${accountEmail}`,
     `Role: ${displayRole}`,
-    `System: Rodstarkian Bots Ecosystem`,
+    `System: ${systemName}`,
     `Date Issued: ${issuedLabel}`,
     '',
     `If you did not request this reset, ignore this email.`,
@@ -209,7 +210,7 @@ function buildPasswordResetOtpEmail({ to = '', otp = '', recipientName = '', rol
                           <td style="padding:0;vertical-align:top;font-family:Arial,Helvetica,sans-serif;font-size:11.2px;line-height:2;color:#ffffff;font-weight:600;">
                             <div>${escapeHtml(accountEmail)}</div>
                             <div>${escapeHtml(displayRole)}</div>
-                            <div>Rodstarkian Bots Ecosystem</div>
+                            <div>${escapeHtml(systemName)}</div>
                             <div>${escapeHtml(issuedLabel)}</div>
                           </td>
                         </tr>

@@ -2802,16 +2802,39 @@ code {
 
 .user-action-form--wide {
   grid-template-columns: minmax(122px, 1fr) 36px;
+  grid-template-areas:
+    "label label"
+    "input button";
   width: 170px;
 }
 
 .user-action-form--compact {
   grid-template-columns: minmax(92px, 1fr) 36px;
+  grid-template-areas:
+    "label label"
+    "input button";
   width: 140px;
 }
 
+.user-action-label {
+  grid-area: label;
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(229, 231, 235, 0.72);
+  text-align: left;
+}
+
 .user-action-input {
+  grid-area: input;
   min-width: 0;
+}
+
+.user-action-form--wide .btn,
+.user-action-form--compact .btn {
+  grid-area: button;
 }
 
 .user-action-form .btn:disabled,

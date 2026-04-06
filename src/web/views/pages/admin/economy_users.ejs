@@ -173,7 +173,7 @@
                           type="submit"
                           title="Remove"
                           aria-label="Remove"
-                          data-confirm="Remove this user from the credit-grant whitelist?"
+                          data-confirm="Remove this user from the economy action whitelist?"
                           data-confirm-title="Remove whitelist?"
                           data-confirm-ok="Remove"
                           data-confirm-cancel="Cancel"
@@ -243,10 +243,10 @@
                         <% const isWhitelisted = whitelistSet.has(String(u.discordId)); %>
                         <div class="user-whitelist-state">
                           <span class="badge <%= isWhitelisted ? 'text-bg-success' : 'text-bg-secondary' %>">
-                            <%= isWhitelisted ? 'Action enabled' : 'Whitelist required' %>
+                            <%= isWhitelisted ? 'Whitelisted' : 'Whitelist required' %>
                           </span>
                           <% if (!isWhitelisted) { %>
-                            <div class="user-whitelist-note">Whitelist this user first to unlock manual Credits and EXP actions.</div>
+                            <div class="user-whitelist-note">Whitelist this user first to unlock manual Give/Deduct Credits and EXP actions.</div>
                           <% } %>
                         </div>
 
@@ -257,14 +257,14 @@
                           <button
                             class="btn btn-outline-warning btn-sm icon-btn"
                             type="submit"
-                            data-confirm="<%= isWhitelisted ? 'Remove this user from the credit-grant whitelist?' : 'Add this user to the credit-grant whitelist?' %>"
+                            data-confirm="<%= isWhitelisted ? 'Remove this user from the economy action whitelist?' : 'Add this user to the economy action whitelist?' %>"
                             data-confirm-title="<%= isWhitelisted ? 'Remove whitelist?' : 'Add to whitelist?' %>"
                             data-confirm-ok="<%= isWhitelisted ? 'Remove' : 'Add' %>"
                             data-confirm-cancel="Cancel"
                             title="<%= isWhitelisted ? 'Unwhitelist' : 'Whitelist' %>"
                             aria-label="<%= isWhitelisted ? 'Unwhitelist' : 'Whitelist' %>"
                           >
-                            <%= isWhitelisted ? '🚫' : '✅' %>
+                            <%= isWhitelisted ? 'Unwhitelist' : 'Whitelist' %>
                           </button>
                         </form>
 
@@ -272,21 +272,22 @@
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
+                          <span class="user-action-label">Give Credits</span>
                           <input
                             class="form-control form-control-sm user-action-input"
                             name="amount"
                             type="number"
                             min="1"
                             step="1"
-                            placeholder="Give credits"
+                            placeholder="Amount"
                             <%= isWhitelisted ? '' : 'disabled' %>
                             required
                           />
                           <button
                             class="btn btn-success btn-sm icon-btn"
                             type="submit"
-                            title="<%= isWhitelisted ? 'Grant credits' : 'Whitelist required' %>"
-                            aria-label="Grant credits"
+                            title="<%= isWhitelisted ? 'Give credits' : 'Whitelist required' %>"
+                            aria-label="Give credits"
                             <%= isWhitelisted ? '' : 'disabled' %>
                           >
                             ➕
@@ -297,13 +298,14 @@
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
+                          <span class="user-action-label">Deduct Credits</span>
                           <input
                             class="form-control form-control-sm user-action-input"
                             name="amount"
                             type="number"
                             min="1"
                             step="1"
-                            placeholder="Deduct credits"
+                            placeholder="Amount"
                             <%= isWhitelisted ? '' : 'disabled' %>
                             required
                           />
@@ -326,21 +328,22 @@
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
+                          <span class="user-action-label">Give EXP</span>
                           <input
                             class="form-control form-control-sm user-action-input"
                             name="amount"
                             type="number"
                             min="1"
                             step="1"
-                            placeholder="Give EXP"
+                            placeholder="Amount"
                             <%= isWhitelisted ? '' : 'disabled' %>
                             required
                           />
                           <button
                             class="btn btn-outline-info btn-sm icon-btn"
                             type="submit"
-                            title="<%= isWhitelisted ? 'Grant EXP' : 'Whitelist required' %>"
-                            aria-label="Provide EXP"
+                            title="<%= isWhitelisted ? 'Give EXP' : 'Whitelist required' %>"
+                            aria-label="Give EXP"
                             <%= isWhitelisted ? '' : 'disabled' %>
                           >
                             ⚡
@@ -351,13 +354,14 @@
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                           <input type="hidden" name="username" value="<%= u.username || '' %>" />
+                          <span class="user-action-label">Deduct EXP</span>
                           <input
                             class="form-control form-control-sm user-action-input"
                             name="amount"
                             type="number"
                             min="1"
                             step="1"
-                            placeholder="Deduct EXP"
+                            placeholder="Amount"
                             <%= isWhitelisted ? '' : 'disabled' %>
                             required
                           />
