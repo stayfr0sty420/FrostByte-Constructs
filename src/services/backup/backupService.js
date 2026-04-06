@@ -226,6 +226,7 @@ function buildBackupLookupTokens(backup) {
   const tokens = new Set();
   for (const value of [
     backup?.backupId,
+    backup?.name,
     storedDirName,
     storedZipBase,
     storedDirName ? storedDirName.split('_')[0] : '',
@@ -244,17 +245,41 @@ function backupRecordMatchesMetadata(metadata, backup) {
   const metadataGuildId = String(metadata?.guildId || '').trim();
   if (guildId && metadataGuildId && metadataGuildId !== guildId) return false;
 
-  const backupTokens = buildBackupLookupTokens(backup);
-  const metadataTokens = new Set(
-    [metadata?.backupId, metadata?.name, metadata?.type]
-      .map((value) => normalizeBackupLookupToken(value))
-      .filter(Boolean)
-  );
-
-  for (const token of metadataTokens) {
-    if (backupTokens.has(token)) return true;
+  const backupIdToken = normalizeBackupLookupToken(backup?.backupId);
+  const metadataIdToken = normalizeBackupLookupToken(metadata?.backupId);
+  if (backupIdToken && metadataIdToken) {
+    return backupIdToken === metadataIdToken;
   }
 
+  const backupNameToken = normalizeBackupLookupToken(backup?.name);
+  const metadataNameToken = normalizeBackupLookupToken(metadata?.name);
+  const backupTypeToken = normalizeBackupLookupToken(backup?.type);
+  const metadataTypeToken = normalizeBackupLookupToken(metadata?.type);
+
+  if (backupNameToken && metadataNameToken && backupTypeToken && metadataTypeToken) {
+    if (backupNameToken === metadataNameToken && backupTypeToken === metadataTypeToken) {
+      return true;
+    }
+  }
+
+  const backupCreatedAtSource = backup?.createdAt || backup?.timestamp || null;
+  const metadataCreatedAtSource = metadata?.createdAt || null;
+  const backupCreatedAt = backupCreatedAtSource ? new Date(backupCreatedAtSource) : null;
+  const metadataCreatedAt = metadataCreatedAtSource ? new Date(metadataCreatedAtSource) : null;
+  const createdAtMatches =
+    backupCreatedAt instanceof Date &&
+    metadataCreatedAt instanceof Date &&
+    !Number.isNaN(backupCreatedAt.getTime()) &&
+    !Number.isNaN(metadataCreatedAt.getTime()) &&
+    Math.abs(backupCreatedAt.getTime() - metadataCreatedAt.getTime()) <= 2 * 60 * 1000;
+
+  if (createdAtMatches && backupTypeToken && metadataTypeToken && backupTypeToken === metadataTypeToken) {
+    return true;
+  }
+
+  const backupTokens = buildBackupLookupTokens(backup);
+  if (metadataNameToken && backupTokens.has(metadataNameToken)) return true;
+  if (metadataIdToken && backupTokens.has(metadataIdToken)) return true;
   return false;
 }
 
@@ -264,7 +289,10 @@ async function readBackupMetadataFromFile(filePath) {
   return await readJson(safePath).catch(() => null);
 }
 
-function findZipMetadataEntry(entries = []) {
+function findZipJsonEntry(entries = [], fileName = 'metadata.json') {
+  const safeFileName = normalizeBackupEntryName(fileName);
+  if (!safeFileName) return null;
+
   const normalizedEntries = entries
     .map((entry) => ({
       entry,
@@ -273,11 +301,19 @@ function findZipMetadataEntry(entries = []) {
     .filter((item) => item.name);
 
   return (
-    normalizedEntries.find((item) => item.name === 'metadata.json')?.entry ||
-    normalizedEntries.find((item) => /^[^/]+\/metadata\.json$/i.test(item.name))?.entry ||
-    normalizedEntries.find((item) => /(^|\/)metadata\.json$/i.test(item.name))?.entry ||
+    normalizedEntries.find((item) => item.name === safeFileName)?.entry ||
+    normalizedEntries.find((item) => new RegExp(`^[^/]+/${safeFileName.replace('.', '\\.')}$`, 'i').test(item.name))?.entry ||
+    normalizedEntries.find((item) => new RegExp(`(^|/)${safeFileName.replace('.', '\\.')}$`, 'i').test(item.name))?.entry ||
     null
   );
+}
+
+function findZipMetadataEntry(entries = []) {
+  return findZipJsonEntry(entries, 'metadata.json');
+}
+
+function findZipManifestEntry(entries = []) {
+  return findZipJsonEntry(entries, 'manifest.json');
 }
 
 function readBackupMetadataFromZipArchive(zipPath) {
@@ -286,6 +322,17 @@ function readBackupMetadataFromZipArchive(zipPath) {
     const metadataEntry = findZipMetadataEntry(archive.getEntries());
     if (!metadataEntry) return null;
     return JSON.parse(archive.readAsText(metadataEntry, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function readBackupManifestFromZipArchive(zipPath) {
+  try {
+    const archive = new AdmZip(zipPath);
+    const manifestEntry = findZipManifestEntry(archive.getEntries());
+    if (!manifestEntry) return null;
+    return JSON.parse(archive.readAsText(manifestEntry, 'utf8'));
   } catch {
     return null;
   }
@@ -631,8 +678,8 @@ async function findExistingBackupArchivePath(backup, options = {}) {
     const zipFiles = await listFilesByExtension(guildBackupsDir, '.zip', 2);
     for (const zipFile of zipFiles) {
       // eslint-disable-next-line no-await-in-loop
-      const metadata = readBackupMetadataFromZipArchive(zipFile);
-      if (backupRecordMatchesMetadata(metadata, backup)) return zipFile;
+      const descriptor = readBackupMetadataFromZipArchive(zipFile) || readBackupManifestFromZipArchive(zipFile);
+      if (backupRecordMatchesMetadata(descriptor, backup)) return zipFile;
     }
   }
 
@@ -676,8 +723,10 @@ async function findExistingBackupDirectory(backup) {
     const directories = await listDirectories(guildBackupsDir, 2);
     for (const directory of directories) {
       // eslint-disable-next-line no-await-in-loop
-      const metadata = await readBackupMetadataFromFile(path.join(directory, 'metadata.json'));
-      if (backupRecordMatchesMetadata(metadata, backup)) return directory;
+      const descriptor =
+        (await readBackupMetadataFromFile(path.join(directory, 'metadata.json'))) ||
+        (await readBackupMetadataFromFile(path.join(directory, 'manifest.json')));
+      if (backupRecordMatchesMetadata(descriptor, backup)) return directory;
 
       const directoryToken = normalizeBackupLookupToken(path.basename(directory));
       if (!directoryToken) continue;
@@ -886,11 +935,13 @@ async function inspectBackupAvailability(backup) {
   const directoryState = dirPath ? await ensureBackupDirectoryMetadata(backup, dirPath, { writeMetadata: true }) : null;
   const metadataPath = dirPath ? path.join(dirPath, 'metadata.json') : '';
   const manifestPath = dirPath ? path.join(dirPath, 'manifest.json') : '';
-  const hasMetadata = directoryState?.hasMetadata || (metadataPath ? await pathExists(metadataPath, 'file') : false);
-  const hasManifest = manifestPath ? await pathExists(manifestPath, 'file') : false;
+  const archiveMetadata = archivePath ? readBackupMetadataFromZipArchive(archivePath) : null;
+  const archiveManifest = archivePath ? readBackupManifestFromZipArchive(archivePath) : null;
+  const hasMetadata = Boolean(directoryState?.hasMetadata || archiveMetadata || (metadataPath ? await pathExists(metadataPath, 'file') : false));
+  const hasManifest = Boolean(archiveManifest || (manifestPath ? await pathExists(manifestPath, 'file') : false));
 
   if (archivePath) {
-    const manifest = hasManifest ? await readJson(manifestPath).catch(() => null) : null;
+    const manifest = archiveManifest || (hasManifest ? await readJson(manifestPath).catch(() => null) : null);
     const validation = validateBackupZipArchive(archivePath, manifest);
     if (validation.ok) {
       const stats = await fs.stat(archivePath).catch(() => null);

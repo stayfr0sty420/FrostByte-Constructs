@@ -6,6 +6,7 @@ const { env } = require('../../config/env');
 const DEFAULT_BCRYPT_ROUNDS = 12;
 const BACKUP_CODE_COUNT = 10;
 const BACKUP_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const PASSWORD_RESET_DISPATCH_LOCK_MS = 60 * 1000;
 
 function toBase64Url(value) {
   if (!value) return '';
@@ -122,6 +123,12 @@ async function verifyPassword(password, passwordHash) {
 
 function getStoredPasswordHash(user) {
   return String(user?.password || user?.passwordHash || '');
+}
+
+function toValidDateOrNull(value) {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function isLocked(user) {
@@ -471,17 +478,93 @@ async function removePasskeyFromAdmin(user, credentialId) {
   return { ok: true, user };
 }
 
-async function setPasswordResetOtp(user, otpHash, expiresAt) {
+async function acquirePasswordResetOtpDispatchLock(user, options = {}) {
+  if (!user?._id) return { ok: false, reason: 'Admin account not found.' };
+
+  const now = toValidDateOrNull(options.now) || new Date();
+  const lockWindowMs = Math.max(
+    5 * 1000,
+    Number(options.lockWindowMs || PASSWORD_RESET_DISPATCH_LOCK_MS) || PASSWORD_RESET_DISPATCH_LOCK_MS
+  );
+  const lockToken = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
+  const lockUntil = new Date(now.getTime() + lockWindowMs);
+  const lockedUser = await AdminUser.findOneAndUpdate(
+    {
+      _id: user._id,
+      $or: [{ resetOTPDispatchLockUntil: null }, { resetOTPDispatchLockUntil: { $lt: now } }]
+    },
+    {
+      $set: {
+        resetOTPDispatchLock: lockToken,
+        resetOTPDispatchLockUntil: lockUntil
+      }
+    },
+    {
+      new: true,
+      runValidators: false
+    }
+  );
+
+  if (!lockedUser) {
+    return { ok: false, locked: true };
+  }
+
+  Object.assign(user, {
+    resetOTP: String(lockedUser.resetOTP || '').trim(),
+    resetOTPExpiry: lockedUser.resetOTPExpiry || null,
+    resetOTPIssuedAt: lockedUser.resetOTPIssuedAt || null,
+    resetOTPLastSentAt: lockedUser.resetOTPLastSentAt || null,
+    resetOTPDispatchLock: lockToken,
+    resetOTPDispatchLockUntil: lockUntil
+  });
+
+  return {
+    ok: true,
+    lockToken,
+    lockUntil,
+    user: lockedUser
+  };
+}
+
+async function releasePasswordResetOtpDispatchLock(user, lockToken) {
+  if (!user?._id) return user;
+
+  const filter = { _id: user._id };
+  if (lockToken) filter.resetOTPDispatchLock = String(lockToken);
+
+  await AdminUser.updateOne(
+    filter,
+    {
+      $set: {
+        resetOTPDispatchLock: '',
+        resetOTPDispatchLockUntil: null
+      }
+    },
+    { runValidators: false }
+  ).catch(() => null);
+
+  user.resetOTPDispatchLock = '';
+  user.resetOTPDispatchLockUntil = null;
+  return user;
+}
+
+async function setPasswordResetOtp(user, otpHash, expiresAt, options = {}) {
   return await persistUserState(user, {
     resetOTP: String(otpHash || '').trim(),
-    resetOTPExpiry: expiresAt || null
+    resetOTPExpiry: toValidDateOrNull(expiresAt),
+    resetOTPIssuedAt: toValidDateOrNull(options.issuedAt),
+    resetOTPLastSentAt: toValidDateOrNull(options.lastSentAt || options.issuedAt)
   });
 }
 
 async function clearPasswordResetOtp(user) {
   return await persistUserState(user, {
     resetOTP: '',
-    resetOTPExpiry: null
+    resetOTPExpiry: null,
+    resetOTPIssuedAt: null,
+    resetOTPLastSentAt: null,
+    resetOTPDispatchLock: '',
+    resetOTPDispatchLockUntil: null
   });
 }
 
@@ -494,6 +577,10 @@ async function updateAdminPassword(user, password) {
     passwordHash,
     resetOTP: '',
     resetOTPExpiry: null,
+    resetOTPIssuedAt: null,
+    resetOTPLastSentAt: null,
+    resetOTPDispatchLock: '',
+    resetOTPDispatchLockUntil: null,
     loginAttempts: 0,
     lockUntil: null
   });
@@ -540,6 +627,8 @@ module.exports = {
   addPasskeyToAdmin,
   updatePasskeyUsage,
   removePasskeyFromAdmin,
+  acquirePasswordResetOtpDispatchLock,
+  releasePasswordResetOtpDispatchLock,
   setPasswordResetOtp,
   clearPasswordResetOtp,
   updateAdminPassword,

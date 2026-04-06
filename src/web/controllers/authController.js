@@ -14,7 +14,9 @@ const {
   markLoginSuccess,
   enableTwoFactor,
   incrementLoginAttempts,
+  acquirePasswordResetOtpDispatchLock,
   clearPasswordResetOtp,
+  releasePasswordResetOtpDispatchLock,
   setPasswordResetOtp,
   updateAdminPassword,
   resetLoginAttempts,
@@ -25,7 +27,7 @@ const {
   updatePasskeyUsage
 } = require('../../services/admin/adminUserService');
 const { isEmailConfigured, sendPasswordResetOtpEmail } = require('../utils/emailService');
-const { generateNumericOtp, getOtpExpiryDate, hashOtp, verifyOtp } = require('../utils/otpService');
+const { OTP_TTL_MS, generateNumericOtp, getOtpExpiryDate, hashOtp, verifyOtp } = require('../utils/otpService');
 const { createPasskeyAuthenticationOptions, verifyPasskeyAuthentication } = require('../utils/passkeyService');
 const {
   getRequestIp,
@@ -74,6 +76,8 @@ const resetPasswordSchema = z
     path: ['confirmPassword'],
     message: 'Passwords do not match.'
   });
+
+const PASSWORD_RESET_SEND_DEDUPE_MS = Math.min(15 * 1000, OTP_TTL_MS);
 
 function isSafeReturnTo(value) {
   const candidate = String(value || '').trim();
@@ -616,28 +620,54 @@ async function postForgotPassword(req, res) {
 
   const user = await findAdminByEmail(email);
   if (user && !user.disabled) {
-    const otp = generateNumericOtp(6);
-    const issuedAt = new Date();
-    const otpHash = await hashOtp(otp);
-    const expiresAt = getOtpExpiryDate();
-    await setPasswordResetOtp(user, otpHash, expiresAt);
+    const now = new Date();
+    const dispatch = await acquirePasswordResetOtpDispatchLock(user, { now });
+    if (dispatch.ok) {
+      let otpStored = false;
+      try {
+        const lockedUser = dispatch.user || user;
+        const hasUnexpiredOtp =
+          Boolean(lockedUser.resetOTP) &&
+          lockedUser.resetOTPExpiry instanceof Date &&
+          lockedUser.resetOTPExpiry.getTime() > now.getTime();
+        const lastSentAtMs =
+          lockedUser.resetOTPLastSentAt instanceof Date ? lockedUser.resetOTPLastSentAt.getTime() : Number.NaN;
+        const sentRecently =
+          Number.isFinite(lastSentAtMs) && now.getTime() - lastSentAtMs < PASSWORD_RESET_SEND_DEDUPE_MS;
 
-    try {
-      await sendPasswordResetOtpEmail({
-        to: user.email,
-        otp,
-        recipientName: user.name || '',
-        role: user.role || 'admin',
-        issuedAt
-      });
-    } catch (error) {
-      logger.error({ err: error, email: user.email }, 'Failed sending admin password reset OTP');
-      return renderLogin(res, {
-        status: 500,
-        viewMode: 'forgot-password',
-        forgotEmail: email,
-        error: 'Unable to send reset OTP right now. Please try again later.'
-      });
+        if (hasUnexpiredOtp && sentRecently) {
+          await releasePasswordResetOtpDispatchLock(user, dispatch.lockToken);
+        } else {
+          const otp = generateNumericOtp(6);
+          const issuedAt = new Date();
+          const otpHash = await hashOtp(otp);
+          const expiresAt = getOtpExpiryDate();
+          await setPasswordResetOtp(user, otpHash, expiresAt, {
+            issuedAt,
+            lastSentAt: issuedAt
+          });
+          otpStored = true;
+
+          await sendPasswordResetOtpEmail({
+            to: user.email,
+            otp,
+            recipientName: user.name || '',
+            role: user.role || 'admin',
+            issuedAt
+          });
+          await releasePasswordResetOtpDispatchLock(user, dispatch.lockToken);
+        }
+      } catch (error) {
+        if (otpStored) await clearPasswordResetOtp(user);
+        else await releasePasswordResetOtpDispatchLock(user, dispatch.lockToken);
+        logger.error({ err: error, email: user.email }, 'Failed sending admin password reset OTP');
+        return renderLogin(res, {
+          status: 500,
+          viewMode: 'forgot-password',
+          forgotEmail: email,
+          error: 'Unable to send reset OTP right now. Please try again later.'
+        });
+      }
     }
   }
 

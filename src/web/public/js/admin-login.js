@@ -4,6 +4,52 @@
   const passwordInput = document.querySelector('[data-password-input]');
   const passwordToggle = document.querySelector('[data-password-toggle]');
 
+  function initAuthFormSubmitGuard() {
+    const forms = Array.from(document.querySelectorAll('form.auth-form'));
+    if (!forms.length) return;
+
+    const resetFormState = (form) => {
+      form.dataset.submitting = 'false';
+      form.removeAttribute('aria-busy');
+      const submitters = Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
+      submitters.forEach((submitter) => {
+        submitter.disabled = false;
+        if (submitter instanceof HTMLButtonElement && submitter.dataset.originalLabel) {
+          submitter.textContent = submitter.dataset.originalLabel;
+        }
+      });
+    };
+
+    forms.forEach((form) => {
+      const submitters = Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
+      submitters.forEach((submitter) => {
+        if (submitter instanceof HTMLButtonElement && !submitter.dataset.originalLabel) {
+          submitter.dataset.originalLabel = submitter.textContent || 'Submit';
+        }
+      });
+
+      form.addEventListener('submit', (event) => {
+        if (form.dataset.submitting === 'true') {
+          event.preventDefault();
+          return;
+        }
+
+        form.dataset.submitting = 'true';
+        form.setAttribute('aria-busy', 'true');
+        submitters.forEach((submitter) => {
+          submitter.disabled = true;
+          if (submitter instanceof HTMLButtonElement) {
+            submitter.textContent = 'Please wait...';
+          }
+        });
+      });
+    });
+
+    window.addEventListener('pageshow', () => {
+      forms.forEach(resetFormState);
+    });
+  }
+
   if (passwordInput && passwordToggle) {
     passwordToggle.addEventListener('click', () => {
       const visible = passwordInput.getAttribute('type') === 'text';
@@ -12,6 +58,8 @@
       passwordToggle.setAttribute('aria-label', visible ? 'Show password' : 'Hide password');
     });
   }
+
+  initAuthFormSubmitGuard();
 
   if (!root || !buttons.length) return;
 
