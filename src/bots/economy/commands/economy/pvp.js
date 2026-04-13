@@ -9,6 +9,7 @@ const {
 } = require('discord.js');
 const { nanoid } = require('nanoid');
 const { getOrCreateUser } = require('../../../../services/economy/userService');
+const { getOrCreateGuildConfig } = require('../../../../services/economy/guildConfigService');
 const { getEconomyEmojis, formatCredits } = require('../../util/credits');
 
 function buildChallengeEmbed({ challengerId, opponentId, bet, currencyEmoji }) {
@@ -29,7 +30,7 @@ function buildChallengeEmbed({ challengerId, opponentId, bet, currencyEmoji }) {
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('pvp')
-    .setDescription('Challenge a user to turn-based PVP.')
+    .setDescription('Challenge a user to instant-result PVP.')
     .addUserOption((opt) => opt.setName('user').setDescription('Opponent').setRequired(true))
     .addIntegerOption((opt) =>
       opt.setName('bet').setDescription('Optional bet amount (both must have it)').setRequired(false).setMinValue(0)
@@ -41,9 +42,13 @@ module.exports = {
     const opponent = interaction.options.getUser('user', true);
     const bet = interaction.options.getInteger('bet') ?? 0;
     const emojis = await getEconomyEmojis(client, guildId);
+    const cfg = await getOrCreateGuildConfig(guildId);
 
     if (opponent.bot) return await interaction.reply({ content: 'You cannot PVP a bot.', ephemeral: true });
     if (opponent.id === interaction.user.id) return await interaction.reply({ content: 'You cannot PVP yourself.', ephemeral: true });
+    if (!cfg.economy?.pvpBetsEnabled && bet > 0) {
+      return await interaction.reply({ content: 'PVP bets are disabled for this server right now.', ephemeral: true });
+    }
 
     await getOrCreateUser({ guildId, discordId: interaction.user.id, username: interaction.user.username });
     await getOrCreateUser({ guildId, discordId: opponent.id, username: opponent.username });

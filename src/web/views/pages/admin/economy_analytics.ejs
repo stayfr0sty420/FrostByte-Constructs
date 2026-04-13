@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <section class="dashboard-hero mb-4">
+        <div class="dashboard-hero__copy">
+          <div class="hero-eyebrow">RoBot Analytics</div>
+          <h1 class="hero-title mb-2">Economy Overview</h1>
+          <p class="hero-text mb-0">Track usage, coin flow, rarity distribution, and leaderboard previews from the last 7 days.</p>
+        </div>
+      </section>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="row g-3 mb-4">
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Players</div>
+              <div class="display-6"><%= Number(playerCount || 0).toLocaleString() %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Coins Generated</div>
+              <div class="display-6"><%= Number(totals.generated || 0).toLocaleString() %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Coins Spent</div>
+              <div class="display-6"><%= Number(totals.spent || 0).toLocaleString() %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Net Flow</div>
+              <div class="display-6"><%= Number((totals.generated || 0) - (totals.spent || 0)).toLocaleString() %></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <div class="col-12 col-xl-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Command / Activity Usage</h2>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th class="text-end">Uses</th>
+                      <th class="text-end">Net Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% if (!usage.length) { %>
+                      <tr>
+                        <td colspan="3" class="text-muted py-3">No tracked activity yet.</td>
+                      </tr>
+                    <% } %>
+                    <% usage.forEach(entry => { %>
+                      <tr>
+                        <td><code><%= entry._id %></code></td>
+                        <td class="text-end"><%= Number(entry.count || 0).toLocaleString() %></td>
+                        <td class="text-end"><%= Number(entry.net || 0).toLocaleString() %></td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Item Distribution by Rarity</h2>
+              <div class="row g-3">
+                <% ['common','rare','epic','pristine','transcendent','primordial'].forEach(rarity => { %>
+                  <div class="col-6 col-md-4">
+                    <div class="border rounded p-3 h-100">
+                      <div class="text-uppercase text-muted small"><%= rarity %></div>
+                      <div class="fs-4"><%= Number(rarityTotals[rarity] || 0).toLocaleString() %></div>
+                    </div>
+                  </div>
+                <% }) %>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Top Wallets</h2>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th class="text-end">Wallet</th>
+                      <th class="text-end">Level</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% if (!topPlayers.length) { %>
+                      <tr>
+                        <td colspan="3" class="text-muted py-3">No players yet.</td>
+                      </tr>
+                    <% } %>
+                    <% topPlayers.forEach(player => { %>
+                      <tr>
+                        <td><a href="/admin/economy/users/<%= player.discordId %>"><%= player.username || player.discordId %></a></td>
+                        <td class="text-end"><%= Number(player.balance || 0).toLocaleString() %></td>
+                        <td class="text-end"><%= Number(player.level || 0).toLocaleString() %></td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-6">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Top PvP Players</h2>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th class="text-end">Rating</th>
+                      <th class="text-end">Wins</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% if (!topPvp.length) { %>
+                      <tr>
+                        <td colspan="3" class="text-muted py-3">No PvP data yet.</td>
+                      </tr>
+                    <% } %>
+                    <% topPvp.forEach(player => { %>
+                      <tr>
+                        <td><a href="/admin/economy/users/<%= player.discordId %>"><%= player.username || player.discordId %></a></td>
+                        <td class="text-end"><%= Number(player.pvpRating || 0).toLocaleString() %></td>
+                        <td class="text-end"><%= Number(player.pvpWins || 0).toLocaleString() %></td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

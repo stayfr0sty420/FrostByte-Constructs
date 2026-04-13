@@ -217,6 +217,7 @@
                   <th class="text-end">Wallet</th>
                   <th class="text-end">Bank</th>
                   <th class="text-end">Level</th>
+                  <th>Status</th>
                   <th>Updated</th>
                   <th class="text-end">Actions</th>
                 </tr>
@@ -224,7 +225,7 @@
               <tbody>
                 <% if (!users.length) { %>
                   <tr>
-                    <td colspan="7" class="text-muted py-4">No users found.</td>
+                    <td colspan="8" class="text-muted py-4">No users found.</td>
                   </tr>
                 <% } %>
 
@@ -235,12 +236,24 @@
                     <td class="text-end" data-label="Wallet"><%= fmt(u.balance) %></td>
                     <td class="text-end" data-label="Bank"><%= fmt(u.bank) %></td>
                     <td class="text-end" data-label="Level"><%= fmt(u.level) %></td>
+                    <td data-label="Status">
+                      <% if (u.economyBan?.active) { %>
+                        <span class="badge text-bg-danger">Banned</span>
+                      <% } else if (u.marriedTo) { %>
+                        <span class="badge text-bg-info">Married</span>
+                      <% } else { %>
+                        <span class="badge text-bg-secondary">Active</span>
+                      <% } %>
+                    </td>
                     <td class="text-muted small" data-label="Updated">
                       <%= u.updatedAt ? formatDate(u.updatedAt) : '—' %>
                     </td>
                     <td class="text-end user-actions-cell" data-label="Actions">
                         <% const isWhitelisted = whitelistSet.has(String(u.discordId)); %>
                       <div class="user-actions-panel">
+                        <div class="d-flex justify-content-end mb-2">
+                          <a class="btn btn-outline-light btn-sm" href="/admin/economy/users/<%= u.discordId %>">Open Editor</a>
+                        </div>
                         <div class="user-whitelist-bar">
                           <div class="user-whitelist-state">
                             <span class="badge <%= isWhitelisted ? 'text-bg-success' : 'text-bg-secondary' %>">

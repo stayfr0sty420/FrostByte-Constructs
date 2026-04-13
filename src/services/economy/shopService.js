@@ -5,6 +5,7 @@ const User = require('../../db/models/User');
 const { RARITY_SELL_MULTIPLIER } = require('../../config/constants');
 const { withOptionalTransaction } = require('../utils/withOptionalTransaction');
 const { getEconomyAccountGuildId } = require('./accountScope');
+const { addItemToInventory, countInventoryQuantity, removeItemFromInventory } = require('./inventoryService');
 
 function normalizeQuery(q) {
   return String(q || '').trim();
@@ -59,9 +60,8 @@ async function buyItem({ guildId, discordId, itemQuery, quantity }) {
     }
 
     user.balance -= totalPrice;
-    const inv = user.inventory.find((i) => i.itemId === item.itemId);
-    if (inv) inv.quantity += qty;
-    else user.inventory.push({ itemId: item.itemId, quantity: qty, refinement: 0 });
+    const added = await addItemToInventory({ user, itemId: item.itemId, quantity: qty, refinement: 0 });
+    if (!added.ok) return added;
     await user.save({ session: session || undefined });
 
     await Transaction.create(
@@ -95,15 +95,15 @@ async function sellItem({ guildId, discordId, itemQuery, quantity }) {
   const user = await User.findOne({ guildId: accountGuildId, discordId });
   if (!user) return { ok: false, reason: 'User not found.' };
 
-  const inv = user.inventory.find((i) => i.itemId === item.itemId);
-  if (!inv || inv.quantity < qty) return { ok: false, reason: 'Not enough items.' };
+  const ownedQuantity = countInventoryQuantity(user, item.itemId);
+  if (ownedQuantity < qty) return { ok: false, reason: 'Not enough items.' };
 
   const mult = RARITY_SELL_MULTIPLIER[item.rarity] ?? 0.1;
   const unitSell = Math.floor(item.price * mult);
   const total = unitSell * qty;
 
-  inv.quantity -= qty;
-  if (inv.quantity <= 0) user.inventory = user.inventory.filter((i) => i.itemId !== item.itemId);
+  const removed = await removeItemFromInventory({ user, itemId: item.itemId, quantity: qty });
+  if (!removed.ok) return removed;
   user.balance += total;
 
   await user.save();

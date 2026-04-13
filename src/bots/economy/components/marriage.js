@@ -1,6 +1,9 @@
 'use strict';
 
 const { EmbedBuilder } = require('discord.js');
+const User = require('../../../db/models/User');
+const { getEconomyAccountGuildId } = require('../../../services/economy/accountScope');
+const { removeItemFromInventory } = require('../../../services/economy/inventoryService');
 const { performMarriage } = require('../../../services/economy/marriageService');
 
 async function handleMarriageComponent(client, interaction) {
@@ -23,12 +26,31 @@ async function handleMarriageComponent(client, interaction) {
     return true;
   }
 
+  const proposer = await User.findOne({
+    guildId: getEconomyAccountGuildId(proposal.guildId),
+    discordId: proposal.proposerId
+  });
+  if (!proposer) {
+    client.state.marriage.delete(proposalId);
+    await interaction.reply({ content: 'The proposal is no longer valid.', ephemeral: true }).catch(() => null);
+    return true;
+  }
+
+  const ringEntry = (proposer.inventory || []).find((entry) => entry.itemId === proposal.ringItemId && entry.quantity > 0);
+  if (!ringEntry) {
+    client.state.marriage.delete(proposalId);
+    await interaction.reply({ content: 'The proposer no longer has the required ring.', ephemeral: true }).catch(() => null);
+    return true;
+  }
+
   if (action === 'decline') {
+    await removeItemFromInventory({ user: proposer, itemId: proposal.ringItemId, quantity: 1 }).catch(() => null);
+    await proposer.save().catch(() => null);
     client.state.marriage.delete(proposalId);
     const embed = new EmbedBuilder()
       .setTitle('Marriage Proposal')
       .setColor(0xe74c3c)
-      .setDescription(`❌ <@${proposal.partnerId}> declined the proposal.`);
+      .setDescription(`❌ <@${proposal.partnerId}> declined the proposal.\nThe ring was consumed.`);
     await interaction.update({ embeds: [embed], components: [] }).catch(() => null);
     return true;
   }

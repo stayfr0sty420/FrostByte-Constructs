@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <% const wallpaperItems = items.filter(item => item.type === 'wallpaper'); %>
+      <% const equipableItems = items.filter(item => ['headGear','eyeGear','faceGear','rHand','lHand','robe','shoes','accessory','rAccessory','lAccessory'].includes(item.type)); %>
+
+      <section class="dashboard-hero mb-4">
+        <div class="dashboard-hero__copy">
+          <div class="hero-eyebrow">RoBot Character Editor</div>
+          <h1 class="hero-title mb-2"><%= user.username || user.discordId %></h1>
+          <p class="hero-text mb-0">
+            <code><%= user.discordId %></code>
+            <% if (user.economyBan?.active) { %>
+              • <span class="text-danger">Economy banned</span>
+            <% } %>
+          </p>
+        </div>
+        <div class="dashboard-hero__actions">
+          <a href="/admin/economy/users" class="btn btn-outline-secondary btn-sm">Back to Users</a>
+        </div>
+      </section>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="row g-3 mb-4">
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Wallet</div>
+              <div class="display-6"><%= Number(user.balance || 0).toLocaleString() %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Level</div>
+              <div class="display-6"><%= Number(user.level || 0).toLocaleString() %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Gear Score</div>
+              <div class="display-6"><%= Number(snapshot.gearScore || 0).toLocaleString() %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Marriage</div>
+              <div class="display-6 fs-4"><%= user.marriedTo ? 'Married' : 'Single' %></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <div class="col-12 col-xl-8">
+          <div class="card shadow-sm mb-4">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Character & Profile</h2>
+              <form method="post" action="/admin/economy/users/<%= user.discordId %>/update" class="row g-3">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <div class="col-12 col-md-6">
+                  <label class="form-label">Username</label>
+                  <input class="form-control" name="username" value="<%= user.username || '' %>" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Wallet</label>
+                  <input class="form-control" name="balance" type="number" min="0" value="<%= user.balance || 0 %>" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Bank</label>
+                  <input class="form-control" name="bank" type="number" min="0" value="<%= user.bank || 0 %>" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Bank Max</label>
+                  <input class="form-control" name="bankMax" type="number" min="0" value="<%= user.bankMax || 0 %>" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Level</label>
+                  <input class="form-control" name="level" type="number" min="1" max="255" value="<%= user.level || 1 %>" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">EXP</label>
+                  <input class="form-control" name="exp" type="number" min="0" value="<%= user.exp || 0 %>" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Stat Points</label>
+                  <input class="form-control" name="statPoints" type="number" min="0" value="<%= user.statPoints || 0 %>" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Max HP</label>
+                  <input class="form-control" name="maxHp" type="number" min="1" value="<%= user.maxHp || 100 %>" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Energy</label>
+                  <input class="form-control" name="energy" type="number" min="0" value="<%= user.energy || 0 %>" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Energy Max</label>
+                  <input class="form-control" name="energyMax" type="number" min="1" value="<%= user.energyMax || 100 %>" />
+                </div>
+
+                <div class="col-6 col-md-2">
+                  <label class="form-label">STR</label>
+                  <input class="form-control" name="characterStr" type="number" value="<%= user.stats?.str || 0 %>" />
+                </div>
+                <div class="col-6 col-md-2">
+                  <label class="form-label">AGI</label>
+                  <input class="form-control" name="characterAgi" type="number" value="<%= user.stats?.agi || 0 %>" />
+                </div>
+                <div class="col-6 col-md-2">
+                  <label class="form-label">VIT</label>
+                  <input class="form-control" name="characterVit" type="number" value="<%= user.stats?.vit || 0 %>" />
+                </div>
+                <div class="col-6 col-md-2">
+                  <label class="form-label">LUCK</label>
+                  <input class="form-control" name="characterLuck" type="number" value="<%= user.stats?.luck || 0 %>" />
+                </div>
+                <div class="col-6 col-md-2">
+                  <label class="form-label">CRIT</label>
+                  <input class="form-control" name="characterCrit" type="number" value="<%= user.stats?.crit || 0 %>" />
+                </div>
+                <div class="col-12 col-md-2 d-flex align-items-end">
+                  <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="sharedBankEnabled" value="1" <%= user.sharedBankEnabled ? 'checked' : '' %> />
+                    <label class="form-check-label">Shared Bank</label>
+                  </div>
+                </div>
+
+                <div class="col-12">
+                  <label class="form-label">Profile Title</label>
+                  <input class="form-control" name="profileTitle" value="<%= user.profileTitle || '' %>" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Profile Bio</label>
+                  <textarea class="form-control" name="profileBio" rows="3"><%= user.profileBio || '' %></textarea>
+                </div>
+                <div class="col-12 col-md-6">
+                  <label class="form-label">Profile Wallpaper</label>
+                  <select class="form-select" name="profileWallpaper">
+                    <option value="default" <%= user.profileWallpaper === 'default' ? 'selected' : '' %>>default</option>
+                    <% wallpaperItems.forEach(item => { %>
+                      <option value="<%= item.itemId %>" <%= user.profileWallpaper === item.itemId ? 'selected' : '' %>><%= item.name %></option>
+                    <% }) %>
+                  </select>
+                </div>
+
+                <div class="col-12"><hr class="my-2" /></div>
+                <div class="col-12"><h3 class="h6 mb-0">Equipped Items</h3></div>
+
+                <% const slots = [
+                  ['Head Gear','equippedHeadGear','headGear'],
+                  ['Eye Gear','equippedEyeGear','eyeGear'],
+                  ['Face Gear','equippedFaceGear','faceGear'],
+                  ['Right Hand','equippedRHand','rHand'],
+                  ['Left Hand','equippedLHand','lHand'],
+                  ['Robe','equippedRobe','robe'],
+                  ['Shoes','equippedShoes','shoes'],
+                  ['Right Accessory','equippedRAccessory','rAccessory'],
+                  ['Left Accessory','equippedLAccessory','lAccessory']
+                ]; %>
+                <% slots.forEach(([label, field, slotType]) => { %>
+                  <div class="col-12 col-md-6 col-xl-4">
+                    <label class="form-label"><%= label %></label>
+                    <select class="form-select" name="<%= field %>">
+                      <option value="">None</option>
+                      <% equipableItems.filter(item => item.type === slotType || (slotType.includes('Accessory') && item.type === 'accessory')).forEach(item => { %>
+                        <option value="<%= item.itemId %>" <%= user.equipped?.[slotType] === item.itemId ? 'selected' : '' %>><%= item.name %></option>
+                      <% }) %>
+                    </select>
+                  </div>
+                <% }) %>
+
+                <div class="col-12 d-flex justify-content-end">
+                  <button class="btn btn-primary" type="submit">Save Character</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="card shadow-sm mb-4">
+            <div class="card-body">
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <h2 class="h5 mb-0">Inventory Access</h2>
+                <div class="text-muted small">Items: <%= inventory.length %></div>
+              </div>
+
+              <div class="row g-3 mb-4">
+                <div class="col-12 col-lg-6">
+                  <form method="post" action="/admin/economy/users/<%= user.discordId %>/inventory/add" class="row g-2">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <div class="col-12">
+                      <label class="form-label">Grant Item</label>
+                      <select class="form-select" name="itemId" required>
+                        <% items.forEach(item => { %>
+                          <option value="<%= item.itemId %>"><%= item.name %> • <%= item.rarity %></option>
+                        <% }) %>
+                      </select>
+                    </div>
+                    <div class="col-6">
+                      <input class="form-control" name="quantity" type="number" min="1" value="1" />
+                    </div>
+                    <div class="col-6">
+                      <input class="form-control" name="refinement" type="number" min="0" max="10" value="0" />
+                    </div>
+                    <div class="col-12 d-grid">
+                      <button class="btn btn-outline-success" type="submit">Add to Inventory</button>
+                    </div>
+                  </form>
+                </div>
+
+                <div class="col-12 col-lg-6">
+                  <form method="post" action="/admin/economy/users/<%= user.discordId %>/inventory/remove" class="row g-2">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                    <div class="col-12">
+                      <label class="form-label">Remove Item</label>
+                      <select class="form-select" name="itemId" required>
+                        <% inventory.forEach(entry => { %>
+                          <option value="<%= entry.itemId %>"><%= entry.item?.name || entry.itemId %> • x<%= entry.quantity %></option>
+                        <% }) %>
+                      </select>
+                    </div>
+                    <div class="col-12">
+                      <input class="form-control" name="quantity" type="number" min="1" value="1" />
+                    </div>
+                    <div class="col-12 d-grid">
+                      <button class="btn btn-outline-danger" type="submit">Remove from Inventory</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+
+              <div class="row g-3 mb-3">
+                <% ['common','rare','epic','pristine','transcendent','primordial'].forEach(rarity => { %>
+                  <div class="col-6 col-md-4 col-xl-2">
+                    <div class="border rounded p-2 h-100">
+                      <div class="text-uppercase text-muted small"><%= rarity %></div>
+                      <div class="fs-5"><%= Number(inventoryByRarity[rarity] || 0).toLocaleString() %></div>
+                    </div>
+                  </div>
+                <% }) %>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Rarity</th>
+                      <th class="text-end">Qty</th>
+                      <th class="text-end">Refine</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% if (!inventory.length) { %>
+                      <tr>
+                        <td colspan="4" class="text-muted py-3">Inventory is empty.</td>
+                      </tr>
+                    <% } %>
+                    <% inventory.forEach(entry => { %>
+                      <tr>
+                        <td>
+                          <div class="fw-semibold"><%= entry.item?.name || entry.itemId %></div>
+                          <div class="text-muted small"><code><%= entry.itemId %></code></div>
+                        </td>
+                        <td><span class="badge text-bg-secondary text-uppercase"><%= entry.item?.rarity || 'unknown' %></span></td>
+                        <td class="text-end"><%= Number(entry.quantity || 0).toLocaleString() %></td>
+                        <td class="text-end">+<%= Number(entry.refinement || 0).toLocaleString() %></td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Recent Transactions</h2>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th class="text-end">Amount</th>
+                      <th class="text-end">Wallet</th>
+                      <th>When</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% if (!transactions.length) { %>
+                      <tr>
+                        <td colspan="4" class="text-muted py-3">No transactions logged yet.</td>
+                      </tr>
+                    <% } %>
+                    <% transactions.forEach(tx => { %>
+                      <tr>
+                        <td><code><%= tx.type %></code></td>
+                        <td class="text-end"><%= Number(tx.amount || 0).toLocaleString() %></td>
+                        <td class="text-end"><%= Number(tx.balanceAfter || 0).toLocaleString() %></td>
+                        <td class="text-muted small"><%= tx.createdAt ? formatDate(tx.createdAt) : '—' %></td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-4">
+          <div class="card shadow-sm mb-4">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Moderation Tools</h2>
+              <% if (user.economyBan?.active) { %>
+                <div class="alert alert-danger">
+                  Banned by <strong><%= user.economyBan.by || 'unknown' %></strong>
+                  <% if (user.economyBan.reason) { %>
+                    <br />
+                    <span class="small"><%= user.economyBan.reason %></span>
+                  <% } %>
+                </div>
+                <form method="post" action="/admin/economy/users/<%= user.discordId %>/unban">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <button class="btn btn-outline-success w-100" type="submit">Unban Economy Access</button>
+                </form>
+              <% } else { %>
+                <form method="post" action="/admin/economy/users/<%= user.discordId %>/ban" class="row g-2">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <div class="col-12">
+                    <label class="form-label">Ban Reason</label>
+                    <textarea class="form-control" name="reason" rows="3" placeholder="Explain why this user is being blocked from the economy."></textarea>
+                  </div>
+                  <div class="col-12 d-grid">
+                    <button class="btn btn-outline-danger" type="submit">Ban Economy Access</button>
+                  </div>
+                </form>
+              <% } %>
+            </div>
+          </div>
+
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Reset / Fix</h2>
+              <p class="text-muted small">Use this to wipe corrupted RPG data and restore the player to a clean level 1 profile.</p>
+              <form method="post" action="/admin/economy/users/<%= user.discordId %>/reset">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <button
+                  class="btn btn-danger w-100"
+                  type="submit"
+                  data-confirm="Reset this player to a fresh RPG profile? Inventory, loadout, marriage state, and progression will be wiped."
+                  data-confirm-title="Reset player?"
+                  data-confirm-ok="Reset"
+                  data-confirm-cancel="Cancel"
+                >
+                  Reset Player
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

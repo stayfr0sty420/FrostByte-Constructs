@@ -1,7 +1,9 @@
 const { logger } = require('../../../config/logger');
 const { env } = require('../../../config/env');
+const User = require('../../../db/models/User');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
 const { hasAcceptedEconomyRules, countAcceptedEconomyRules } = require('../../../services/economy/rulesConsentService');
+const { getEconomyAccountGuildId } = require('../../../services/economy/accountScope');
 const { tokenizeArgs } = require('./tokenizeArgs');
 const { parsePrefixArgs, buildUsage } = require('./parsePrefixArgs');
 const { createMessageInteraction } = require('./createMessageInteraction');
@@ -29,6 +31,7 @@ const ALIASES = new Map([
   ['money', 'balance'],
 
   ['d', 'daily'],
+  ['md', 'mdaily'],
 
   ['inv', 'inventory'],
   ['bag', 'inventory'],
@@ -88,6 +91,7 @@ const ALIASES = new Map([
   ['hu', 'hunt'],
 
   ['st', 'stats'],
+  ['rs', 'rstats'],
 
   ['lvl', 'levelup'],
   ['lv', 'levelup'],
@@ -146,6 +150,28 @@ async function handlePrefixCommand(client, message) {
       .send({ content: `Unknown command: \`${cmdInput}\`. Try \`${prefix} help\` or \`/help\`.` })
       .catch(() => null);
     return true;
+  }
+
+  if (cmdName !== 'help') {
+    const accountGuildId = getEconomyAccountGuildId(message.guildId);
+    const profile = await User.findOne({
+      guildId: accountGuildId,
+      discordId: message.author.id
+    })
+      .select('economyBan')
+      .lean()
+      .catch(() => null);
+    if (profile?.economyBan?.active) {
+      const reason = String(profile.economyBan.reason || '').trim();
+      await message.channel
+        .send({
+          content: reason
+            ? `⛔ You are banned from the economy system.\nReason: ${reason}`
+            : '⛔ You are banned from the economy system.'
+        })
+        .catch(() => null);
+      return true;
+    }
   }
 
   if (cmdName !== 'help') {

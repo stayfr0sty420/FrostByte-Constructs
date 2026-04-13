@@ -21,6 +21,7 @@ const { requireAdmin, requireOwner } = require('../middleware/requireAdmin');
 const { requireGuild } = require('../middleware/requireGuild');
 const { clearAdminAuthCookie, getRequestIp } = require('../middleware/authMiddleware');
 const { env } = require('../../config/env');
+const { CORE_RARITIES, ITEM_TYPES } = require('../../config/constants');
 const { getOrCreateGuildConfig } = require('../../services/economy/guildConfigService');
 const {
   createAdminUser,
@@ -66,6 +67,9 @@ const { sendLog } = require('../../services/discord/loggingService');
 const { LOG_SECTIONS, assignLogSettings, normalizeChannelOverrides } = require('../../services/discord/logDefinitions');
 const { getEconomyAccountGuildId, getEconomyAccountScope } = require('../../services/economy/accountScope');
 const { applyExpDelta, requiredExpForLevel, totalAccumulatedExp } = require('../../services/economy/levelService');
+const { buildCharacterSnapshot, itemScoreFor, normalizeStats } = require('../../services/economy/characterService');
+const { addItemToInventory, countInventoryQuantity, removeItemFromInventory } = require('../../services/economy/inventoryService');
+const { computeGearScore } = require('../../services/economy/equipmentService');
 const { ensureVoiceConnection, disconnectVoice } = require('../../jobs/voiceScheduler');
 const { buildVerifyPanelMessage, buildVerifyPanelRow } = require('../../bots/verification/util/verifyMessages');
 const { createPasskeyRegistrationOptions, verifyPasskeyRegistration } = require('../utils/passkeyService');
@@ -688,6 +692,198 @@ function buildVerificationQuestionConfigsFromBody(body) {
 
 function escapeRegex(input) {
   return String(input || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function parseIntegerField(value, fallback = 0, { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const parsed = Math.floor(Number(value));
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function parseFloatField(value, fallback = 0, { min = Number.NEGATIVE_INFINITY, max = Number.POSITIVE_INFINITY } = {}) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function parseStringList(value) {
+  return String(value || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function parseItemStatsFromBody(body, prefix = 'stats') {
+  return {
+    str: parseIntegerField(body?.[`${prefix}Str`], 0),
+    agi: parseIntegerField(body?.[`${prefix}Agi`], 0),
+    vit: parseIntegerField(body?.[`${prefix}Vit`], 0),
+    luck: parseIntegerField(body?.[`${prefix}Luck`], 0),
+    crit: parseIntegerField(body?.[`${prefix}Crit`], 0)
+  };
+}
+
+function parseItemEffectsFromBody(body) {
+  return {
+    energy: parseIntegerField(body?.effectEnergy, 0),
+    exp: parseIntegerField(body?.effectExp, 0),
+    coins: parseIntegerField(body?.effectCoins, 0)
+  };
+}
+
+function buildItemPayloadFromBody(body = {}) {
+  const stats = parseItemStatsFromBody(body);
+  const effects = parseItemEffectsFromBody(body);
+  return {
+    itemId: String(body.itemId || '').trim(),
+    name: String(body.name || '').trim(),
+    description: String(body.description || '').trim(),
+    type: String(body.type || '').trim(),
+    rarity: String(body.rarity || '').trim().toLowerCase(),
+    price: parseIntegerField(body.price, 0, { min: 0 }),
+    itemScore: parseIntegerField(body.itemScore, 0, { min: 0 }),
+    stats,
+    sellable: parseCheckboxValue(body.sellable, true),
+    consumable: parseCheckboxValue(body.consumable, false),
+    stackable: parseCheckboxValue(body.stackable, true),
+    tags: parseStringList(body.tags),
+    imageUrl: String(body.imageUrl || '').trim(),
+    wallpaperUrl: String(body.wallpaperUrl || '').trim(),
+    boxKey: String(body.boxKey || '').trim(),
+    effects
+  };
+}
+
+function csvEscape(value) {
+  const raw = String(value ?? '');
+  if (!/[",\n]/.test(raw)) return raw;
+  return `"${raw.replace(/"/g, '""')}"`;
+}
+
+function parseCsvLine(line) {
+  const result = [];
+  let current = '';
+  let insideQuotes = false;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (char === '"' && insideQuotes && next === '"') {
+      current += '"';
+      index += 1;
+      continue;
+    }
+    if (char === '"') {
+      insideQuotes = !insideQuotes;
+      continue;
+    }
+    if (char === ',' && !insideQuotes) {
+      result.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  result.push(current);
+  return result.map((entry) => entry.trim());
+}
+
+function parseItemsCsv(csvText = '') {
+  const lines = String(csvText || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!lines.length) return [];
+
+  const headers = parseCsvLine(lines[0]);
+  return lines.slice(1).map((line) => {
+    const values = parseCsvLine(line);
+    return headers.reduce((row, header, index) => {
+      row[header] = values[index] ?? '';
+      return row;
+    }, {});
+  });
+}
+
+function itemToCsvRow(item) {
+  const stats = item?.stats || {};
+  const effects = item?.effects || {};
+  return [
+    item?.itemId || '',
+    item?.name || '',
+    item?.description || '',
+    item?.type || '',
+    item?.rarity || '',
+    item?.price || 0,
+    item?.itemScore || 0,
+    stats.str || 0,
+    stats.agi || 0,
+    stats.vit || 0,
+    stats.luck || 0,
+    stats.crit || 0,
+    item?.sellable ? 'true' : 'false',
+    item?.consumable ? 'true' : 'false',
+    item?.stackable ? 'true' : 'false',
+    (item?.tags || []).join(','),
+    item?.imageUrl || '',
+    item?.wallpaperUrl || '',
+    item?.boxKey || '',
+    effects.energy || 0,
+    effects.exp || 0,
+    effects.coins || 0
+  ]
+    .map(csvEscape)
+    .join(',');
+}
+
+function buildItemCsv(items = []) {
+  const header = [
+    'itemId',
+    'name',
+    'description',
+    'type',
+    'rarity',
+    'price',
+    'itemScore',
+    'statsStr',
+    'statsAgi',
+    'statsVit',
+    'statsLuck',
+    'statsCrit',
+    'sellable',
+    'consumable',
+    'stackable',
+    'tags',
+    'imageUrl',
+    'wallpaperUrl',
+    'boxKey',
+    'effectEnergy',
+    'effectExp',
+    'effectCoins'
+  ].join(',');
+  return [header, ...items.map(itemToCsvRow)].join('\n');
+}
+
+function buildInventorySummary(inventory = [], itemMap = new Map()) {
+  return inventory.map((entry) => {
+    const item = itemMap.get(entry.itemId) || null;
+    return {
+      itemId: entry.itemId,
+      quantity: Number(entry.quantity) || 0,
+      refinement: Number(entry.refinement) || 0,
+      item
+    };
+  });
+}
+
+function summarizeInventoryByRarity(inventory = [], itemMap = new Map()) {
+  const summary = {};
+  for (const entry of inventory) {
+    const item = itemMap.get(entry.itemId);
+    if (!item) continue;
+    const rarity = String(item.rarity || 'common');
+    summary[rarity] = (summary[rarity] || 0) + Math.max(0, Number(entry.quantity) || 0);
+  }
+  return summary;
 }
 
 function serializeLogForSearch(log) {
@@ -2077,55 +2273,176 @@ router.get('/dashboard', requireAdmin, requireGuild, async (req, res) => {
 });
 
 // Economy: items
-router.get('/economy/items', requireAdmin, requireGuild, async (_req, res) => {
-  const items = await Item.find({}).sort({ createdAt: -1 }).limit(200);
-  return res.render('pages/admin/economy_items', { title: 'Items', items });
+router.get('/economy/items', requireAdmin, requireGuild, async (req, res) => {
+  const q = String(req.query.q || '').trim().slice(0, 80);
+  const filter = q
+    ? {
+        $or: [
+          { itemId: { $regex: escapeRegex(q), $options: 'i' } },
+          { name: { $regex: escapeRegex(q), $options: 'i' } },
+          { type: { $regex: escapeRegex(q), $options: 'i' } },
+          { rarity: { $regex: escapeRegex(q), $options: 'i' } },
+          { tags: { $regex: escapeRegex(q), $options: 'i' } }
+        ]
+      }
+    : {};
+  const items = await Item.find(filter).sort({ updatedAt: -1, createdAt: -1 }).limit(300).lean();
+  const flash = req.session.flash || null;
+  delete req.session.flash;
+  return res.render('pages/admin/economy_items', {
+    title: 'Items',
+    items,
+    q,
+    flash,
+    itemTypes: ITEM_TYPES,
+    rarities: CORE_RARITIES
+  });
 });
 
 router.post('/economy/items', requireAdmin, requireGuild, async (req, res) => {
-  const doc = {
-    itemId: String(req.body.itemId || '').trim(),
-    name: String(req.body.name || '').trim(),
-    description: String(req.body.description || '').trim(),
-    type: String(req.body.type || '').trim(),
-    rarity: String(req.body.rarity || '').trim().toLowerCase(),
-    price: Math.max(0, Math.floor(Number(req.body.price) || 0)),
-    sellable: Boolean(req.body.sellable),
-    consumable: Boolean(req.body.consumable),
-    stackable: Boolean(req.body.stackable),
-    tags: String(req.body.tags || '')
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean)
-  };
-  if (!doc.itemId || !doc.name || !doc.type || !doc.rarity) return res.redirect('/admin/economy/items');
+  const doc = buildItemPayloadFromBody(req.body);
+  if (!doc.itemId || !doc.name || !doc.type || !doc.rarity) {
+    setFlash(req, { type: 'warning', message: 'Item ID, name, type, and rarity are required.' });
+    return res.redirect('/admin/economy/items');
+  }
+  if (!ITEM_TYPES.includes(doc.type)) {
+    setFlash(req, { type: 'warning', message: 'Pick a valid item type.' });
+    return res.redirect('/admin/economy/items');
+  }
+  if (!CORE_RARITIES.includes(doc.rarity)) {
+    setFlash(req, { type: 'warning', message: 'Pick a valid rarity.' });
+    return res.redirect('/admin/economy/items');
+  }
+  if (!doc.itemScore) doc.itemScore = itemScoreFor(doc);
   await Item.updateOne({ itemId: doc.itemId }, { $set: doc }, { upsert: true });
+  setFlash(req, { type: 'success', message: `Saved item ${doc.name} (${doc.itemId}).` });
+  return res.redirect('/admin/economy/items');
+});
+
+router.post('/economy/items/import', requireAdmin, requireGuild, async (req, res) => {
+  const overwrite = parseCheckboxValue(req.body.overwrite, true);
+  const rows = parseItemsCsv(req.body.csv || '');
+  if (!rows.length) {
+    setFlash(req, { type: 'warning', message: 'Paste a CSV with a header row before importing.' });
+    return res.redirect('/admin/economy/items');
+  }
+
+  let imported = 0;
+  for (const row of rows) {
+    const doc = buildItemPayloadFromBody(row);
+    if (!doc.itemId || !doc.name || !ITEM_TYPES.includes(doc.type) || !CORE_RARITIES.includes(doc.rarity)) continue;
+    if (!doc.itemScore) doc.itemScore = itemScoreFor(doc);
+    // eslint-disable-next-line no-await-in-loop
+    await Item.updateOne(
+      { itemId: doc.itemId },
+      overwrite ? { $set: doc } : { $setOnInsert: doc },
+      { upsert: true }
+    );
+    imported += 1;
+  }
+
+  setFlash(req, { type: 'success', message: `Imported ${imported.toLocaleString('en-US')} item rows.` });
+  return res.redirect('/admin/economy/items');
+});
+
+router.get('/economy/items/export', requireAdmin, requireGuild, async (_req, res) => {
+  const items = await Item.find({}).sort({ itemId: 1 }).lean();
+  const csv = buildItemCsv(items);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="robot-items.csv"');
+  return res.send(csv);
+});
+
+router.post('/economy/items/delete', requireAdmin, requireGuild, async (req, res) => {
+  const itemId = String(req.body.itemId || '').trim();
+  if (!itemId) return res.redirect('/admin/economy/items');
+  await Item.deleteOne({ itemId });
+  await ShopListing.deleteMany({ itemId }).catch(() => null);
+  setFlash(req, { type: 'info', message: `Deleted item ${itemId}.` });
+  return res.redirect('/admin/economy/items');
+});
+
+router.post('/economy/items/remove-global', requireAdmin, requireGuild, async (req, res) => {
+  const itemId = String(req.body.itemId || '').trim();
+  const guildId = req.session.activeGuildId;
+  const accountGuildId = getEconomyAccountGuildId(guildId);
+  if (!itemId) return res.redirect('/admin/economy/items');
+
+  await User.updateMany({ guildId: accountGuildId }, { $pull: { inventory: { itemId } } }).catch(() => null);
+  const affectedUsers = await User.find({ guildId: accountGuildId }).select('_id equipped').lean().catch(() => []);
+  const updates = [];
+  for (const user of affectedUsers) {
+    const equipped = user?.equipped || {};
+    const nextSet = {};
+    for (const [slot, equippedItemId] of Object.entries(equipped)) {
+      if (equippedItemId === itemId) nextSet[`equipped.${slot}`] = null;
+    }
+    if (Object.keys(nextSet).length) {
+      updates.push({
+        updateOne: {
+          filter: { _id: user._id },
+          update: { $set: nextSet }
+        }
+      });
+    }
+  }
+  if (updates.length) await User.bulkWrite(updates).catch(() => null);
+  const recalcUsers = await User.find({ _id: { $in: affectedUsers.map((user) => user._id) } }).catch(() => []);
+  for (const user of recalcUsers) {
+    // eslint-disable-next-line no-await-in-loop
+    user.gearScore = await computeGearScore(user);
+    // eslint-disable-next-line no-await-in-loop
+    await user.save().catch(() => null);
+  }
+  setFlash(req, { type: 'warning', message: `Removed ${itemId} from player inventories and loadouts.` });
   return res.redirect('/admin/economy/items');
 });
 
 // Economy: shop
 router.get('/economy/shop', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
-  const [listings, items] = await Promise.all([
+  const q = String(req.query.q || '').trim().slice(0, 80);
+  const [listings, catalogItems] = await Promise.all([
     ShopListing.find({ guildId }).sort({ createdAt: -1 }).limit(300),
-    Item.find({}).sort({ name: 1 }).limit(500)
+    Item.find(
+      q
+        ? {
+            $or: [
+              { itemId: { $regex: escapeRegex(q), $options: 'i' } },
+              { name: { $regex: escapeRegex(q), $options: 'i' } },
+              { type: { $regex: escapeRegex(q), $options: 'i' } }
+            ]
+          }
+        : {}
+    )
+      .sort({ name: 1 })
+      .limit(500)
+      .lean()
   ]);
-  const byId = new Map(items.map((i) => [i.itemId, i]));
-  return res.render('pages/admin/economy_shop', { title: 'Shop', listings, byId, items });
+  const listingItemIds = listings.map((listing) => listing.itemId);
+  const byIdItems = await Item.find({ itemId: { $in: [...new Set([...listingItemIds, ...catalogItems.map((item) => item.itemId)])] } }).lean();
+  const byId = new Map(byIdItems.map((i) => [i.itemId, i]));
+  const flash = req.session.flash || null;
+  delete req.session.flash;
+  return res.render('pages/admin/economy_shop', { title: 'Shop', listings, byId, items: catalogItems, q, flash, rarities: CORE_RARITIES });
 });
 
 router.post('/economy/shop', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
   const itemId = String(req.body.itemId || '').trim();
-  const price = Math.max(0, Math.floor(Number(req.body.price) || 0));
-  const limited = Boolean(req.body.limited);
-  const stock = limited ? Math.max(0, Math.floor(Number(req.body.stock) || 0)) : -1;
-  if (!itemId) return res.redirect('/admin/economy/shop');
+  const price = parseIntegerField(req.body.price, 0, { min: 0 });
+  const limited = parseCheckboxValue(req.body.limited, false);
+  const stock = limited ? parseIntegerField(req.body.stock, 0, { min: 0 }) : -1;
+  if (!itemId) {
+    setFlash(req, { type: 'warning', message: 'Select an item to list in the shop.' });
+    return res.redirect('/admin/economy/shop');
+  }
   await ShopListing.updateOne(
     { guildId, itemId },
     { $set: { guildId, itemId, price, limited, stock } },
     { upsert: true }
   );
+  setFlash(req, { type: 'success', message: `Saved shop listing for ${itemId}.` });
   return res.redirect('/admin/economy/shop');
 });
 
@@ -2133,6 +2450,7 @@ router.post('/economy/shop/delete', requireAdmin, requireGuild, async (req, res)
   const guildId = req.session.activeGuildId;
   const itemId = String(req.body.itemId || '').trim();
   if (itemId) await ShopListing.deleteOne({ guildId, itemId });
+  setFlash(req, { type: 'info', message: itemId ? `Removed ${itemId} from the shop.` : 'Listing removed.' });
   return res.redirect('/admin/economy/shop');
 });
 
@@ -2634,6 +2952,323 @@ router.post('/economy/users/exp-all', requireAdmin, requireGuild, async (req, re
     message: `Granted ${safeAmount.toLocaleString('en-US')} EXP to ${Number(modified || 0).toLocaleString('en-US')} users.`
   });
   return res.redirect('/admin/economy/users');
+});
+
+router.get('/economy/users/:discordId', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const accountGuildId = getEconomyAccountGuildId(guildId);
+  const discordId = String(req.params.discordId || '').trim();
+  if (!isSnowflake(discordId)) {
+    setFlash(req, { type: 'warning', message: 'Invalid Discord ID.' });
+    return res.redirect('/admin/economy/users');
+  }
+
+  const [user, items, transactions, cfg] = await Promise.all([
+    User.findOne({ guildId: accountGuildId, discordId }),
+    Item.find({}).sort({ rarity: 1, name: 1 }).lean(),
+    Transaction.find({ guildId, discordId }).sort({ createdAt: -1 }).limit(100).lean(),
+    getOrCreateGuildConfig(guildId)
+  ]);
+
+  if (!user) {
+    setFlash(req, { type: 'warning', message: 'User not found.' });
+    return res.redirect('/admin/economy/users');
+  }
+
+  const snapshot = await buildCharacterSnapshot(user);
+  const itemMap = new Map(items.map((item) => [item.itemId, item]));
+  const inventory = buildInventorySummary(user.inventory || [], itemMap);
+  const inventoryByRarity = summarizeInventoryByRarity(user.inventory || [], itemMap);
+  const flash = req.session.flash || null;
+  delete req.session.flash;
+
+  return res.render('pages/admin/economy_user_detail', {
+    title: 'User Detail',
+    user,
+    snapshot,
+    items,
+    itemMap,
+    inventory,
+    inventoryByRarity,
+    transactions,
+    flash,
+    guildId,
+    whitelist: normalizeCoinGrantWhitelistEntries(cfg.economy?.coinGrantWhitelist || []),
+    itemTypes: ITEM_TYPES,
+    rarities: CORE_RARITIES
+  });
+});
+
+router.post('/economy/users/:discordId/update', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const accountGuildId = getEconomyAccountGuildId(guildId);
+  const discordId = String(req.params.discordId || '').trim();
+  const user = await User.findOne({ guildId: accountGuildId, discordId });
+  if (!user) {
+    setFlash(req, { type: 'warning', message: 'User not found.' });
+    return res.redirect('/admin/economy/users');
+  }
+
+  user.username = String(req.body.username || user.username || '').trim();
+  user.balance = parseIntegerField(req.body.balance, user.balance, { min: 0 });
+  user.bank = parseIntegerField(req.body.bank, user.bank, { min: 0 });
+  user.bankMax = parseIntegerField(req.body.bankMax, user.bankMax, { min: 0 });
+  user.level = parseIntegerField(req.body.level, user.level, { min: 1, max: 255 });
+  user.exp = parseIntegerField(req.body.exp, user.exp, { min: 0 });
+  user.statPoints = parseIntegerField(req.body.statPoints, user.statPoints, { min: 0 });
+  user.maxHp = parseIntegerField(req.body.maxHp, user.maxHp, { min: 1 });
+  user.energy = parseIntegerField(req.body.energy, user.energy, { min: 0 });
+  user.energyMax = parseIntegerField(req.body.energyMax, user.energyMax, { min: 1 });
+  user.profileBio = String(req.body.profileBio || user.profileBio || '').trim() || 'default';
+  user.profileTitle = String(req.body.profileTitle || user.profileTitle || '').trim() || 'default';
+  user.profileWallpaper = String(req.body.profileWallpaper || user.profileWallpaper || 'default').trim() || 'default';
+  user.sharedBankEnabled = parseCheckboxValue(req.body.sharedBankEnabled, user.sharedBankEnabled);
+  user.stats = normalizeStats(parseItemStatsFromBody(req.body, 'character'));
+
+  const equipped = {
+    headGear: String(req.body.equippedHeadGear || '').trim() || null,
+    eyeGear: String(req.body.equippedEyeGear || '').trim() || null,
+    faceGear: String(req.body.equippedFaceGear || '').trim() || null,
+    rHand: String(req.body.equippedRHand || '').trim() || null,
+    lHand: String(req.body.equippedLHand || '').trim() || null,
+    robe: String(req.body.equippedRobe || '').trim() || null,
+    shoes: String(req.body.equippedShoes || '').trim() || null,
+    rAccessory: String(req.body.equippedRAccessory || '').trim() || null,
+    lAccessory: String(req.body.equippedLAccessory || '').trim() || null
+  };
+  user.equipped = equipped;
+  user.gearScore = await computeGearScore(user);
+  await user.save();
+
+  setFlash(req, { type: 'success', message: `Updated ${user.username || user.discordId}.` });
+  return res.redirect(`/admin/economy/users/${discordId}`);
+});
+
+router.post('/economy/users/:discordId/inventory/add', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const accountGuildId = getEconomyAccountGuildId(guildId);
+  const discordId = String(req.params.discordId || '').trim();
+  const user = await User.findOne({ guildId: accountGuildId, discordId });
+  const itemId = String(req.body.itemId || '').trim();
+  const quantity = parseIntegerField(req.body.quantity, 1, { min: 1, max: 999999 });
+  const refinement = parseIntegerField(req.body.refinement, 0, { min: 0, max: 10 });
+  if (!user || !itemId) {
+    setFlash(req, { type: 'warning', message: 'User or item not found.' });
+    return res.redirect(`/admin/economy/users/${discordId}`);
+  }
+
+  const added = await addItemToInventory({ user, itemId, quantity, refinement });
+  if (!added.ok) {
+    setFlash(req, { type: 'warning', message: added.reason || 'Could not add item.' });
+    return res.redirect(`/admin/economy/users/${discordId}`);
+  }
+
+  await user.save();
+  setFlash(req, { type: 'success', message: `Added ${quantity}x ${itemId} to the inventory.` });
+  return res.redirect(`/admin/economy/users/${discordId}`);
+});
+
+router.post('/economy/users/:discordId/inventory/remove', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const accountGuildId = getEconomyAccountGuildId(guildId);
+  const discordId = String(req.params.discordId || '').trim();
+  const user = await User.findOne({ guildId: accountGuildId, discordId });
+  const itemId = String(req.body.itemId || '').trim();
+  const quantity = parseIntegerField(req.body.quantity, 1, { min: 1, max: 999999 });
+  if (!user || !itemId) {
+    setFlash(req, { type: 'warning', message: 'User or item not found.' });
+    return res.redirect(`/admin/economy/users/${discordId}`);
+  }
+
+  const removed = await removeItemFromInventory({ user, itemId, quantity });
+  if (!removed.ok) {
+    setFlash(req, { type: 'warning', message: removed.reason || 'Could not remove item.' });
+    return res.redirect(`/admin/economy/users/${discordId}`);
+  }
+
+  if (countInventoryQuantity(user, itemId) <= 0) {
+    for (const [slot, equippedItemId] of Object.entries(user.equipped || {})) {
+      if (equippedItemId === itemId) user.equipped[slot] = null;
+    }
+  }
+  user.gearScore = await computeGearScore(user);
+  await user.save();
+  setFlash(req, { type: 'info', message: `Removed ${quantity}x ${itemId} from the inventory.` });
+  return res.redirect(`/admin/economy/users/${discordId}`);
+});
+
+router.post('/economy/users/:discordId/reset', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const accountGuildId = getEconomyAccountGuildId(guildId);
+  const discordId = String(req.params.discordId || '').trim();
+  const user = await User.findOne({ guildId: accountGuildId, discordId });
+  if (!user) {
+    setFlash(req, { type: 'warning', message: 'User not found.' });
+    return res.redirect('/admin/economy/users');
+  }
+
+  const preserved = { guildId: user.guildId, discordId: user.discordId, username: user.username };
+  user.balance = 0;
+  user.bank = 0;
+  user.bankMax = 5000;
+  user.dailyStreak = 0;
+  user.lastDaily = null;
+  user.level = 1;
+  user.exp = 0;
+  user.statPoints = 0;
+  user.stats = { str: 5, agi: 5, vit: 5, luck: 5, crit: 5 };
+  user.maxHp = 100;
+  user.energy = 100;
+  user.energyMax = 100;
+  user.lastHuntAt = null;
+  user.inventory = [];
+  user.equipped = {};
+  user.gearScore = 0;
+  user.marriedTo = null;
+  user.marriedSince = null;
+  user.marriageRingItemId = null;
+  user.sharedBankEnabled = false;
+  user.lastMarriageDaily = null;
+  user.pvpRating = 1000;
+  user.pvpWins = 0;
+  user.pvpLosses = 0;
+  user.profileWallpaper = 'default';
+  user.profileBio = 'default';
+  user.profileTitle = 'default';
+  user.following = [];
+  user.followers = [];
+  user.gachaPity = [];
+  user.economyBan = { active: false, reason: '', by: '', at: null };
+  Object.assign(user, preserved);
+  await user.save();
+
+  setFlash(req, { type: 'warning', message: `Reset ${user.username || user.discordId} back to a fresh RPG profile.` });
+  return res.redirect(`/admin/economy/users/${discordId}`);
+});
+
+router.post('/economy/users/:discordId/ban', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const accountGuildId = getEconomyAccountGuildId(guildId);
+  const discordId = String(req.params.discordId || '').trim();
+  const user = await User.findOne({ guildId: accountGuildId, discordId });
+  if (!user) {
+    setFlash(req, { type: 'warning', message: 'User not found.' });
+    return res.redirect('/admin/economy/users');
+  }
+
+  user.economyBan = {
+    active: true,
+    reason: String(req.body.reason || '').trim().slice(0, 240),
+    by: adminDisplayName(req.adminUser),
+    at: new Date()
+  };
+  await user.save();
+  setFlash(req, { type: 'warning', message: `Banned ${user.username || user.discordId} from the economy system.` });
+  return res.redirect(`/admin/economy/users/${discordId}`);
+});
+
+router.post('/economy/users/:discordId/unban', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const accountGuildId = getEconomyAccountGuildId(guildId);
+  const discordId = String(req.params.discordId || '').trim();
+  const user = await User.findOne({ guildId: accountGuildId, discordId });
+  if (!user) {
+    setFlash(req, { type: 'warning', message: 'User not found.' });
+    return res.redirect('/admin/economy/users');
+  }
+
+  user.economyBan = { active: false, reason: '', by: '', at: null };
+  await user.save();
+  setFlash(req, { type: 'success', message: `Restored economy access for ${user.username || user.discordId}.` });
+  return res.redirect(`/admin/economy/users/${discordId}`);
+});
+
+router.get('/economy/analytics', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const accountGuildId = getEconomyAccountGuildId(guildId);
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const [usage, totals, users, topPlayers, topPvp, items] = await Promise.all([
+    Transaction.aggregate([
+      { $match: { guildId, createdAt: { $gte: since } } },
+      { $group: { _id: '$type', count: { $sum: 1 }, net: { $sum: '$amount' } } },
+      { $sort: { count: -1 } },
+      { $limit: 20 }
+    ]).catch(() => []),
+    Transaction.aggregate([
+      { $match: { guildId, createdAt: { $gte: since } } },
+      {
+        $group: {
+          _id: null,
+          generated: { $sum: { $cond: [{ $gt: ['$amount', 0] }, '$amount', 0] } },
+          spent: { $sum: { $cond: [{ $lt: ['$amount', 0] }, { $abs: '$amount' }, 0] } }
+        }
+      }
+    ]).catch(() => []),
+    User.find({ guildId: accountGuildId }).lean(),
+    User.find({ guildId: accountGuildId }).sort({ balance: -1 }).limit(10).lean(),
+    User.find({ guildId: accountGuildId }).sort({ pvpRating: -1, pvpWins: -1 }).limit(10).lean(),
+    Item.find({}).lean()
+  ]);
+
+  const itemMap = new Map(items.map((item) => [item.itemId, item]));
+  const rarityTotals = users.reduce((acc, user) => {
+    const summary = summarizeInventoryByRarity(user.inventory || [], itemMap);
+    for (const [rarity, count] of Object.entries(summary)) acc[rarity] = (acc[rarity] || 0) + count;
+    return acc;
+  }, {});
+
+  const flash = req.session.flash || null;
+  delete req.session.flash;
+
+  return res.render('pages/admin/economy_analytics', {
+    title: 'RoBot Analytics',
+    flash,
+    usage,
+    totals: totals[0] || { generated: 0, spent: 0 },
+    rarityTotals,
+    topPlayers,
+    topPvp,
+    playerCount: users.length
+  });
+});
+
+router.get('/economy/settings', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const cfg = await getOrCreateGuildConfig(guildId);
+  const flash = req.session.flash || null;
+  delete req.session.flash;
+  return res.render('pages/admin/economy_settings', { title: 'RoBot Controls', cfg, flash });
+});
+
+router.post('/economy/settings', requireAdmin, requireGuild, async (req, res) => {
+  const guildId = req.session.activeGuildId;
+  const cfg = await getOrCreateGuildConfig(guildId);
+  cfg.economy.dailyBase = parseIntegerField(req.body.dailyBase, cfg.economy.dailyBase, { min: 0 });
+  cfg.economy.dailyStreakBonus = parseIntegerField(req.body.dailyStreakBonus, cfg.economy.dailyStreakBonus, { min: 0 });
+  cfg.economy.bankInterestRate = parseFloatField(req.body.bankInterestRate, cfg.economy.bankInterestRate, { min: 0, max: 1 });
+  cfg.economy.coinRewardMultiplier = parseFloatField(req.body.coinRewardMultiplier, cfg.economy.coinRewardMultiplier, {
+    min: 0.1,
+    max: 10
+  });
+  cfg.economy.dropRateMultiplier = parseFloatField(req.body.dropRateMultiplier, cfg.economy.dropRateMultiplier, {
+    min: 0.1,
+    max: 10
+  });
+  cfg.economy.huntEnergyCost = parseIntegerField(req.body.huntEnergyCost, cfg.economy.huntEnergyCost, {
+    min: 1,
+    max: 1000
+  });
+  cfg.economy.pvpBetsEnabled = parseCheckboxValue(req.body.pvpBetsEnabled, cfg.economy.pvpBetsEnabled);
+  cfg.economy.eventBoostEnabled = parseCheckboxValue(req.body.eventBoostEnabled, cfg.economy.eventBoostEnabled);
+  cfg.economy.eventBoostMultiplier = parseFloatField(req.body.eventBoostMultiplier, cfg.economy.eventBoostMultiplier, {
+    min: 1,
+    max: 10
+  });
+  await cfg.save();
+
+  setFlash(req, { type: 'success', message: 'RoBot economy controls updated.' });
+  return res.redirect('/admin/economy/settings');
 });
 
 // Backups

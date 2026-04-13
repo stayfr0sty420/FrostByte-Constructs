@@ -1,7 +1,9 @@
 const { logger } = require('../../../config/logger');
+const User = require('../../../db/models/User');
 const { dispatchComponent } = require('../components/dispatcher');
 const { isGuildApproved } = require('../../../services/admin/guildRegistryService');
 const { hasAcceptedEconomyRules, countAcceptedEconomyRules } = require('../../../services/economy/rulesConsentService');
+const { getEconomyAccountGuildId } = require('../../../services/economy/accountScope');
 const { buildRulesPrompt } = require('../rules/rulesPrompt');
 
 const PUBLIC_COMMAND_NAMES = new Set(['help', 'dev', 'exec', 'execs']);
@@ -38,6 +40,29 @@ async function execute(client, interaction) {
     if (interaction.isChatInputCommand()) {
       const command = client.commands.get(interaction.commandName);
       if (!command) return;
+
+      if (!PUBLIC_COMMAND_NAMES.has(interaction.commandName) && interaction.guildId) {
+        const accountGuildId = getEconomyAccountGuildId(interaction.guildId);
+        const profile = await User.findOne({
+          guildId: accountGuildId,
+          discordId: interaction.user.id
+        })
+          .select('economyBan')
+          .lean()
+          .catch(() => null);
+        if (profile?.economyBan?.active) {
+          const reason = String(profile.economyBan.reason || '').trim();
+          await interaction
+            .reply({
+              content: reason
+                ? `⛔ You are banned from the economy system.\nReason: ${reason}`
+                : '⛔ You are banned from the economy system.',
+              ephemeral: true
+            })
+            .catch(() => null);
+          return;
+        }
+      }
 
       // Require rules acceptance for economy commands (except /help).
       if (!PUBLIC_COMMAND_NAMES.has(interaction.commandName)) {

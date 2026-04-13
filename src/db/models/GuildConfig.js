@@ -42,7 +42,13 @@ const GuildConfigSchema = new mongoose.Schema(
       dailyStreakBonus: { type: Number, default: 100 },
       bankInterestRate: { type: Number, default: 0.01 },
       interestLastAppliedAt: { type: Date, default: null },
-      coinGrantWhitelist: { type: [String], default: [] }
+      coinGrantWhitelist: { type: [String], default: [] },
+      coinRewardMultiplier: { type: Number, default: 1, min: 0.1, max: 10 },
+      dropRateMultiplier: { type: Number, default: 1, min: 0.1, max: 10 },
+      huntEnergyCost: { type: Number, default: 50, min: 1, max: 1000 },
+      pvpBetsEnabled: { type: Boolean, default: true },
+      eventBoostEnabled: { type: Boolean, default: false },
+      eventBoostMultiplier: { type: Number, default: 1.25, min: 1, max: 10 }
     },
 
     verification: {

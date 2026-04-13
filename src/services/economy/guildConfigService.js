@@ -57,7 +57,13 @@ async function getOrCreateGuildConfig(guildId) {
         dailyBase: env.DAILY_BASE,
         dailyStreakBonus: env.DAILY_STREAK_BONUS,
         bankInterestRate: env.BANK_INTEREST_RATE,
-        coinGrantWhitelist: []
+        coinGrantWhitelist: [],
+        coinRewardMultiplier: 1,
+        dropRateMultiplier: 1,
+        huntEnergyCost: 50,
+        pvpBetsEnabled: true,
+        eventBoostEnabled: false,
+        eventBoostMultiplier: 1.25
       }
     }
   };
@@ -161,6 +167,30 @@ async function getOrCreateGuildConfig(guildId) {
   }
   if (!Array.isArray(cfg.economy.coinGrantWhitelist)) {
     cfg.economy.coinGrantWhitelist = [];
+    changed = true;
+  }
+  if (!Number.isFinite(Number(cfg.economy.coinRewardMultiplier)) || Number(cfg.economy.coinRewardMultiplier) <= 0) {
+    cfg.economy.coinRewardMultiplier = 1;
+    changed = true;
+  }
+  if (!Number.isFinite(Number(cfg.economy.dropRateMultiplier)) || Number(cfg.economy.dropRateMultiplier) <= 0) {
+    cfg.economy.dropRateMultiplier = 1;
+    changed = true;
+  }
+  if (!Number.isFinite(Number(cfg.economy.huntEnergyCost)) || Number(cfg.economy.huntEnergyCost) <= 0) {
+    cfg.economy.huntEnergyCost = 50;
+    changed = true;
+  }
+  if (typeof cfg.economy.pvpBetsEnabled !== 'boolean') {
+    cfg.economy.pvpBetsEnabled = true;
+    changed = true;
+  }
+  if (typeof cfg.economy.eventBoostEnabled !== 'boolean') {
+    cfg.economy.eventBoostEnabled = false;
+    changed = true;
+  }
+  if (!Number.isFinite(Number(cfg.economy.eventBoostMultiplier)) || Number(cfg.economy.eventBoostMultiplier) < 1) {
+    cfg.economy.eventBoostMultiplier = 1.25;
     changed = true;
   }
 

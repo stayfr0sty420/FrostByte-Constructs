@@ -12,6 +12,7 @@ const InventoryItemSchema = new mongoose.Schema(
 const GachaPitySchema = new mongoose.Schema(
   {
     boxId: { type: String, required: true },
+    counters: { type: Map, of: Number, default: {} },
     pullsSinceLegendary: { type: Number, required: true, min: 0, default: 0 }
   },
   { _id: false }
@@ -64,10 +65,12 @@ const UserSchema = new mongoose.Schema(
     exp: { type: Number, default: 0, min: 0 },
     statPoints: { type: Number, default: 0, min: 0 },
     stats: { type: StatsSchema, default: () => ({}) },
+    maxHp: { type: Number, default: 100, min: 1 },
 
     energy: { type: Number, default: 100, min: 0 },
     energyMax: { type: Number, default: 100, min: 0 },
     energyUpdatedAt: { type: Date, default: Date.now },
+    lastHuntAt: { type: Date, default: null },
 
     inventory: { type: [InventoryItemSchema], default: [] },
     equipped: { type: EquippedSchema, default: () => ({}) },
@@ -75,6 +78,9 @@ const UserSchema = new mongoose.Schema(
 
     marriedTo: { type: String, default: null },
     marriedSince: { type: Date, default: null },
+    marriageRingItemId: { type: String, default: null },
+    sharedBankEnabled: { type: Boolean, default: false },
+    lastMarriageDaily: { type: Date, default: null },
 
     pvpRating: { type: Number, default: 1000, min: 0 },
     pvpWins: { type: Number, default: 0, min: 0 },
@@ -87,7 +93,13 @@ const UserSchema = new mongoose.Schema(
     following: { type: [String], default: [] },
     followers: { type: [String], default: [] },
 
-    gachaPity: { type: [GachaPitySchema], default: [] }
+    gachaPity: { type: [GachaPitySchema], default: [] },
+    economyBan: {
+      active: { type: Boolean, default: false },
+      reason: { type: String, default: '' },
+      by: { type: String, default: '' },
+      at: { type: Date, default: null }
+    }
   },
   { timestamps: true }
 );

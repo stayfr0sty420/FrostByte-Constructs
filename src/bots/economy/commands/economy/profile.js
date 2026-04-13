@@ -12,6 +12,7 @@ const {
   unfollow,
   getProfile
 } = require('../../../../services/economy/profileService');
+const { buildCharacterSnapshot } = require('../../../../services/economy/characterService');
 
 async function resolveDisplayName(interaction, target) {
   if (target?.id === interaction.user.id) {
@@ -79,6 +80,7 @@ module.exports = {
       if (!profile) return await interaction.reply({ content: 'No profile data found.', ephemeral: true });
 
       const { user, wallpaper } = profile;
+      const snapshot = await buildCharacterSnapshot(user);
       const embed = new EmbedBuilder()
         .setTitle(`${displayName}'s Profile`)
         .setColor(0x9b59b6)
@@ -87,6 +89,10 @@ module.exports = {
           { name: 'Bio', value: user.profileBio || 'default', inline: false },
           { name: 'Level', value: `Lv ${formatNumber(user.level)}`, inline: true },
           { name: 'Credits', value: formatCredits(user.balance, emojis.currency), inline: true },
+          { name: 'Gear Score', value: formatNumber(snapshot.gearScore), inline: true },
+          { name: 'Max HP', value: formatNumber(snapshot.maxHp), inline: true },
+          { name: 'Marriage', value: user.marriedTo ? `<@${user.marriedTo}>` : 'Single', inline: true },
+          { name: 'Married Bonus', value: user.marriedTo ? '+5% LUCK active' : 'None', inline: true },
           { name: 'Followers', value: String(user.followers?.length || 0), inline: true },
           { name: 'Following', value: String(user.following?.length || 0), inline: true }
         )

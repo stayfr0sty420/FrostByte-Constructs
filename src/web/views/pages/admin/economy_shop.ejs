@@ -6,70 +6,158 @@
   <body class="app admin-page">
     <%- include('../../partials/nav') %>
     <main class="container py-4">
-      <h1 class="h4 mb-3">Shop</h1>
+      <section class="dashboard-hero mb-4">
+        <div class="dashboard-hero__copy">
+          <div class="hero-eyebrow">RoBot Shop Management</div>
+          <h1 class="hero-title mb-2">Shop</h1>
+          <p class="hero-text mb-0">Control item availability, pricing, stock, and quick stat comparisons for the live shop.</p>
+        </div>
+      </section>
 
-      <div class="card shadow-sm mb-4">
-        <div class="card-body">
-          <h2 class="h6">Add / Update Listing</h2>
-          <form method="post" action="/admin/economy/shop" class="row g-2">
-            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-            <div class="col-12 col-md-6">
-              <label class="form-label">Item</label>
-              <select class="form-select" name="itemId" required>
-                <% items.forEach(it => { %>
-                  <option value="<%= it.itemId %>"><%= it.name %> (<%= it.itemId %>)</option>
-                <% }) %>
-              </select>
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="row g-4">
+        <div class="col-12 col-xl-5">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Add / Update Listing</h2>
+              <form method="post" action="/admin/economy/shop" class="row g-3">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <div class="col-12">
+                  <label class="form-label">Item</label>
+                  <select class="form-select" name="itemId" required>
+                    <% items.forEach(it => { %>
+                      <option value="<%= it.itemId %>"><%= it.name %> • <%= it.rarity %> • <%= it.type %></option>
+                    <% }) %>
+                  </select>
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Price</label>
+                  <input class="form-control" name="price" type="number" min="0" value="0" required />
+                </div>
+                <div class="col-6">
+                  <label class="form-label">Stock</label>
+                  <input class="form-control" name="stock" type="number" min="0" value="0" />
+                </div>
+                <div class="col-12">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="limited" value="1" />
+                    <label class="form-check-label">Limited stock</label>
+                  </div>
+                </div>
+                <div class="col-12 d-flex justify-content-end">
+                  <button class="btn btn-primary" type="submit">Save Listing</button>
+                </div>
+              </form>
             </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label">Price</label>
-              <input class="form-control" name="price" type="number" min="0" value="0" required />
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label">Stock (if limited)</label>
-              <input class="form-control" name="stock" type="number" min="0" value="0" />
-            </div>
-            <div class="col-12 d-flex align-items-center gap-3">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="limited" value="1" />
-                <label class="form-check-label">Limited stock</label>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-7">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <h2 class="h5 mb-0">Catalog Search</h2>
+                <span class="text-muted small"><%= items.length %> catalog item(s)</span>
               </div>
-              <button class="btn btn-primary ms-auto" type="submit">Save Listing</button>
+              <form method="get" action="/admin/economy/shop" class="row g-2">
+                <div class="col-12 col-md">
+                  <input class="form-control" name="q" value="<%= q || '' %>" placeholder="Search by name, item ID, or type" />
+                </div>
+                <div class="col-12 col-md-auto d-grid">
+                  <button class="btn btn-outline-light" type="submit">Search</button>
+                </div>
+              </form>
+              <div class="table-responsive mt-3">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Stats</th>
+                      <th>Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% if (!items.length) { %>
+                      <tr>
+                        <td colspan="3" class="text-muted py-3">No items matched this filter.</td>
+                      </tr>
+                    <% } %>
+                    <% items.slice(0, 20).forEach(it => { %>
+                      <tr>
+                        <td>
+                          <div class="fw-semibold"><%= it.name %></div>
+                          <div class="text-muted small"><code><%= it.itemId %></code> • <%= it.rarity %> • <%= it.type %></div>
+                        </td>
+                        <td class="small">
+                          STR <%= it.stats?.str || 0 %> • AGI <%= it.stats?.agi || 0 %> • VIT <%= it.stats?.vit || 0 %> •
+                          LUCK <%= it.stats?.luck || 0 %> • CRIT <%= it.stats?.crit || 0 %>
+                        </td>
+                        <td><%= Number(it.itemScore || 0).toLocaleString() %></td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </form>
+          </div>
         </div>
       </div>
 
-      <div class="card shadow-sm">
+      <div class="card shadow-sm mt-4">
         <div class="card-body">
-          <h2 class="h6 mb-3">Listings</h2>
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <h2 class="h5 mb-0">Active Listings</h2>
+            <div class="text-muted small"><%= listings.length %> listing(s)</div>
+          </div>
           <div class="table-responsive">
             <table class="table table-sm align-middle">
               <thead>
                 <tr>
                   <th>Item</th>
+                  <th>Rarity</th>
                   <th class="text-end">Price</th>
                   <th class="text-end">Stock</th>
+                  <th>Comparison</th>
                   <th class="text-end">Actions</th>
                 </tr>
               </thead>
               <tbody>
+                <% if (!listings.length) { %>
+                  <tr>
+                    <td colspan="6" class="text-muted py-4">No shop listings yet.</td>
+                  </tr>
+                <% } %>
                 <% listings.forEach(l => { const it = byId.get(l.itemId); %>
                   <tr>
-                    <td>
+                    <td data-label="Item">
                       <div class="fw-semibold"><%= it ? it.name : l.itemId %></div>
-                      <div class="text-muted small"><code><%= l.itemId %></code></div>
+                      <div class="text-muted small"><code><%= l.itemId %></code> <%= it ? `• ${it.type}` : '' %></div>
                     </td>
-                    <td class="text-end"><%= l.price %></td>
-                    <td class="text-end"><%= l.limited ? l.stock : '∞' %></td>
-                    <td class="text-end">
+                    <td data-label="Rarity">
+                      <span class="badge text-bg-secondary text-uppercase"><%= it?.rarity || 'unknown' %></span>
+                    </td>
+                    <td data-label="Price" class="text-end"><%= Number(l.price || 0).toLocaleString() %></td>
+                    <td data-label="Stock" class="text-end"><%= l.limited ? Number(l.stock || 0).toLocaleString() : '∞' %></td>
+                    <td data-label="Comparison" class="small">
+                      <% if (it) { %>
+                        Score <strong><%= Number(it.itemScore || 0).toLocaleString() %></strong>
+                        <br />
+                        STR <%= it.stats?.str || 0 %> • AGI <%= it.stats?.agi || 0 %> • VIT <%= it.stats?.vit || 0 %>
+                      <% } else { %>
+                        <span class="text-muted">Missing item record</span>
+                      <% } %>
+                    </td>
+                    <td data-label="Actions" class="text-end">
                       <form method="post" action="/admin/economy/shop/delete" class="d-inline">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                         <input type="hidden" name="itemId" value="<%= l.itemId %>" />
                         <button
                           class="btn btn-outline-danger btn-sm"
                           type="submit"
-                          data-confirm="Delete this listing?"
+                          data-confirm="Delete this shop listing?"
                           data-confirm-title="Delete listing?"
                           data-confirm-ok="Delete"
                           data-confirm-cancel="Cancel"

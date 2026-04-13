@@ -7,92 +7,252 @@
     <%- include('../../partials/nav') %>
     <main class="container py-4">
       <section class="economy-items-hero mb-4">
-        <div class="hero-eyebrow">Economy Inventory</div>
+        <div class="hero-eyebrow">RoBot Item Management</div>
         <h1 class="hero-title mb-2">Items</h1>
-        <p class="hero-text mb-0">Create, adjust, and review the latest economy items without losing readability on smaller screens.</p>
+        <p class="hero-text mb-0">Create, bulk import, export, and clean up the RPG item database from one screen.</p>
       </section>
 
-      <div class="card shadow-sm mb-4">
-        <div class="card-body">
-          <h2 class="h6">Create / Update Item</h2>
-          <form method="post" action="/admin/economy/items" class="row g-2 economy-item-form">
-            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-            <div class="col-12 col-md-4">
-              <label class="form-label">itemId</label>
-              <input class="form-control" name="itemId" required />
-            </div>
-            <div class="col-12 col-md-4">
-              <label class="form-label">name</label>
-              <input class="form-control" name="name" required />
-            </div>
-            <div class="col-12 col-md-4">
-              <label class="form-label">type</label>
-              <input class="form-control" name="type" required />
-            </div>
-            <div class="col-12">
-              <label class="form-label">description</label>
-              <input class="form-control" name="description" />
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label">rarity</label>
-              <input class="form-control" name="rarity" placeholder="common" required />
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label">price</label>
-              <input class="form-control" name="price" type="number" min="0" value="0" />
-            </div>
-            <div class="col-12 col-md-6">
-              <label class="form-label">tags (comma separated)</label>
-              <input class="form-control" name="tags" />
-            </div>
-            <div class="col-12 economy-item-flags">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="sellable" value="1" checked />
-                <label class="form-check-label">sellable</label>
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="row g-4">
+        <div class="col-12 col-xl-7">
+          <div class="card shadow-sm h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+                <h2 class="h5 mb-0">Single Item Editor</h2>
+                <span class="badge text-bg-secondary"><%= items.length %> loaded</span>
               </div>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="consumable" value="1" />
-                <label class="form-check-label">consumable</label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" name="stackable" value="1" checked />
-                <label class="form-check-label">stackable</label>
-              </div>
-              <div class="economy-item-submit">
-                <button class="btn btn-primary" type="submit">Save</button>
-              </div>
+              <form method="post" action="/admin/economy/items" class="row g-3">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <div class="col-12 col-md-4">
+                  <label class="form-label">Item ID</label>
+                  <input class="form-control" name="itemId" placeholder="gear_arcblade" required />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="form-label">Name</label>
+                  <input class="form-control" name="name" placeholder="Arcblade" required />
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="form-label">Type</label>
+                  <select class="form-select" name="type" required>
+                    <% itemTypes.forEach(type => { %>
+                      <option value="<%= type %>"><%= type %></option>
+                    <% }) %>
+                  </select>
+                </div>
+
+                <div class="col-12">
+                  <label class="form-label">Description</label>
+                  <textarea class="form-control" name="description" rows="2" placeholder="Short item description"></textarea>
+                </div>
+
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Rarity</label>
+                  <select class="form-select" name="rarity" required>
+                    <% rarities.forEach(rarity => { %>
+                      <option value="<%= rarity %>"><%= rarity %></option>
+                    <% }) %>
+                  </select>
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Price</label>
+                  <input class="form-control" name="price" type="number" min="0" value="0" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Item Score</label>
+                  <input class="form-control" name="itemScore" type="number" min="0" value="0" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">Box Key</label>
+                  <input class="form-control" name="boxKey" placeholder="optional" />
+                </div>
+
+                <div class="col-12">
+                  <label class="form-label">Tags</label>
+                  <input class="form-control" name="tags" placeholder="ring,wallpaper,gacha_box,refine_crystal" />
+                </div>
+
+                <div class="col-6 col-lg-2">
+                  <label class="form-label">STR</label>
+                  <input class="form-control" name="statsStr" type="number" value="0" />
+                </div>
+                <div class="col-6 col-lg-2">
+                  <label class="form-label">AGI</label>
+                  <input class="form-control" name="statsAgi" type="number" value="0" />
+                </div>
+                <div class="col-6 col-lg-2">
+                  <label class="form-label">VIT</label>
+                  <input class="form-control" name="statsVit" type="number" value="0" />
+                </div>
+                <div class="col-6 col-lg-2">
+                  <label class="form-label">LUCK</label>
+                  <input class="form-control" name="statsLuck" type="number" value="0" />
+                </div>
+                <div class="col-6 col-lg-2">
+                  <label class="form-label">CRIT</label>
+                  <input class="form-control" name="statsCrit" type="number" value="0" />
+                </div>
+                <div class="col-6 col-lg-2">
+                  <label class="form-label">Effect Coins</label>
+                  <input class="form-control" name="effectCoins" type="number" value="0" />
+                </div>
+                <div class="col-6 col-lg-4">
+                  <label class="form-label">Effect Energy</label>
+                  <input class="form-control" name="effectEnergy" type="number" value="0" />
+                </div>
+                <div class="col-6 col-lg-4">
+                  <label class="form-label">Effect EXP</label>
+                  <input class="form-control" name="effectExp" type="number" value="0" />
+                </div>
+                <div class="col-12 col-lg-4">
+                  <label class="form-label">Image URL</label>
+                  <input class="form-control" name="imageUrl" placeholder="optional" />
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Wallpaper URL</label>
+                  <input class="form-control" name="wallpaperUrl" placeholder="optional" />
+                </div>
+
+                <div class="col-12 d-flex flex-wrap gap-3">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="sellable" value="1" checked />
+                    <label class="form-check-label">Sellable</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="consumable" value="1" />
+                    <label class="form-check-label">Consumable</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="stackable" value="1" checked />
+                    <label class="form-check-label">Stackable</label>
+                  </div>
+                </div>
+
+                <div class="col-12 d-flex justify-content-end">
+                  <button class="btn btn-primary" type="submit">Save Item</button>
+                </div>
+              </form>
             </div>
-          </form>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-5">
+          <div class="card shadow-sm mb-4">
+            <div class="card-body">
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+                <h2 class="h5 mb-0">CSV Uploader</h2>
+                <a class="btn btn-outline-secondary btn-sm" href="/admin/economy/items/export">Export Backup</a>
+              </div>
+              <form method="post" action="/admin/economy/items/import" class="row g-3">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <div class="col-12">
+                  <label class="form-label">CSV Content</label>
+                  <textarea class="form-control" name="csv" rows="11" placeholder="Paste CSV rows here with a header row."></textarea>
+                  <div class="form-text">Supported headers are the same as the export file.</div>
+                </div>
+                <div class="col-12">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="overwrite" value="1" checked />
+                    <label class="form-check-label">Overwrite existing items with the same itemId</label>
+                  </div>
+                </div>
+                <div class="col-12 d-flex justify-content-end">
+                  <button class="btn btn-outline-primary" type="submit">Import CSV</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Find Items</h2>
+              <form method="get" action="/admin/economy/items" class="row g-2">
+                <div class="col-12 col-md">
+                  <input class="form-control" name="q" value="<%= q || '' %>" placeholder="Search by ID, name, type, rarity, tag" />
+                </div>
+                <div class="col-12 col-md-auto d-grid">
+                  <button class="btn btn-outline-light" type="submit">Search</button>
+                </div>
+              </form>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="card shadow-sm">
+      <div class="card shadow-sm mt-4">
         <div class="card-body">
-          <h2 class="h6 mb-3">Existing Items (latest 100)</h2>
+          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+            <h2 class="h5 mb-0">Item Database</h2>
+            <div class="text-muted small">Latest <%= items.length %> result(s)</div>
+          </div>
           <div class="table-responsive economy-items-table-wrap">
             <table class="table table-sm align-middle economy-items-table">
               <thead>
                 <tr>
-                  <th>itemId</th>
-                  <th>name</th>
-                  <th>type</th>
-                  <th>rarity</th>
-                  <th class="text-end">price</th>
+                  <th>Item</th>
+                  <th>Type</th>
+                  <th>Rarity</th>
+                  <th class="text-end">Price</th>
+                  <th class="text-end">Score</th>
+                  <th>Flags</th>
+                  <th class="text-end">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 <% if (!items.length) { %>
                   <tr>
-                    <td colspan="5" class="text-muted small">No items found yet. Create one above to populate the inventory.</td>
+                    <td colspan="7" class="text-muted py-4">No items matched this query.</td>
                   </tr>
                 <% } %>
                 <% items.forEach(it => { %>
                   <tr>
-                    <td data-label="Item ID"><code><%= it.itemId %></code></td>
-                    <td data-label="Name"><%= it.name %></td>
+                    <td data-label="Item">
+                      <div class="fw-semibold"><%= it.name %></div>
+                      <div class="text-muted small"><code><%= it.itemId %></code></div>
+                    </td>
                     <td data-label="Type"><%= it.type %></td>
-                    <td data-label="Rarity"><%= it.rarity %></td>
-                    <td data-label="Price" class="text-end"><%= it.price %></td>
+                    <td data-label="Rarity"><span class="badge text-bg-secondary text-uppercase"><%= it.rarity %></span></td>
+                    <td data-label="Price" class="text-end"><%= Number(it.price || 0).toLocaleString() %></td>
+                    <td data-label="Score" class="text-end"><%= Number(it.itemScore || 0).toLocaleString() %></td>
+                    <td data-label="Flags" class="small">
+                      <%= it.sellable ? 'Sellable' : 'No Sell' %> •
+                      <%= it.consumable ? 'Consumable' : 'Static' %> •
+                      <%= it.stackable ? 'Stackable' : 'Unique' %>
+                    </td>
+                    <td data-label="Actions" class="text-end">
+                      <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
+                        <form method="post" action="/admin/economy/items/remove-global" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <input type="hidden" name="itemId" value="<%= it.itemId %>" />
+                          <button
+                            class="btn btn-outline-warning btn-sm"
+                            type="submit"
+                            data-confirm="Remove this item from all player inventories and loadouts?"
+                            data-confirm-title="Remove item globally?"
+                            data-confirm-ok="Remove"
+                            data-confirm-cancel="Cancel"
+                          >
+                            Remove Global
+                          </button>
+                        </form>
+                        <form method="post" action="/admin/economy/items/delete" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <input type="hidden" name="itemId" value="<%= it.itemId %>" />
+                          <button
+                            class="btn btn-outline-danger btn-sm"
+                            type="submit"
+                            data-confirm="Delete this item from the database and shop listings?"
+                            data-confirm-title="Delete item?"
+                            data-confirm-ok="Delete"
+                            data-confirm-cancel="Cancel"
+                          >
+                            Delete
+                          </button>
+                        </form>
+                      </div>
+                    </td>
                   </tr>
                 <% }) %>
               </tbody>

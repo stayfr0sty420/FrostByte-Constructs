@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <section class="dashboard-hero mb-4">
+        <div class="dashboard-hero__copy">
+          <div class="hero-eyebrow">RoBot Control Panel</div>
+          <h1 class="hero-title mb-2">Economy Controls</h1>
+          <p class="hero-text mb-0">Tune live rewards, drop rates, event boosts, and PvP betting without editing code.</p>
+        </div>
+      </section>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="row g-4">
+        <div class="col-12 col-xl-8">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Live Settings</h2>
+              <form method="post" action="/admin/economy/settings" class="row g-3">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <div class="col-6 col-md-4">
+                  <label class="form-label">Daily Base</label>
+                  <input class="form-control" name="dailyBase" type="number" min="0" value="<%= cfg.economy.dailyBase %>" />
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label">Daily Streak Bonus</label>
+                  <input class="form-control" name="dailyStreakBonus" type="number" min="0" value="<%= cfg.economy.dailyStreakBonus %>" />
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label">Bank Interest Rate</label>
+                  <input class="form-control" name="bankInterestRate" type="number" min="0" max="1" step="0.001" value="<%= cfg.economy.bankInterestRate %>" />
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label">Coin Reward Multiplier</label>
+                  <input class="form-control" name="coinRewardMultiplier" type="number" min="0.1" max="10" step="0.05" value="<%= cfg.economy.coinRewardMultiplier || 1 %>" />
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label">Drop Rate Multiplier</label>
+                  <input class="form-control" name="dropRateMultiplier" type="number" min="0.1" max="10" step="0.05" value="<%= cfg.economy.dropRateMultiplier || 1 %>" />
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label">Hunt Energy Cost</label>
+                  <input class="form-control" name="huntEnergyCost" type="number" min="1" max="1000" value="<%= cfg.economy.huntEnergyCost || 50 %>" />
+                </div>
+
+                <div class="col-12 col-md-6">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="pvpBetsEnabled" value="1" <%= cfg.economy.pvpBetsEnabled ? 'checked' : '' %> />
+                    <label class="form-check-label">Enable PvP Bets</label>
+                  </div>
+                </div>
+                <div class="col-12 col-md-6">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="eventBoostEnabled" value="1" <%= cfg.economy.eventBoostEnabled ? 'checked' : '' %> />
+                    <label class="form-check-label">Enable Event Boost</label>
+                  </div>
+                </div>
+                <div class="col-12 col-md-4">
+                  <label class="form-label">Event Boost Multiplier</label>
+                  <input class="form-control" name="eventBoostMultiplier" type="number" min="1" max="10" step="0.05" value="<%= cfg.economy.eventBoostMultiplier || 1.25 %>" />
+                </div>
+
+                <div class="col-12 d-flex justify-content-end">
+                  <button class="btn btn-primary" type="submit">Save Controls</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-4">
+          <div class="card shadow-sm mb-4">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Core Formulas</h2>
+              <ul class="list-unstyled small text-muted mb-0">
+                <li>Hunt cooldown: 15 seconds</li>
+                <li>Level cap: 255</li>
+                <li>Level reward: +3 stat points, +100 bank capacity, +10 max HP</li>
+                <li>PvP damage: (STR × 2) + random(1,10) - defense</li>
+                <li>Marriage bonus: +5% LUCK and +200 via <code>/mdaily</code></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Live Flags</h2>
+              <div class="d-grid gap-2 small">
+                <div class="border rounded p-3">
+                  PvP bets:
+                  <strong><%= cfg.economy.pvpBetsEnabled ? 'Enabled' : 'Disabled' %></strong>
+                </div>
+                <div class="border rounded p-3">
+                  Event boost:
+                  <strong><%= cfg.economy.eventBoostEnabled ? `Enabled (${cfg.economy.eventBoostMultiplier || 1.25}x)` : 'Disabled' %></strong>
+                </div>
+                <div class="border rounded p-3">
+                  Hunt energy:
+                  <strong><%= cfg.economy.huntEnergyCost || 50 %></strong>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>
