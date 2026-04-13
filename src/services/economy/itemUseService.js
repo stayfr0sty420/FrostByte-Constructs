@@ -4,6 +4,7 @@ const User = require('../../db/models/User');
 const { applyExpAndLevels } = require('./levelService');
 const { removeItemFromInventory } = require('./inventoryService');
 const { getEconomyAccountGuildId } = require('./accountScope');
+const { normalizeEconomyUserState } = require('./userService');
 
 async function useItem({ guildId, discordId, itemQuery, resolveItemByQuery }) {
   const accountGuildId = getEconomyAccountGuildId(guildId);
@@ -14,6 +15,7 @@ async function useItem({ guildId, discordId, itemQuery, resolveItemByQuery }) {
   const user = await User.findOne({ guildId: accountGuildId, discordId });
   if (!user) return { ok: false, reason: 'User not found.' };
 
+  normalizeEconomyUserState(user);
   const inv = user.inventory.find((i) => i.itemId === item.itemId);
   if (!inv || inv.quantity <= 0) return { ok: false, reason: 'You do not have this item.' };
 

@@ -4,6 +4,7 @@ const User = require('../../db/models/User');
 const { removeItemFromInventory } = require('./inventoryService');
 const { getEconomyAccountGuildId } = require('./accountScope');
 const { MARRIAGE_DAILY_REWARD } = require('../../config/constants');
+const { normalizeEconomyUserState } = require('./userService');
 
 function msUntilMarriageDaily(user, now = Date.now()) {
   if (!user?.lastMarriageDaily) return 0;
@@ -14,6 +15,7 @@ function msUntilMarriageDaily(user, now = Date.now()) {
 }
 
 async function findBestOwnedRing(user) {
+  normalizeEconomyUserState(user);
   const ringIds = [...new Set((user?.inventory || []).map((entry) => entry.itemId).filter(Boolean))];
   if (!ringIds.length) return null;
 
@@ -30,6 +32,8 @@ async function performMarriage({ guildId, proposerId, partnerId, ringItemId }) {
     User.findOne({ guildId: accountGuildId, discordId: partnerId })
   ]);
   if (!proposer || !partner) return { ok: false, reason: 'User not found.' };
+  normalizeEconomyUserState(proposer);
+  normalizeEconomyUserState(partner);
   if (proposer.marriedTo || partner.marriedTo) return { ok: false, reason: 'One of you is already married.' };
 
   const ringInv = proposer.inventory.find((i) => i.itemId === ringItemId);
@@ -64,6 +68,7 @@ async function divorce({ guildId, discordId }) {
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const user = await User.findOne({ guildId: accountGuildId, discordId });
   if (!user) return { ok: false, reason: 'User not found.' };
+  normalizeEconomyUserState(user);
   if (!user.marriedTo) return { ok: false, reason: 'You are not married.' };
 
   const partner = await User.findOne({ guildId: accountGuildId, discordId: user.marriedTo });
@@ -78,6 +83,7 @@ async function divorce({ guildId, discordId }) {
   user.lastMarriageDaily = null;
 
   if (partner) {
+    normalizeEconomyUserState(partner);
     partner.marriedTo = null;
     partner.marriedSince = null;
     partner.marriageRingItemId = null;
@@ -105,6 +111,7 @@ async function claimMarriageDaily({ guildId, discordId, now = new Date() }) {
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const user = await User.findOne({ guildId: accountGuildId, discordId });
   if (!user) return { ok: false, reason: 'User not found.' };
+  normalizeEconomyUserState(user);
   if (!user.marriedTo) return { ok: false, reason: 'You are not married.' };
 
   const remainingMs = msUntilMarriageDaily(user, now.getTime());

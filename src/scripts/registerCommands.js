@@ -5,19 +5,33 @@ const { logger } = require('../config/logger');
 const { listJsFiles } = require('../bots/shared/fileWalker');
 
 function loadCommandData(commandsDir) {
-  const files = listJsFiles(commandsDir);
-  const commands = [];
+  const files = listJsFiles(commandsDir).sort((a, b) => a.localeCompare(b));
+  const commandsByName = new Map();
   for (const file of files) {
     // eslint-disable-next-line global-require, import/no-dynamic-require
     const command = require(file);
     if (!command?.data) continue;
     try {
-      commands.push(command.data.toJSON());
+      const json = command.data.toJSON();
+      const name = String(json?.name || '').trim().toLowerCase();
+      if (!name) continue;
+      if (commandsByName.has(name)) {
+        logger.warn(
+          {
+            command: name,
+            previousFile: commandsByName.get(name).__sourceFile,
+            skippedFile: file
+          },
+          'Duplicate slash command definition detected; keeping the first file'
+        );
+        continue;
+      }
+      commandsByName.set(name, { ...json, __sourceFile: file });
     } catch (err) {
       throw new Error(`Slash command builder validation failed in ${file}: ${String(err?.message || err)}`, { cause: err });
     }
   }
-  return commands;
+  return Array.from(commandsByName.values()).map(({ __sourceFile, ...command }) => command);
 }
 
 function getBotsToRegister(arg) {
@@ -57,8 +71,9 @@ async function registerOne(bot) {
 
   const commands = loadCommandData(bot.commandsDir);
   const rest = new REST({ version: '10' }).setToken(bot.token);
+  const useGuildScope = env.NODE_ENV !== 'production' && Boolean(env.DEV_GUILD_ID);
 
-  if (env.DEV_GUILD_ID) {
+  if (useGuildScope) {
     logger.info({ bot: bot.key, count: commands.length, guildId: env.DEV_GUILD_ID }, 'Registering guild commands');
     await rest.put(Routes.applicationGuildCommands(bot.appId, env.DEV_GUILD_ID), { body: commands });
     logger.info({ bot: bot.key }, 'Registered (guild)');
@@ -67,6 +82,10 @@ async function registerOne(bot) {
 
   logger.info({ bot: bot.key, count: commands.length }, 'Registering global commands');
   await rest.put(Routes.applicationCommands(bot.appId), { body: commands });
+  if (env.DEV_GUILD_ID) {
+    logger.info({ bot: bot.key, guildId: env.DEV_GUILD_ID }, 'Clearing stale guild commands after global registration');
+    await rest.put(Routes.applicationGuildCommands(bot.appId, env.DEV_GUILD_ID), { body: [] });
+  }
   logger.info({ bot: bot.key }, 'Registered (global)');
 }
 

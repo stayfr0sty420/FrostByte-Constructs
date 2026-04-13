@@ -5,6 +5,7 @@ const { pickWeighted } = require('../utils/weightedRandom');
 const { addItemToInventory, countInventoryQuantity, removeItemFromInventory } = require('./inventoryService');
 const { getEconomyAccountGuildId } = require('./accountScope');
 const { CORE_RARITIES } = require('../../config/constants');
+const { normalizeEconomyUserState } = require('./userService');
 
 function normalizeQuery(q) {
   return String(q || '').trim();
@@ -118,6 +119,7 @@ async function openGacha({ guildId, discordId, boxQuery, amount }) {
 
   const user = await User.findOne({ guildId: accountGuildId, discordId });
   if (!user) return { ok: false, reason: 'User not found.' };
+  normalizeEconomyUserState(user);
 
   const ownedBoxes = box.boxItemId ? countInventoryQuantity(user, box.boxItemId) : 0;
   const boxesToConsume = Math.min(ownedBoxes, pulls);

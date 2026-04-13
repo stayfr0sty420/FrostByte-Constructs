@@ -1,6 +1,7 @@
 const Transaction = require('../../db/models/Transaction');
 const recipes = require('../../data/recipes');
 const { addItemToInventory, removeItemFromInventory } = require('./inventoryService');
+const { normalizeEconomyUserState } = require('./userService');
 
 function normalizeQuery(q) {
   return String(q || '').trim();
@@ -18,6 +19,7 @@ function resolveRecipe(query) {
 }
 
 async function craft({ user, guildId, recipeQuery }) {
+  normalizeEconomyUserState(user);
   const recipe = resolveRecipe(recipeQuery);
   if (!recipe) return { ok: false, reason: 'Recipe not found.' };
 
@@ -48,4 +50,3 @@ async function craft({ user, guildId, recipeQuery }) {
 }
 
 module.exports = { craft, resolveRecipe };
-

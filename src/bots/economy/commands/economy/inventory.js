@@ -3,7 +3,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const User = require('../../../../db/models/User');
 const Item = require('../../../../db/models/Item');
-const { getOrCreateUser } = require('../../../../services/economy/userService');
+const { getOrCreateUser, normalizeEconomyUserState } = require('../../../../services/economy/userService');
 const { getEconomyAccountGuildId } = require('../../../../services/economy/accountScope');
 
 module.exports = {
@@ -24,6 +24,7 @@ module.exports = {
       user = await User.findOne({ guildId: accountGuildId, discordId: target.id });
     }
     if (!user) return await interaction.reply({ content: 'User has no data yet.', ephemeral: true });
+    normalizeEconomyUserState(user);
 
     const itemIds = user.inventory.map((i) => i.itemId);
     const items = await Item.find({ itemId: { $in: itemIds } });

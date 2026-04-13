@@ -1,11 +1,13 @@
 const Item = require('../../db/models/Item');
 const { INVENTORY_MAX_STACK } = require('../../config/constants');
+const { normalizeEconomyUserState } = require('./userService');
 
 function findInventoryEntry(user, itemId) {
   return findInventoryEntries(user, itemId)[0] || null;
 }
 
 function findInventoryEntries(user, itemId) {
+  normalizeEconomyUserState(user);
   return (user?.inventory || []).filter((entry) => entry.itemId === itemId);
 }
 
@@ -14,6 +16,7 @@ function countInventoryQuantity(user, itemId) {
 }
 
 async function addItemToInventory({ user, itemId, quantity, refinement = 0 }) {
+  normalizeEconomyUserState(user);
   const qty = Math.max(0, Math.floor(Number(quantity) || 0));
   if (qty <= 0) return { ok: false, reason: 'Invalid quantity.' };
 
@@ -48,6 +51,7 @@ async function addItemToInventory({ user, itemId, quantity, refinement = 0 }) {
 }
 
 async function removeItemFromInventory({ user, itemId, quantity }) {
+  normalizeEconomyUserState(user);
   const qty = Math.max(0, Math.floor(Number(quantity) || 0));
   if (qty <= 0) return { ok: false, reason: 'Invalid quantity.' };
 

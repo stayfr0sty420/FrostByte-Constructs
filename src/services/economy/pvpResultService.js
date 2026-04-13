@@ -2,6 +2,7 @@ const Transaction = require('../../db/models/Transaction');
 const User = require('../../db/models/User');
 const { getEconomyAccountGuildId } = require('./accountScope');
 const { buildCharacterSnapshot } = require('./characterService');
+const { normalizeEconomyUserState } = require('./userService');
 
 function clamp(n, min, max) {
   return Math.max(min, Math.min(max, n));
@@ -67,6 +68,8 @@ async function simulatePvpBattle({ guildId, challengerId, opponentId }) {
     User.findOne({ guildId: accountGuildId, discordId: opponentId })
   ]);
   if (!challenger || !opponent) return { ok: false, reason: 'User not found.' };
+  normalizeEconomyUserState(challenger);
+  normalizeEconomyUserState(opponent);
 
   const challengerSnapshot = await buildCharacterSnapshot(challenger);
   const opponentSnapshot = await buildCharacterSnapshot(opponent);
@@ -154,6 +157,8 @@ async function applyPvpResult({ guildId, winnerId, loserId, bet }) {
     User.findOne({ guildId: accountGuildId, discordId: loserId })
   ]);
   if (!winner || !loser) return { ok: false, reason: 'User not found.' };
+  normalizeEconomyUserState(winner);
+  normalizeEconomyUserState(loser);
 
   winner.pvpWins += 1;
   loser.pvpLosses += 1;

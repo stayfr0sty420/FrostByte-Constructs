@@ -2,7 +2,7 @@
 
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const User = require('../../../../db/models/User');
-const { getOrCreateUser } = require('../../../../services/economy/userService');
+const { getOrCreateUser, normalizeEconomyUserState } = require('../../../../services/economy/userService');
 const { requiredExpForLevel } = require('../../../../services/economy/levelService');
 const { getEconomyAccountGuildId } = require('../../../../services/economy/accountScope');
 const { buildCharacterSnapshot } = require('../../../../services/economy/characterService');
@@ -25,6 +25,7 @@ module.exports = {
       user = await User.findOne({ guildId: accountGuildId, discordId: target.id });
     }
     if (!user) return await interaction.reply({ content: 'No stats found for that user.', ephemeral: true });
+    normalizeEconomyUserState(user);
 
     const snapshot = await buildCharacterSnapshot(user);
     const s = snapshot.effectiveStats || {};

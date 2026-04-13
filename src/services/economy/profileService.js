@@ -2,6 +2,7 @@ const User = require('../../db/models/User');
 const Item = require('../../db/models/Item');
 const Transaction = require('../../db/models/Transaction');
 const { getEconomyAccountGuildId } = require('./accountScope');
+const { normalizeEconomyUserState } = require('./userService');
 
 function clampText(text, max) {
   const s = String(text || '').trim();
@@ -13,6 +14,7 @@ async function setBio({ guildId, discordId, bio }) {
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const user = await User.findOne({ guildId: accountGuildId, discordId });
   if (!user) return { ok: false, reason: 'User not found.' };
+  normalizeEconomyUserState(user);
   user.profileBio = clampText(bio, 180) || 'default';
   await user.save();
   return { ok: true, bio: user.profileBio };
@@ -22,6 +24,7 @@ async function setTitle({ guildId, discordId, title }) {
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const user = await User.findOne({ guildId: accountGuildId, discordId });
   if (!user) return { ok: false, reason: 'User not found.' };
+  normalizeEconomyUserState(user);
   user.profileTitle = clampText(title, 64) || 'default';
   await user.save();
   return { ok: true, title: user.profileTitle };
@@ -36,6 +39,7 @@ async function setWallpaper({ guildId, discordId, wallpaperQuery, resolveItemByQ
   const user = await User.findOne({ guildId: accountGuildId, discordId });
   if (!user) return { ok: false, reason: 'User not found.' };
 
+  normalizeEconomyUserState(user);
   const inv = user.inventory.find((i) => i.itemId === item.itemId);
   if (!inv || inv.quantity <= 0) return { ok: false, reason: 'You do not own that wallpaper.' };
 
@@ -53,6 +57,8 @@ async function follow({ guildId, followerId, targetId }) {
     User.findOne({ guildId: accountGuildId, discordId: targetId })
   ]);
   if (!follower || !target) return { ok: false, reason: 'User not found.' };
+  normalizeEconomyUserState(follower);
+  normalizeEconomyUserState(target);
 
   if (follower.following.includes(targetId)) return { ok: false, reason: 'Already following.' };
 
@@ -80,6 +86,8 @@ async function unfollow({ guildId, followerId, targetId }) {
     User.findOne({ guildId: accountGuildId, discordId: targetId })
   ]);
   if (!follower || !target) return { ok: false, reason: 'User not found.' };
+  normalizeEconomyUserState(follower);
+  normalizeEconomyUserState(target);
 
   if (!follower.following.includes(targetId)) return { ok: false, reason: 'You are not following that user.' };
 
@@ -104,6 +112,7 @@ async function getProfile({ guildId, discordId }) {
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const user = await User.findOne({ guildId: accountGuildId, discordId });
   if (!user) return null;
+  normalizeEconomyUserState(user);
 
   const wallpaper =
     user.profileWallpaper && user.profileWallpaper !== 'default'

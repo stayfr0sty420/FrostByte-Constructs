@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page economy-player-profile-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <% const safeInventoryByRarity = inventoryByRarity && typeof inventoryByRarity === 'object' ? inventoryByRarity : {}; %>
+      <% const safeInventory = Array.isArray(inventory) ? inventory : []; %>
+      <% const safeTopInventory = Array.isArray(topInventory) ? topInventory : []; %>
+      <% const safeTransactions = Array.isArray(transactions) ? transactions : []; %>
+      <% const loadout = Array.isArray(snapshot?.loadout) ? snapshot.loadout.filter(entry => entry?.item) : []; %>
+      <% const effectiveStats = snapshot?.effectiveStats || {}; %>
+      <% const bonusStats = snapshot?.bonusStats || {}; %>
+      <% const totalInventoryItems = safeInventory.reduce((sum, entry) => sum + Math.max(0, Number(entry.quantity) || 0), 0); %>
+
+      <section class="dashboard-hero mb-4">
+        <div class="dashboard-hero__copy">
+          <div class="hero-eyebrow">RoBot Player Profile</div>
+          <h1 class="hero-title mb-2"><%= user.username || user.discordId %></h1>
+          <p class="hero-text mb-0">
+            <code><%= user.discordId %></code>
+            <% if (user.economyBan?.active) { %>
+              • <span class="text-danger">Economy banned</span>
+            <% } %>
+          </p>
+        </div>
+        <div class="dashboard-hero__actions">
+          <a href="/admin/economy/analytics" class="btn btn-outline-secondary btn-sm">Back to Analytics</a>
+          <a href="/admin/economy/users/<%= user.discordId %>" class="btn btn-outline-light btn-sm">Open Editor</a>
+        </div>
+      </section>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="row g-3 mb-4">
+        <div class="col-12 col-sm-6 col-xl-2">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Wallet</div>
+              <div class="display-6"><%= Number(user.balance || 0).toLocaleString() %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-2">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Bank</div>
+              <div class="display-6"><%= Number(user.bank || 0).toLocaleString() %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-2">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Level</div>
+              <div class="display-6"><%= Number(user.level || 0).toLocaleString() %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-2">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Gear Score</div>
+              <div class="display-6"><%= Number(snapshot?.gearScore || 0).toLocaleString() %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-2">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">PvP Rating</div>
+              <div class="display-6"><%= Number(user.pvpRating || 0).toLocaleString() %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-2">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Marriage</div>
+              <div class="display-6 fs-4"><%= user.marriedTo ? 'Married' : 'Single' %></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-4">
+        <div class="col-12 col-xl-8">
+          <div class="card shadow-sm mb-4">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Profile Summary</h2>
+              <div class="row g-3">
+                <div class="col-12 col-lg-7">
+                  <div class="player-profile-copy">
+                    <div class="player-profile-label">Title</div>
+                    <div class="player-profile-value"><%= user.profileTitle || 'default' %></div>
+                    <div class="player-profile-label mt-3">Bio</div>
+                    <div class="player-profile-value player-profile-bio"><%= user.profileBio || 'default' %></div>
+                  </div>
+                </div>
+                <div class="col-12 col-lg-5">
+                  <div class="player-profile-meta-card">
+                    <div class="player-profile-meta-row">
+                      <span>Wallpaper</span>
+                      <strong><%= wallpaperItem?.name || user.profileWallpaper || 'default' %></strong>
+                    </div>
+                    <div class="player-profile-meta-row">
+                      <span>Followers</span>
+                      <strong><%= Number(user.followers?.length || 0).toLocaleString() %></strong>
+                    </div>
+                    <div class="player-profile-meta-row">
+                      <span>Following</span>
+                      <strong><%= Number(user.following?.length || 0).toLocaleString() %></strong>
+                    </div>
+                    <div class="player-profile-meta-row">
+                      <span>Shared Bank</span>
+                      <strong><%= user.sharedBankEnabled ? 'Enabled' : 'Disabled' %></strong>
+                    </div>
+                    <div class="player-profile-meta-row">
+                      <span>Marriage</span>
+                      <strong><%= user.marriedTo ? user.marriedTo : 'Single' %></strong>
+                    </div>
+                  </div>
+                </div>
+                <% if (wallpaperItem?.wallpaperUrl) { %>
+                  <div class="col-12">
+                    <img class="player-profile-wallpaper" src="<%= wallpaperItem.wallpaperUrl %>" alt="Profile wallpaper" loading="lazy" />
+                  </div>
+                <% } %>
+              </div>
+            </div>
+          </div>
+
+          <div class="card shadow-sm mb-4">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Combat Stats</h2>
+              <div class="row g-3">
+                <% [
+                  ['STR', effectiveStats.str, bonusStats.str],
+                  ['AGI', effectiveStats.agi, bonusStats.agi],
+                  ['VIT', effectiveStats.vit, bonusStats.vit],
+                  ['LUCK', effectiveStats.luck, bonusStats.luck],
+                  ['CRIT', effectiveStats.crit, bonusStats.crit]
+                ].forEach(([label, value, bonus]) => { %>
+                  <div class="col-6 col-md-4 col-xl-2">
+                    <div class="player-stat-tile">
+                      <div class="player-stat-tile__label"><%= label %></div>
+                      <div class="player-stat-tile__value"><%= Number(value || 0).toLocaleString() %></div>
+                      <div class="player-stat-tile__bonus"><%= Number(bonus || 0) > 0 ? `+${Number(bonus).toLocaleString()} gear` : 'No bonus' %></div>
+                    </div>
+                  </div>
+                <% }) %>
+                <div class="col-6 col-md-4 col-xl-2">
+                  <div class="player-stat-tile">
+                    <div class="player-stat-tile__label">Max HP</div>
+                    <div class="player-stat-tile__value"><%= Number(snapshot?.maxHp || 0).toLocaleString() %></div>
+                    <div class="player-stat-tile__bonus">Level-scaled</div>
+                  </div>
+                </div>
+                <div class="col-6 col-md-4 col-xl-2">
+                  <div class="player-stat-tile">
+                    <div class="player-stat-tile__label">Energy</div>
+                    <div class="player-stat-tile__value"><%= Number(user.energy || 0).toLocaleString() %>/<%= Number(user.energyMax || 0).toLocaleString() %></div>
+                    <div class="player-stat-tile__bonus">Live pool</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card shadow-sm mb-4">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Equipped & Featured Items</h2>
+              <div class="player-loadout-grid">
+                <% if (!loadout.length && !snapshot?.ring) { %>
+                  <div class="text-muted">No equipped items or marriage ring bonuses recorded.</div>
+                <% } %>
+                <% loadout.forEach(entry => { %>
+                  <div class="player-loadout-card">
+                    <div class="player-loadout-card__slot"><%= entry.slot %></div>
+                    <div class="player-loadout-card__name"><%= entry.item?.name || entry.itemId %></div>
+                    <div class="player-loadout-card__meta">
+                      <span class="badge text-bg-secondary text-uppercase"><%= entry.item?.rarity || 'unknown' %></span>
+                      <span>+<%= Number(entry.inventory?.refinement || 0).toLocaleString() %></span>
+                    </div>
+                  </div>
+                <% }) %>
+                <% if (snapshot?.ring) { %>
+                  <div class="player-loadout-card">
+                    <div class="player-loadout-card__slot">Marriage Ring</div>
+                    <div class="player-loadout-card__name"><%= snapshot.ring.name %></div>
+                    <div class="player-loadout-card__meta">
+                      <span class="badge text-bg-info text-uppercase"><%= snapshot.ring.rarity || 'ring' %></span>
+                      <span>Shared bonus active</span>
+                    </div>
+                  </div>
+                <% } %>
+              </div>
+            </div>
+          </div>
+
+          <div class="card shadow-sm mb-4">
+            <div class="card-body">
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <h2 class="h5 mb-0">Inventory Highlights</h2>
+                <div class="text-muted small">Tracked items: <%= Number(totalInventoryItems || 0).toLocaleString() %></div>
+              </div>
+
+              <div class="row g-3 mb-4">
+                <% ['common','rare','epic','pristine','transcendent','primordial'].forEach(rarity => { %>
+                  <div class="col-6 col-md-4 col-xl-2">
+                    <div class="player-rarity-card">
+                      <div class="text-uppercase text-muted small"><%= rarity %></div>
+                      <div class="fs-5"><%= Number(safeInventoryByRarity[rarity] || 0).toLocaleString() %></div>
+                    </div>
+                  </div>
+                <% }) %>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0 analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Rarity</th>
+                      <th class="text-end">Qty</th>
+                      <th class="text-end">Refine</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% if (!safeTopInventory.length) { %>
+                      <tr>
+                        <td colspan="4" class="text-muted py-3">Inventory is empty.</td>
+                      </tr>
+                    <% } %>
+                    <% safeTopInventory.forEach(entry => { %>
+                      <tr>
+                        <td data-label="Item">
+                          <div class="fw-semibold"><%= entry.item?.name || entry.itemId %></div>
+                          <div class="text-muted small"><code><%= entry.itemId %></code></div>
+                        </td>
+                        <td data-label="Rarity"><span class="badge text-bg-secondary text-uppercase"><%= entry.item?.rarity || 'unknown' %></span></td>
+                        <td class="text-end" data-label="Qty"><%= Number(entry.quantity || 0).toLocaleString() %></td>
+                        <td class="text-end" data-label="Refine">+<%= Number(entry.refinement || 0).toLocaleString() %></td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Recent Economy Activity</h2>
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0 analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th class="text-end">Amount</th>
+                      <th class="text-end">Wallet</th>
+                      <th class="text-end">Bank</th>
+                      <th>When</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% if (!safeTransactions.length) { %>
+                      <tr>
+                        <td colspan="5" class="text-muted py-3">No recent economy activity logged.</td>
+                      </tr>
+                    <% } %>
+                    <% safeTransactions.forEach(tx => { %>
+                      <tr>
+                        <td data-label="Type"><code><%= tx.type %></code></td>
+                        <td class="text-end" data-label="Amount"><%= Number(tx.amount || 0).toLocaleString() %></td>
+                        <td class="text-end" data-label="Wallet"><%= Number(tx.balanceAfter || 0).toLocaleString() %></td>
+                        <td class="text-end" data-label="Bank"><%= Number(tx.bankAfter || 0).toLocaleString() %></td>
+                        <td data-label="When" class="text-muted small"><%= tx.createdAt ? formatDate(tx.createdAt) : '—' %></td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-4">
+          <div class="card shadow-sm mb-4">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Player Flags</h2>
+              <div class="player-profile-meta-card">
+                <div class="player-profile-meta-row">
+                  <span>Status</span>
+                  <strong><%= user.economyBan?.active ? 'Banned' : 'Active' %></strong>
+                </div>
+                <div class="player-profile-meta-row">
+                  <span>PvP Record</span>
+                  <strong><%= Number(user.pvpWins || 0).toLocaleString() %>W / <%= Number(user.pvpLosses || 0).toLocaleString() %>L</strong>
+                </div>
+                <div class="player-profile-meta-row">
+                  <span>Bank Capacity</span>
+                  <strong><%= Number(user.bankMax || 0).toLocaleString() %></strong>
+                </div>
+                <div class="player-profile-meta-row">
+                  <span>Stat Points</span>
+                  <strong><%= Number(user.statPoints || 0).toLocaleString() %></strong>
+                </div>
+                <div class="player-profile-meta-row">
+                  <span>EXP</span>
+                  <strong><%= Number(user.exp || 0).toLocaleString() %></strong>
+                </div>
+                <div class="player-profile-meta-row">
+                  <span>Updated</span>
+                  <strong><%= user.updatedAt ? formatDate(user.updatedAt) : '—' %></strong>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Quick Actions</h2>
+              <div class="d-grid gap-2">
+                <a class="btn btn-outline-light" href="/admin/economy/users/<%= user.discordId %>">Open Full Editor</a>
+                <a class="btn btn-outline-secondary" href="/admin/economy/users?q=<%= encodeURIComponent(user.discordId) %>">Find in Users List</a>
+                <a class="btn btn-outline-secondary" href="/admin/economy/analytics">Back to Analytics</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

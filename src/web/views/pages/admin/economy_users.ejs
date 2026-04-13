@@ -3,7 +3,7 @@
   <head>
     <%- include('../../partials/head', { title }) %>
   </head>
-  <body class="app admin-page">
+  <body class="app admin-page economy-users-page">
     <%- include('../../partials/nav') %>
     <main class="container py-4">
       <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
@@ -193,22 +193,34 @@
       <div class="card shadow-sm">
         <div class="card-body">
           <% const fmt = (n) => Number(n || 0).toLocaleString(); %>
-          <% const totalPages = Math.max(1, Math.ceil((total || 0) / (limit || 1))); %>
+          <% const resolvedTotalPages = Math.max(1, Number(typeof totalPages !== 'undefined' ? totalPages : 0) || Math.ceil((total || 0) / (limit || 1))); %>
           <% const whitelistSet = new Set((whitelist || []).map(String)); %>
+          <% const queryParams = new URLSearchParams(); %>
+          <% if (q) queryParams.set('q', q); %>
+          <% const buildPageUrl = (targetPage) => { const params = new URLSearchParams(queryParams); params.set('page', String(targetPage)); return `/admin/economy/users?${params.toString()}`; }; %>
+          <% const canGoPrev = page > 1; %>
+          <% const canGoNext = page < resolvedTotalPages; %>
 
-          <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+          <div class="economy-users-toolbar mb-2">
             <h2 class="h6 mb-0">Users</h2>
-            <div class="d-flex align-items-center gap-2">
-              <span class="text-muted small">Page <%= page %> / <%= totalPages %></span>
-              <div class="btn-group btn-group-sm" role="group" aria-label="Pagination">
-                <% const base = `/admin/economy/users?q=${encodeURIComponent(q || '')}`; %>
-                <a class="btn btn-outline-secondary <%= page <= 1 ? 'disabled' : '' %>" href="<%= `${base}&page=${Math.max(1, page - 1)}` %>">Prev</a>
-                <a class="btn btn-outline-secondary <%= page >= totalPages ? 'disabled' : '' %>" href="<%= `${base}&page=${Math.min(totalPages, page + 1)}` %>">Next</a>
+            <div class="economy-users-pager">
+              <span class="text-muted small economy-users-pager__meta">Page <%= page %> / <%= resolvedTotalPages %></span>
+              <div class="economy-users-pager__actions" role="group" aria-label="Pagination">
+                <% if (canGoPrev) { %>
+                  <a class="btn btn-outline-secondary btn-sm" href="<%= buildPageUrl(page - 1) %>">Prev</a>
+                <% } else { %>
+                  <span class="btn btn-outline-secondary btn-sm disabled" aria-disabled="true">Prev</span>
+                <% } %>
+                <% if (canGoNext) { %>
+                  <a class="btn btn-outline-secondary btn-sm" href="<%= buildPageUrl(page + 1) %>">Next</a>
+                <% } else { %>
+                  <span class="btn btn-outline-secondary btn-sm disabled" aria-disabled="true">Next</span>
+                <% } %>
               </div>
             </div>
           </div>
 
-          <div class="table-responsive">
+          <div class="table-responsive economy-users-table-wrap">
             <table class="table table-sm align-middle mb-0 economy-users-table">
               <thead>
                 <tr>
@@ -251,7 +263,7 @@
                     <td class="text-end user-actions-cell" data-label="Actions">
                         <% const isWhitelisted = whitelistSet.has(String(u.discordId)); %>
                       <div class="user-actions-panel">
-                        <div class="d-flex justify-content-end mb-2">
+                        <div class="user-editor-link-row">
                           <a class="btn btn-outline-light btn-sm" href="/admin/economy/users/<%= u.discordId %>">Open Editor</a>
                         </div>
                         <div class="user-whitelist-bar">
@@ -403,6 +415,26 @@
               </tbody>
             </table>
           </div>
+
+          <% if (users.length) { %>
+            <div class="economy-users-footer">
+              <div class="economy-users-pager">
+                <span class="text-muted small economy-users-pager__meta">Showing page <%= page %> of <%= resolvedTotalPages %></span>
+                <div class="economy-users-pager__actions" role="group" aria-label="Pagination">
+                  <% if (canGoPrev) { %>
+                    <a class="btn btn-outline-secondary btn-sm" href="<%= buildPageUrl(page - 1) %>">Prev</a>
+                  <% } else { %>
+                    <span class="btn btn-outline-secondary btn-sm disabled" aria-disabled="true">Prev</span>
+                  <% } %>
+                  <% if (canGoNext) { %>
+                    <a class="btn btn-outline-secondary btn-sm" href="<%= buildPageUrl(page + 1) %>">Next</a>
+                  <% } else { %>
+                    <span class="btn btn-outline-secondary btn-sm disabled" aria-disabled="true">Next</span>
+                  <% } %>
+                </div>
+              </div>
+            </div>
+          <% } %>
         </div>
       </div>
     </main>

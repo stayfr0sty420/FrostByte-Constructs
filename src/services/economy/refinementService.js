@@ -4,6 +4,7 @@ const { REFINEMENT_SUCCESS_RATE } = require('../../config/constants');
 const { removeItemFromInventory } = require('./inventoryService');
 const { slotForItemType } = require('./equipmentService');
 const { getEconomyAccountGuildId } = require('./accountScope');
+const { normalizeEconomyUserState } = require('./userService');
 
 async function refineItem({ guildId, discordId, itemQuery, crystalQuery, resolveItemByQuery }) {
   const accountGuildId = getEconomyAccountGuildId(guildId);
@@ -20,6 +21,7 @@ async function refineItem({ guildId, discordId, itemQuery, crystalQuery, resolve
   const user = await User.findOne({ guildId: accountGuildId, discordId });
   if (!user) return { ok: false, reason: 'User not found.' };
 
+  normalizeEconomyUserState(user);
   const invItem = user.inventory.find((i) => i.itemId === item.itemId);
   if (!invItem || invItem.quantity <= 0) return { ok: false, reason: 'You do not own that item.' };
 

@@ -2,6 +2,7 @@ const Item = require('../../db/models/Item');
 const User = require('../../db/models/User');
 const { getEconomyAccountGuildId } = require('./accountScope');
 const { buildCharacterSnapshot } = require('./characterService');
+const { normalizeEconomyUserState } = require('./userService');
 
 const EQUIP_SLOTS = new Set([
   'headGear',
@@ -37,6 +38,7 @@ async function equipItem({ guildId, discordId, itemQuery, resolveItemByQuery }) 
   const user = await User.findOne({ guildId: accountGuildId, discordId });
   if (!user) return { ok: false, reason: 'User not found.' };
 
+  normalizeEconomyUserState(user);
   const inv = user.inventory.find((i) => i.itemId === item.itemId);
   if (!inv || inv.quantity <= 0) return { ok: false, reason: 'You do not own this item.' };
 

@@ -3,7 +3,7 @@ const Item = require('../../db/models/Item');
 const mobConfig = require('../../data/mobs');
 const { addItemToInventory } = require('./inventoryService');
 const { applyExpAndLevels } = require('./levelService');
-const { applyEnergyRegen } = require('./userService');
+const { applyEnergyRegen, normalizeEconomyUserState } = require('./userService');
 const { buildCharacterSnapshot } = require('./characterService');
 const { getOrCreateGuildConfig } = require('./guildConfigService');
 const { HUNT_COOLDOWN_MS } = require('../../config/constants');
@@ -102,6 +102,7 @@ async function rollLootDrop(mob, cfg = null) {
 
 async function hunt({ user, guildId, energyCost = 50 }) {
   const cfg = await getOrCreateGuildConfig(guildId);
+  normalizeEconomyUserState(user);
   const resolvedEnergyCost = Math.max(1, Math.floor(Number(energyCost) || Number(cfg?.economy?.huntEnergyCost) || 50));
   applyEnergyRegen(user, new Date());
   if (user.energy < resolvedEnergyCost) {

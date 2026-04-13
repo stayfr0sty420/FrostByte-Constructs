@@ -6,6 +6,7 @@ const {
   LEVEL_STAT_POINTS,
   MARRIAGE_LUCK_MULTIPLIER
 } = require('../../config/constants');
+const { normalizeEconomyUserState } = require('./userService');
 
 const STAT_KEYS = ['str', 'agi', 'vit', 'luck', 'crit'];
 
@@ -52,6 +53,7 @@ function defaultProgressionForLevel(level) {
 }
 
 function resolveInventoryEntriesForEquipped(user) {
+  normalizeEconomyUserState(user);
   const equippedEntries = Object.entries(user?.equipped || {}).filter(([, itemId]) => Boolean(itemId));
   const inventoryByItemId = new Map();
 
@@ -95,6 +97,7 @@ async function getMarriageRing(user) {
 }
 
 async function buildCharacterSnapshot(user) {
+  normalizeEconomyUserState(user);
   const baseStats = normalizeStats(user?.stats);
   const bonusStats = emptyStats();
   const loadout = await getEquipmentLoadout(user);

@@ -3,11 +3,15 @@
   <head>
     <%- include('../../partials/head', { title }) %>
   </head>
-  <body class="app admin-page">
+  <body class="app admin-page economy-user-detail-page">
     <%- include('../../partials/nav') %>
     <main class="container py-4">
-      <% const wallpaperItems = items.filter(item => item.type === 'wallpaper'); %>
-      <% const equipableItems = items.filter(item => ['headGear','eyeGear','faceGear','rHand','lHand','robe','shoes','accessory','rAccessory','lAccessory'].includes(item.type)); %>
+      <% const availableItems = Array.isArray(items) ? items : []; %>
+      <% const safeInventory = Array.isArray(inventory) ? inventory : []; %>
+      <% const safeTransactions = Array.isArray(transactions) ? transactions : []; %>
+      <% const safeInventoryByRarity = typeof inventoryByRarity !== 'undefined' && inventoryByRarity && typeof inventoryByRarity === 'object' ? inventoryByRarity : {}; %>
+      <% const availableWallpaperItems = typeof wallpaperItems !== 'undefined' && Array.isArray(wallpaperItems) ? wallpaperItems : availableItems.filter(item => item.type === 'wallpaper'); %>
+      <% const safeEquipOptionsBySlot = typeof equipOptionsBySlot !== 'undefined' && equipOptionsBySlot && typeof equipOptionsBySlot === 'object' ? equipOptionsBySlot : {}; %>
 
       <section class="dashboard-hero mb-4">
         <div class="dashboard-hero__copy">
@@ -69,7 +73,7 @@
           <div class="card shadow-sm mb-4">
             <div class="card-body">
               <h2 class="h5 mb-3">Character & Profile</h2>
-              <form method="post" action="/admin/economy/users/<%= user.discordId %>/update" class="row g-3">
+              <form method="post" action="/admin/economy/users/<%= user.discordId %>/update" class="row g-3 economy-user-editor-form">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                 <div class="col-12 col-md-6">
                   <label class="form-label">Username</label>
@@ -151,7 +155,7 @@
                   <label class="form-label">Profile Wallpaper</label>
                   <select class="form-select" name="profileWallpaper">
                     <option value="default" <%= user.profileWallpaper === 'default' ? 'selected' : '' %>>default</option>
-                    <% wallpaperItems.forEach(item => { %>
+                    <% availableWallpaperItems.forEach(item => { %>
                       <option value="<%= item.itemId %>" <%= user.profileWallpaper === item.itemId ? 'selected' : '' %>><%= item.name %></option>
                     <% }) %>
                   </select>
@@ -176,8 +180,8 @@
                     <label class="form-label"><%= label %></label>
                     <select class="form-select" name="<%= field %>">
                       <option value="">None</option>
-                      <% equipableItems.filter(item => item.type === slotType || (slotType.includes('Accessory') && item.type === 'accessory')).forEach(item => { %>
-                        <option value="<%= item.itemId %>" <%= user.equipped?.[slotType] === item.itemId ? 'selected' : '' %>><%= item.name %></option>
+                      <% (safeEquipOptionsBySlot[slotType] || []).forEach(item => { %>
+                        <option value="<%= item.itemId %>" <%= user.equipped?.[slotType] === item.itemId ? 'selected' : '' %>><%= item.name %> • <%= item.rarity %></option>
                       <% }) %>
                     </select>
                   </div>
@@ -194,17 +198,17 @@
             <div class="card-body">
               <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
                 <h2 class="h5 mb-0">Inventory Access</h2>
-                <div class="text-muted small">Items: <%= inventory.length %></div>
+                <div class="text-muted small">Items: <%= safeInventory.length %></div>
               </div>
 
-              <div class="row g-3 mb-4">
+              <div class="row g-3 mb-4 economy-user-inventory-grid">
                 <div class="col-12 col-lg-6">
                   <form method="post" action="/admin/economy/users/<%= user.discordId %>/inventory/add" class="row g-2">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                     <div class="col-12">
                       <label class="form-label">Grant Item</label>
                       <select class="form-select" name="itemId" required>
-                        <% items.forEach(item => { %>
+                        <% availableItems.forEach(item => { %>
                           <option value="<%= item.itemId %>"><%= item.name %> • <%= item.rarity %></option>
                         <% }) %>
                       </select>
@@ -226,17 +230,20 @@
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                     <div class="col-12">
                       <label class="form-label">Remove Item</label>
-                      <select class="form-select" name="itemId" required>
-                        <% inventory.forEach(entry => { %>
+                      <select class="form-select" name="itemId" <%= safeInventory.length ? 'required' : 'disabled' %>>
+                        <% if (!safeInventory.length) { %>
+                          <option value="">Inventory is empty</option>
+                        <% } %>
+                        <% safeInventory.forEach(entry => { %>
                           <option value="<%= entry.itemId %>"><%= entry.item?.name || entry.itemId %> • x<%= entry.quantity %></option>
                         <% }) %>
                       </select>
                     </div>
                     <div class="col-12">
-                      <input class="form-control" name="quantity" type="number" min="1" value="1" />
+                      <input class="form-control" name="quantity" type="number" min="1" value="1" <%= safeInventory.length ? '' : 'disabled' %> />
                     </div>
                     <div class="col-12 d-grid">
-                      <button class="btn btn-outline-danger" type="submit">Remove from Inventory</button>
+                      <button class="btn btn-outline-danger" type="submit" <%= safeInventory.length ? '' : 'disabled' %>>Remove from Inventory</button>
                     </div>
                   </form>
                 </div>
@@ -247,14 +254,14 @@
                   <div class="col-6 col-md-4 col-xl-2">
                     <div class="border rounded p-2 h-100">
                       <div class="text-uppercase text-muted small"><%= rarity %></div>
-                      <div class="fs-5"><%= Number(inventoryByRarity[rarity] || 0).toLocaleString() %></div>
+                      <div class="fs-5"><%= Number(safeInventoryByRarity[rarity] || 0).toLocaleString() %></div>
                     </div>
                   </div>
                 <% }) %>
               </div>
 
               <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
+                <table class="table table-sm align-middle mb-0 economy-user-table">
                   <thead>
                     <tr>
                       <th>Item</th>
@@ -264,20 +271,20 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <% if (!inventory.length) { %>
+                    <% if (!safeInventory.length) { %>
                       <tr>
                         <td colspan="4" class="text-muted py-3">Inventory is empty.</td>
                       </tr>
                     <% } %>
-                    <% inventory.forEach(entry => { %>
+                    <% safeInventory.forEach(entry => { %>
                       <tr>
-                        <td>
+                        <td data-label="Item">
                           <div class="fw-semibold"><%= entry.item?.name || entry.itemId %></div>
                           <div class="text-muted small"><code><%= entry.itemId %></code></div>
                         </td>
-                        <td><span class="badge text-bg-secondary text-uppercase"><%= entry.item?.rarity || 'unknown' %></span></td>
-                        <td class="text-end"><%= Number(entry.quantity || 0).toLocaleString() %></td>
-                        <td class="text-end">+<%= Number(entry.refinement || 0).toLocaleString() %></td>
+                        <td data-label="Rarity"><span class="badge text-bg-secondary text-uppercase"><%= entry.item?.rarity || 'unknown' %></span></td>
+                        <td class="text-end" data-label="Qty"><%= Number(entry.quantity || 0).toLocaleString() %></td>
+                        <td class="text-end" data-label="Refine">+<%= Number(entry.refinement || 0).toLocaleString() %></td>
                       </tr>
                     <% }) %>
                   </tbody>
@@ -290,7 +297,7 @@
             <div class="card-body">
               <h2 class="h5 mb-3">Recent Transactions</h2>
               <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
+                <table class="table table-sm align-middle mb-0 economy-user-table">
                   <thead>
                     <tr>
                       <th>Type</th>
@@ -300,17 +307,17 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <% if (!transactions.length) { %>
+                    <% if (!safeTransactions.length) { %>
                       <tr>
                         <td colspan="4" class="text-muted py-3">No transactions logged yet.</td>
                       </tr>
                     <% } %>
-                    <% transactions.forEach(tx => { %>
+                    <% safeTransactions.forEach(tx => { %>
                       <tr>
-                        <td><code><%= tx.type %></code></td>
-                        <td class="text-end"><%= Number(tx.amount || 0).toLocaleString() %></td>
-                        <td class="text-end"><%= Number(tx.balanceAfter || 0).toLocaleString() %></td>
-                        <td class="text-muted small"><%= tx.createdAt ? formatDate(tx.createdAt) : '—' %></td>
+                        <td data-label="Type"><code><%= tx.type %></code></td>
+                        <td class="text-end" data-label="Amount"><%= Number(tx.amount || 0).toLocaleString() %></td>
+                        <td class="text-end" data-label="Wallet"><%= Number(tx.balanceAfter || 0).toLocaleString() %></td>
+                        <td class="text-muted small" data-label="When"><%= tx.createdAt ? formatDate(tx.createdAt) : '—' %></td>
                       </tr>
                     <% }) %>
                   </tbody>
@@ -320,7 +327,7 @@
           </div>
         </div>
 
-        <div class="col-12 col-xl-4">
+        <div class="col-12 col-xl-4 economy-user-sidebar">
           <div class="card shadow-sm mb-4">
             <div class="card-body">
               <h2 class="h5 mb-3">Moderation Tools</h2>
