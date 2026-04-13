@@ -89,6 +89,9 @@ const UserSchema = new mongoose.Schema(
     profileWallpaper: { type: String, default: 'default' },
     profileBio: { type: String, default: 'default' },
     profileTitle: { type: String, default: 'default' },
+    originGuildId: { type: String, default: '', index: true },
+    originGuildName: { type: String, default: '' },
+    firstEconomySeenAt: { type: Date, default: null },
 
     following: { type: [String], default: [] },
     followers: { type: [String], default: [] },

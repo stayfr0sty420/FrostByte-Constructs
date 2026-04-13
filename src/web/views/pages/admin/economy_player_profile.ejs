@@ -14,6 +14,9 @@
       <% const effectiveStats = snapshot?.effectiveStats || {}; %>
       <% const bonusStats = snapshot?.bonusStats || {}; %>
       <% const totalInventoryItems = safeInventory.reduce((sum, entry) => sum + Math.max(0, Number(entry.quantity) || 0), 0); %>
+      <% const fmtFull = (value) => Math.floor(Number(value || 0)).toLocaleString('en-US'); %>
+      <% const fmtCompact = (value, threshold = 1000) => formatCompactNumber(value, { threshold }); %>
+      <% const analyticsQuery = analyticsScope === 'global' ? '?scope=global' : ''; %>
 
       <section class="dashboard-hero mb-4">
         <div class="dashboard-hero__copy">
@@ -27,7 +30,7 @@
           </p>
         </div>
         <div class="dashboard-hero__actions">
-          <a href="/admin/economy/analytics" class="btn btn-outline-secondary btn-sm">Back to Analytics</a>
+          <a href="/admin/economy/analytics<%= analyticsQuery %>" class="btn btn-outline-secondary btn-sm">Back to Analytics</a>
           <a href="/admin/economy/users/<%= user.discordId %>" class="btn btn-outline-light btn-sm">Open Editor</a>
         </div>
       </section>
@@ -41,7 +44,7 @@
           <div class="card shadow-sm dashboard-stat-card">
             <div class="card-body">
               <div class="dashboard-stat-card__label">Wallet</div>
-              <div class="display-6"><%= Number(user.balance || 0).toLocaleString() %></div>
+              <div class="display-6" title="<%= fmtFull(user.balance) %>"><%= fmtCompact(user.balance) %></div>
             </div>
           </div>
         </div>
@@ -49,7 +52,7 @@
           <div class="card shadow-sm dashboard-stat-card">
             <div class="card-body">
               <div class="dashboard-stat-card__label">Bank</div>
-              <div class="display-6"><%= Number(user.bank || 0).toLocaleString() %></div>
+              <div class="display-6" title="<%= fmtFull(user.bank) %>"><%= fmtCompact(user.bank) %></div>
             </div>
           </div>
         </div>
@@ -57,7 +60,7 @@
           <div class="card shadow-sm dashboard-stat-card">
             <div class="card-body">
               <div class="dashboard-stat-card__label">Level</div>
-              <div class="display-6"><%= Number(user.level || 0).toLocaleString() %></div>
+              <div class="display-6" title="<%= fmtFull(user.level) %>"><%= fmtCompact(user.level) %></div>
             </div>
           </div>
         </div>
@@ -65,7 +68,7 @@
           <div class="card shadow-sm dashboard-stat-card">
             <div class="card-body">
               <div class="dashboard-stat-card__label">Gear Score</div>
-              <div class="display-6"><%= Number(snapshot?.gearScore || 0).toLocaleString() %></div>
+              <div class="display-6" title="<%= fmtFull(snapshot?.gearScore) %>"><%= fmtCompact(snapshot?.gearScore) %></div>
             </div>
           </div>
         </div>
@@ -73,15 +76,15 @@
           <div class="card shadow-sm dashboard-stat-card">
             <div class="card-body">
               <div class="dashboard-stat-card__label">PvP Rating</div>
-              <div class="display-6"><%= Number(user.pvpRating || 0).toLocaleString() %></div>
+              <div class="display-6" title="<%= fmtFull(user.pvpRating) %>"><%= fmtCompact(user.pvpRating) %></div>
             </div>
           </div>
         </div>
         <div class="col-12 col-sm-6 col-xl-2">
           <div class="card shadow-sm dashboard-stat-card">
             <div class="card-body">
-              <div class="dashboard-stat-card__label">Marriage</div>
-              <div class="display-6 fs-4"><%= user.marriedTo ? 'Married' : 'Single' %></div>
+              <div class="dashboard-stat-card__label">Followers</div>
+              <div class="display-6" title="<%= fmtFull(user.followers?.length || 0) %>"><%= fmtCompact(user.followers?.length || 0) %></div>
             </div>
           </div>
         </div>
@@ -109,11 +112,11 @@
                     </div>
                     <div class="player-profile-meta-row">
                       <span>Followers</span>
-                      <strong><%= Number(user.followers?.length || 0).toLocaleString() %></strong>
+                      <strong><%= fmtCompact(user.followers?.length || 0) %></strong>
                     </div>
                     <div class="player-profile-meta-row">
                       <span>Following</span>
-                      <strong><%= Number(user.following?.length || 0).toLocaleString() %></strong>
+                      <strong><%= fmtCompact(user.following?.length || 0) %></strong>
                     </div>
                     <div class="player-profile-meta-row">
                       <span>Shared Bank</span>
@@ -148,22 +151,22 @@
                   <div class="col-6 col-md-4 col-xl-2">
                     <div class="player-stat-tile">
                       <div class="player-stat-tile__label"><%= label %></div>
-                      <div class="player-stat-tile__value"><%= Number(value || 0).toLocaleString() %></div>
-                      <div class="player-stat-tile__bonus"><%= Number(bonus || 0) > 0 ? `+${Number(bonus).toLocaleString()} gear` : 'No bonus' %></div>
+                      <div class="player-stat-tile__value" title="<%= fmtFull(value) %>"><%= fmtCompact(value) %></div>
+                      <div class="player-stat-tile__bonus"><%= Number(bonus || 0) > 0 ? `+${fmtCompact(bonus)} gear` : 'No bonus' %></div>
                     </div>
                   </div>
                 <% }) %>
                 <div class="col-6 col-md-4 col-xl-2">
                   <div class="player-stat-tile">
                     <div class="player-stat-tile__label">Max HP</div>
-                    <div class="player-stat-tile__value"><%= Number(snapshot?.maxHp || 0).toLocaleString() %></div>
+                    <div class="player-stat-tile__value" title="<%= fmtFull(snapshot?.maxHp) %>"><%= fmtCompact(snapshot?.maxHp) %></div>
                     <div class="player-stat-tile__bonus">Level-scaled</div>
                   </div>
                 </div>
                 <div class="col-6 col-md-4 col-xl-2">
                   <div class="player-stat-tile">
                     <div class="player-stat-tile__label">Energy</div>
-                    <div class="player-stat-tile__value"><%= Number(user.energy || 0).toLocaleString() %>/<%= Number(user.energyMax || 0).toLocaleString() %></div>
+                    <div class="player-stat-tile__value"><%= fmtCompact(user.energy) %>/<%= fmtCompact(user.energyMax) %></div>
                     <div class="player-stat-tile__bonus">Live pool</div>
                   </div>
                 </div>
@@ -178,13 +181,13 @@
                 <% if (!loadout.length && !snapshot?.ring) { %>
                   <div class="text-muted">No equipped items or marriage ring bonuses recorded.</div>
                 <% } %>
-                <% loadout.forEach(entry => { %>
+                <% loadout.forEach(entry => { const rarityClass = String(entry.item?.rarity || 'common').toLowerCase(); %>
                   <div class="player-loadout-card">
                     <div class="player-loadout-card__slot"><%= entry.slot %></div>
                     <div class="player-loadout-card__name"><%= entry.item?.name || entry.itemId %></div>
                     <div class="player-loadout-card__meta">
-                      <span class="badge text-bg-secondary text-uppercase"><%= entry.item?.rarity || 'unknown' %></span>
-                      <span>+<%= Number(entry.inventory?.refinement || 0).toLocaleString() %></span>
+                      <span class="rarity-pill rarity-pill--<%= rarityClass %>"><%= entry.item?.rarity || 'unknown' %></span>
+                      <span>+<%= fmtCompact(entry.inventory?.refinement || 0) %></span>
                     </div>
                   </div>
                 <% }) %>
@@ -206,15 +209,15 @@
             <div class="card-body">
               <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
                 <h2 class="h5 mb-0">Inventory Highlights</h2>
-                <div class="text-muted small">Tracked items: <%= Number(totalInventoryItems || 0).toLocaleString() %></div>
+                <div class="text-muted small">Tracked items: <%= fmtCompact(totalInventoryItems) %></div>
               </div>
 
               <div class="row g-3 mb-4">
                 <% ['common','rare','epic','pristine','transcendent','primordial'].forEach(rarity => { %>
                   <div class="col-6 col-md-4 col-xl-2">
-                    <div class="player-rarity-card">
+                    <div class="player-rarity-card rarity-card rarity-card--<%= rarity %>">
                       <div class="text-uppercase text-muted small"><%= rarity %></div>
-                      <div class="fs-5"><%= Number(safeInventoryByRarity[rarity] || 0).toLocaleString() %></div>
+                      <div class="fs-5" title="<%= fmtFull(safeInventoryByRarity[rarity] || 0) %>"><%= fmtCompact(safeInventoryByRarity[rarity] || 0) %></div>
                     </div>
                   </div>
                 <% }) %>
@@ -236,15 +239,15 @@
                         <td colspan="4" class="text-muted py-3">Inventory is empty.</td>
                       </tr>
                     <% } %>
-                    <% safeTopInventory.forEach(entry => { %>
+                    <% safeTopInventory.forEach(entry => { const rarityClass = String(entry.item?.rarity || 'common').toLowerCase(); %>
                       <tr>
                         <td data-label="Item">
                           <div class="fw-semibold"><%= entry.item?.name || entry.itemId %></div>
                           <div class="text-muted small"><code><%= entry.itemId %></code></div>
                         </td>
-                        <td data-label="Rarity"><span class="badge text-bg-secondary text-uppercase"><%= entry.item?.rarity || 'unknown' %></span></td>
-                        <td class="text-end" data-label="Qty"><%= Number(entry.quantity || 0).toLocaleString() %></td>
-                        <td class="text-end" data-label="Refine">+<%= Number(entry.refinement || 0).toLocaleString() %></td>
+                        <td data-label="Rarity"><span class="rarity-pill rarity-pill--<%= rarityClass %>"><%= entry.item?.rarity || 'unknown' %></span></td>
+                        <td class="text-end" data-label="Qty" title="<%= fmtFull(entry.quantity) %>"><%= fmtCompact(entry.quantity) %></td>
+                        <td class="text-end" data-label="Refine">+<%= fmtCompact(entry.refinement) %></td>
                       </tr>
                     <% }) %>
                   </tbody>
@@ -260,6 +263,7 @@
                 <table class="table table-sm align-middle mb-0 analytics-table">
                   <thead>
                     <tr>
+                      <% if (analyticsScope === 'global') { %><th>Server</th><% } %>
                       <th>Type</th>
                       <th class="text-end">Amount</th>
                       <th class="text-end">Wallet</th>
@@ -270,15 +274,18 @@
                   <tbody>
                     <% if (!safeTransactions.length) { %>
                       <tr>
-                        <td colspan="5" class="text-muted py-3">No recent economy activity logged.</td>
+                        <td colspan="<%= analyticsScope === 'global' ? 6 : 5 %>" class="text-muted py-3">No recent economy activity logged.</td>
                       </tr>
                     <% } %>
                     <% safeTransactions.forEach(tx => { %>
                       <tr>
+                        <% if (analyticsScope === 'global') { %>
+                          <td data-label="Server"><%= tx.guildName || tx.guildId || 'Unknown' %></td>
+                        <% } %>
                         <td data-label="Type"><code><%= tx.type %></code></td>
-                        <td class="text-end" data-label="Amount"><%= Number(tx.amount || 0).toLocaleString() %></td>
-                        <td class="text-end" data-label="Wallet"><%= Number(tx.balanceAfter || 0).toLocaleString() %></td>
-                        <td class="text-end" data-label="Bank"><%= Number(tx.bankAfter || 0).toLocaleString() %></td>
+                        <td class="text-end" data-label="Amount" title="<%= fmtFull(tx.amount) %>"><%= formatTransactionNumber(tx.amount) %></td>
+                        <td class="text-end" data-label="Wallet" title="<%= fmtFull(tx.balanceAfter) %>"><%= formatTransactionNumber(tx.balanceAfter) %></td>
+                        <td class="text-end" data-label="Bank" title="<%= fmtFull(tx.bankAfter) %>"><%= formatTransactionNumber(tx.bankAfter) %></td>
                         <td data-label="When" class="text-muted small"><%= tx.createdAt ? formatDate(tx.createdAt) : '—' %></td>
                       </tr>
                     <% }) %>
@@ -300,19 +307,19 @@
                 </div>
                 <div class="player-profile-meta-row">
                   <span>PvP Record</span>
-                  <strong><%= Number(user.pvpWins || 0).toLocaleString() %>W / <%= Number(user.pvpLosses || 0).toLocaleString() %>L</strong>
+                  <strong><%= fmtCompact(user.pvpWins) %>W / <%= fmtCompact(user.pvpLosses) %>L</strong>
                 </div>
                 <div class="player-profile-meta-row">
                   <span>Bank Capacity</span>
-                  <strong><%= Number(user.bankMax || 0).toLocaleString() %></strong>
+                  <strong title="<%= fmtFull(user.bankMax) %>"><%= fmtCompact(user.bankMax) %></strong>
                 </div>
                 <div class="player-profile-meta-row">
                   <span>Stat Points</span>
-                  <strong><%= Number(user.statPoints || 0).toLocaleString() %></strong>
+                  <strong title="<%= fmtFull(user.statPoints) %>"><%= fmtCompact(user.statPoints) %></strong>
                 </div>
                 <div class="player-profile-meta-row">
                   <span>EXP</span>
-                  <strong><%= Number(user.exp || 0).toLocaleString() %></strong>
+                  <strong title="<%= fmtFull(user.exp) %>"><%= fmtCompact(user.exp) %></strong>
                 </div>
                 <div class="player-profile-meta-row">
                   <span>Updated</span>
@@ -328,7 +335,7 @@
               <div class="d-grid gap-2">
                 <a class="btn btn-outline-light" href="/admin/economy/users/<%= user.discordId %>">Open Full Editor</a>
                 <a class="btn btn-outline-secondary" href="/admin/economy/users?q=<%= encodeURIComponent(user.discordId) %>">Find in Users List</a>
-                <a class="btn btn-outline-secondary" href="/admin/economy/analytics">Back to Analytics</a>
+                <a class="btn btn-outline-secondary" href="/admin/economy/analytics<%= analyticsQuery %>">Back to Analytics</a>
               </div>
             </div>
           </div>

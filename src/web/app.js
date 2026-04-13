@@ -23,6 +23,11 @@ const { router: apiRouter } = require('./routes/api');
 const { router: verifyRouter } = require('./routes/verify');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandlers');
 const { adminSession } = require('./middleware/requireAdmin');
+const {
+  formatCompactNumber,
+  formatDisplayNumber,
+  formatTransactionNumber
+} = require('../services/economy/economyFormatService');
 
 async function createWebApp({ economyClient, backupClient, verificationClient }) {
   const app = express();
@@ -81,8 +86,8 @@ async function createWebApp({ economyClient, backupClient, verificationClient })
 
   if (env.NODE_ENV !== 'production') app.use(morgan('dev'));
 
-  app.use(express.urlencoded({ extended: false }));
-  app.use(express.json());
+  app.use(express.urlencoded({ extended: false, limit: '3mb' }));
+  app.use(express.json({ limit: '3mb' }));
 
   app.use(
     rateLimit({
@@ -151,6 +156,9 @@ async function createWebApp({ economyClient, backupClient, verificationClient })
     res.locals.publicBaseUrl = env.PUBLIC_BASE_URL || '';
     res.locals.formatDate = formatDate;
     res.locals.formatAdminRole = formatAdminRole;
+    res.locals.formatCompactNumber = formatCompactNumber;
+    res.locals.formatDisplayNumber = formatDisplayNumber;
+    res.locals.formatTransactionNumber = formatTransactionNumber;
     next();
   });
 

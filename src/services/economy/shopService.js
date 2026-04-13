@@ -6,6 +6,7 @@ const { RARITY_SELL_MULTIPLIER } = require('../../config/constants');
 const { withOptionalTransaction } = require('../utils/withOptionalTransaction');
 const { getEconomyAccountGuildId } = require('./accountScope');
 const { addItemToInventory, countInventoryQuantity, removeItemFromInventory } = require('./inventoryService');
+const { getActiveShopListings, getShopScopeGuildId } = require('./shopCatalogService');
 
 function normalizeQuery(q) {
   return String(q || '').trim();
@@ -36,13 +37,15 @@ async function buyItem({ guildId, discordId, itemQuery, quantity }) {
   const item = await resolveItemByQuery(itemQuery);
   if (!item) return { ok: false, reason: 'Item not found.' };
 
-  const listing = await ShopListing.findOne({ guildId, itemId: item.itemId });
+  const { listings } = await getActiveShopListings();
+  const listing = listings.find((entry) => String(entry.itemId || '').trim() === item.itemId);
   if (!listing) return { ok: false, reason: 'Item is not available in this shop.' };
 
   const totalPrice = listing.price * qty;
+  const shopGuildId = getShopScopeGuildId();
 
   return await withOptionalTransaction(async (session) => {
-    const listingQuery = ShopListing.findOne({ guildId, itemId: item.itemId });
+    const listingQuery = ShopListing.findOne({ guildId: shopGuildId, itemId: item.itemId });
     const userQuery = User.findOne({ guildId: accountGuildId, discordId });
     const [freshListing, user] = await Promise.all([
       session ? listingQuery.session(session) : listingQuery,
@@ -50,6 +53,7 @@ async function buyItem({ guildId, discordId, itemQuery, quantity }) {
     ]);
 
     if (!user) return { ok: false, reason: 'User not found.' };
+    if (!freshListing) return { ok: false, reason: 'Item is no longer available in the shop.' };
 
     if (user.balance < totalPrice) return { ok: false, reason: 'Not enough Rodstarkian Credits.' };
 

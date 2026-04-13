@@ -79,6 +79,8 @@ const envSchema = z.object({
 
   // Economy account scope (default: global/shared across all servers)
   ECONOMY_ACCOUNT_SCOPE: z.enum(['global', 'guild']).optional().default('global'),
+  EMOJI_SOURCE_GUILD_IDS: z.string().optional().default(''),
+  ECONOMY_ITEM_EMOJI_GUILD_ID: z.string().optional().default(''),
 
   // Optional: seed required economy emojis (RodstarkianCredit/Heads/Tails/CoinSpin) into each guild.
   // Requires the Economy bot to have "Manage Guild Expressions".

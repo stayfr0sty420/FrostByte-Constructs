@@ -1,6 +1,6 @@
 'use strict';
 
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { AttachmentBuilder, EmbedBuilder, SlashCommandBuilder } = require('discord.js');
 const { getOrCreateUser } = require('../../../../services/economy/userService');
 const { resolveItemByQuery } = require('../../../../services/economy/shopService');
 const { getEconomyEmojis, formatCredits, formatNumber } = require('../../util/credits');
@@ -10,9 +10,11 @@ const {
   setWallpaper,
   follow,
   unfollow,
-  getProfile
+  getProfile,
+  getSocialConnections
 } = require('../../../../services/economy/profileService');
 const { buildCharacterSnapshot } = require('../../../../services/economy/characterService');
+const { createProfileCardBuffer } = require('../../../../services/economy/profileCardService');
 
 async function resolveDisplayName(interaction, target) {
   if (target?.id === interaction.user.id) {
@@ -21,6 +23,22 @@ async function resolveDisplayName(interaction, target) {
   const guild = interaction.guild;
   const member = guild ? await guild.members.fetch(target.id).catch(() => null) : null;
   return member?.displayName || target.globalName || target.username;
+}
+
+function buildSocialEmbed({ title, entries = [] }) {
+  const lines = entries.slice(0, 20).map((entry, index) => {
+    const username = entry.username || entry.discordId;
+    const titleText = entry.profileTitle && entry.profileTitle !== 'default' ? ` • ${entry.profileTitle}` : '';
+    const origin = entry.originGuildName ? ` • ${entry.originGuildName}` : '';
+    return `**${index + 1}.** <@${entry.discordId}> (${username})${titleText}${origin}`;
+  });
+
+  return new EmbedBuilder()
+    .setTitle(title)
+    .setColor(0xe11d48)
+    .setDescription(lines.length ? lines.join('\n') : 'No entries yet.')
+    .setFooter({ text: entries.length > 20 ? `Showing 20 of ${entries.length}` : `${entries.length} total` })
+    .setTimestamp();
 }
 
 module.exports = {
@@ -62,6 +80,18 @@ module.exports = {
         .setName('unfollow')
         .setDescription('Unfollow a user')
         .addUserOption((opt) => opt.setName('user').setDescription('User').setRequired(true))
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('followers')
+        .setDescription('View a user\'s followers')
+        .addUserOption((opt) => opt.setName('user').setDescription('User').setRequired(false))
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('following')
+        .setDescription('View who a user is following')
+        .addUserOption((opt) => opt.setName('user').setDescription('User').setRequired(false))
     ),
   async execute(client, interaction) {
     const guildId = interaction.guildId;
@@ -81,26 +111,38 @@ module.exports = {
 
       const { user, wallpaper } = profile;
       const snapshot = await buildCharacterSnapshot(user);
-      const embed = new EmbedBuilder()
-        .setTitle(`${displayName}'s Profile`)
-        .setColor(0x9b59b6)
-        .addFields(
-          { name: 'Title', value: user.profileTitle || 'default', inline: false },
-          { name: 'Bio', value: user.profileBio || 'default', inline: false },
-          { name: 'Level', value: `Lv ${formatNumber(user.level)}`, inline: true },
-          { name: 'Credits', value: formatCredits(user.balance, emojis.currency), inline: true },
-          { name: 'Gear Score', value: formatNumber(snapshot.gearScore), inline: true },
-          { name: 'Max HP', value: formatNumber(snapshot.maxHp), inline: true },
-          { name: 'Marriage', value: user.marriedTo ? `<@${user.marriedTo}>` : 'Single', inline: true },
-          { name: 'Married Bonus', value: user.marriedTo ? '+5% LUCK active' : 'None', inline: true },
-          { name: 'Followers', value: String(user.followers?.length || 0), inline: true },
-          { name: 'Following', value: String(user.following?.length || 0), inline: true }
-        )
-        .setTimestamp();
 
-      if (wallpaper?.wallpaperUrl) embed.setImage(wallpaper.wallpaperUrl);
+      try {
+        const buffer = await createProfileCardBuffer({
+          user,
+          wallpaper,
+          snapshot,
+          displayName,
+          guildName: interaction.guild?.name || user.originGuildName || 'RoBot Network',
+          avatarUrl: target.displayAvatarURL({ extension: 'png', size: 256 })
+        });
+        const attachment = new AttachmentBuilder(buffer, { name: 'robot-profile.png' });
+        return await interaction.reply({ files: [attachment], ephemeral: false });
+      } catch (_error) {
+        const embed = new EmbedBuilder()
+          .setTitle(`${displayName}'s Profile`)
+          .setColor(0xe11d48)
+          .addFields(
+            { name: 'Title', value: user.profileTitle || 'default', inline: false },
+            { name: 'Bio', value: user.profileBio || 'default', inline: false },
+            { name: 'Level', value: `Lv ${formatNumber(user.level)}`, inline: true },
+            { name: 'Credits', value: formatCredits(user.balance, emojis.currency), inline: true },
+            { name: 'Gear Score', value: formatNumber(snapshot.gearScore), inline: true },
+            { name: 'Max HP', value: formatNumber(snapshot.maxHp), inline: true },
+            { name: 'Marriage', value: user.marriedTo ? `<@${user.marriedTo}>` : 'Single', inline: true },
+            { name: 'Followers', value: String(user.followers?.length || 0), inline: true },
+            { name: 'Following', value: String(user.following?.length || 0), inline: true }
+          )
+          .setTimestamp();
 
-      return await interaction.reply({ embeds: [embed], ephemeral: true });
+        if (wallpaper?.wallpaperUrl) embed.setImage(wallpaper.wallpaperUrl);
+        return await interaction.reply({ embeds: [embed], ephemeral: false });
+      }
     }
 
     if (sub === 'bio') {
@@ -108,7 +150,7 @@ module.exports = {
       await getOrCreateUser({ guildId, discordId: interaction.user.id, username: interaction.user.username });
       const result = await setBio({ guildId, discordId: interaction.user.id, bio: text });
       if (!result.ok) return await interaction.reply({ content: result.reason, ephemeral: true });
-      return await interaction.reply({ content: `✅ Bio updated.`, ephemeral: true });
+      return await interaction.reply({ content: '✅ Bio updated.', ephemeral: true });
     }
 
     if (sub === 'title') {
@@ -116,7 +158,7 @@ module.exports = {
       await getOrCreateUser({ guildId, discordId: interaction.user.id, username: interaction.user.username });
       const result = await setTitle({ guildId, discordId: interaction.user.id, title: text });
       if (!result.ok) return await interaction.reply({ content: result.reason, ephemeral: true });
-      return await interaction.reply({ content: `✅ Title updated.`, ephemeral: true });
+      return await interaction.reply({ content: '✅ Title updated.', ephemeral: true });
     }
 
     if (sub === 'wallpaper') {
@@ -148,6 +190,22 @@ module.exports = {
       const result = await unfollow({ guildId, followerId: interaction.user.id, targetId: target.id });
       if (!result.ok) return await interaction.reply({ content: result.reason, ephemeral: true });
       return await interaction.reply({ content: `✅ You unfollowed <@${target.id}>.`, ephemeral: true });
+    }
+
+    if (sub === 'followers' || sub === 'following') {
+      const target = interaction.options.getUser('user') || interaction.user;
+      if (target.id === interaction.user.id) {
+        await getOrCreateUser({ guildId, discordId: target.id, username: target.username });
+      }
+
+      const result = await getSocialConnections({ guildId, discordId: target.id, type: sub });
+      if (!result.ok) return await interaction.reply({ content: result.reason, ephemeral: true });
+
+      const title = sub === 'followers' ? `${target.username}'s Followers` : `${target.username}'s Following`;
+      return await interaction.reply({
+        embeds: [buildSocialEmbed({ title, entries: result.entries })],
+        ephemeral: true
+      });
     }
   }
 };

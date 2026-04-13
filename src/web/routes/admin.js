@@ -69,6 +69,23 @@ const { getEconomyAccountGuildId, getEconomyAccountScope } = require('../../serv
 const { applyExpDelta, requiredExpForLevel, totalAccumulatedExp } = require('../../services/economy/levelService');
 const { buildCharacterSnapshot, itemScoreFor, normalizeStats } = require('../../services/economy/characterService');
 const { addItemToInventory, countInventoryQuantity, removeItemFromInventory } = require('../../services/economy/inventoryService');
+const { formatCompactNumber, formatDisplayNumber, formatTransactionNumber } = require('../../services/economy/economyFormatService');
+const {
+  generateItemId,
+  normalizeItemPayload,
+  getRarityMeta,
+  compareRarity,
+  LEGACY_RARITY_ALIASES,
+  applyItemNormalization
+} = require('../../services/economy/itemService');
+const { syncItemMedia } = require('../../services/economy/itemMediaService');
+const {
+  SHOP_LISTING_TYPES,
+  getActiveShopListings,
+  upsertManualShopListing,
+  removeShopListing,
+  ensureGlobalShopListingsFresh
+} = require('../../services/economy/shopCatalogService');
 const { computeGearScore } = require('../../services/economy/equipmentService');
 const { ensureVoiceConnection, disconnectVoice } = require('../../jobs/voiceScheduler');
 const { buildVerifyPanelMessage, buildVerifyPanelRow } = require('../../bots/verification/util/verifyMessages');
@@ -76,6 +93,10 @@ const { createPasskeyRegistrationOptions, verifyPasskeyRegistration } = require(
 
 const router = express.Router();
 const ACCOUNT_AUDIT_STAGES = ['account-create', 'account-enable', 'account-disable', 'account-delete', 'account-update'];
+const ECONOMY_VIEW_SCOPES = Object.freeze({
+  server: 'server',
+  global: 'global'
+});
 const ECONOMY_EQUIP_SLOT_OPTIONS = Object.freeze({
   headGear: ['headGear'],
   eyeGear: ['eyeGear'],
@@ -185,6 +206,21 @@ function parseCheckboxValue(value, defaultValue = false) {
   if (['1', 'true', 'on', 'yes'].includes(normalized)) return true;
   if (['0', 'false', 'off', 'no'].includes(normalized)) return false;
   return Boolean(raw);
+}
+
+function normalizeEconomyViewScope(value, fallback = ECONOMY_VIEW_SCOPES.server) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === ECONOMY_VIEW_SCOPES.global) return ECONOMY_VIEW_SCOPES.global;
+  if (normalized === ECONOMY_VIEW_SCOPES.server) return ECONOMY_VIEW_SCOPES.server;
+  return fallback;
+}
+
+function buildEconomyUserFilter({ accountGuildId, guildId, scope = ECONOMY_VIEW_SCOPES.server } = {}) {
+  const filter = { guildId: accountGuildId };
+  if (normalizeEconomyViewScope(scope) === ECONOMY_VIEW_SCOPES.server && getEconomyAccountScope() === 'global') {
+    filter.originGuildId = String(guildId || '').trim();
+  }
+  return filter;
 }
 
 function resolveActiveBackupOperation(req) {
@@ -788,7 +824,7 @@ function parseItemEffectsFromBody(body) {
 function buildItemPayloadFromBody(body = {}) {
   const stats = parseItemStatsFromBody(body);
   const effects = parseItemEffectsFromBody(body);
-  return {
+  return normalizeItemPayload({
     itemId: String(body.itemId || '').trim(),
     name: String(body.name || '').trim(),
     description: String(body.description || '').trim(),
@@ -805,7 +841,19 @@ function buildItemPayloadFromBody(body = {}) {
     wallpaperUrl: String(body.wallpaperUrl || '').trim(),
     boxKey: String(body.boxKey || '').trim(),
     effects
-  };
+  });
+}
+
+function buildRarityMetaMap() {
+  return Object.fromEntries(CORE_RARITIES.map((rarity) => [rarity, getRarityMeta(rarity)]));
+}
+
+async function normalizeLegacyItemCatalog() {
+  const legacyEntries = Object.entries(LEGACY_RARITY_ALIASES);
+  for (const [legacyRarity, nextRarity] of legacyEntries) {
+    // eslint-disable-next-line no-await-in-loop
+    await Item.updateMany({ rarity: legacyRarity }, { $set: { rarity: nextRarity } }).catch(() => null);
+  }
 }
 
 function csvEscape(value) {
@@ -934,7 +982,7 @@ function summarizeInventoryByRarity(inventory = [], itemMap = new Map()) {
   for (const entry of inventory) {
     const item = itemMap.get(entry.itemId);
     if (!item) continue;
-    const rarity = String(item.rarity || 'common');
+    const rarity = getRarityMeta(item.rarity).key;
     summary[rarity] = (summary[rarity] || 0) + Math.max(0, Number(entry.quantity) || 0);
   }
   return summary;
@@ -979,12 +1027,16 @@ function buildHourlyFlowFrames({ hours = 24, now = new Date(), timeZone = getAna
   return frames;
 }
 
-async function buildEconomyFlowSeries(guildId, { hours = 24 } = {}) {
+async function buildEconomyFlowSeries(guildId, { hours = 24, scope = ECONOMY_VIEW_SCOPES.server } = {}) {
   const timeZone = getAnalyticsTimeZone();
   const now = new Date();
   const since = new Date(now.getTime() - Math.max(1, hours) * 60 * 60 * 1000);
+  const transactionMatch = { createdAt: { $gte: since } };
+  if (normalizeEconomyViewScope(scope) !== ECONOMY_VIEW_SCOPES.global) {
+    transactionMatch.guildId = guildId;
+  }
   const rows = await Transaction.aggregate([
-    { $match: { guildId, createdAt: { $gte: since } } },
+    { $match: transactionMatch },
     {
       $group: {
         _id: {
@@ -1034,30 +1086,41 @@ async function buildEconomyFlowSeries(guildId, { hours = 24 } = {}) {
   });
 }
 
-function mapAnalyticsPlayers(players = []) {
+function mapAnalyticsPlayers(players = [], { scope = ECONOMY_VIEW_SCOPES.server } = {}) {
+  const normalizedScope = normalizeEconomyViewScope(scope);
   return (Array.isArray(players) ? players : []).map((player) => {
     const discordId = String(player?.discordId || '').trim();
+    const scopeSuffix = normalizedScope === ECONOMY_VIEW_SCOPES.global ? '?scope=global' : '';
     return {
       ...player,
       discordId,
       username: String(player?.username || '').trim(),
-      profileHref: isSnowflake(discordId) ? `/admin/economy/players/${encodeURIComponent(discordId)}` : '',
+      originGuildId: String(player?.originGuildId || '').trim(),
+      originGuildName: String(player?.originGuildName || '').trim(),
+      profileHref: isSnowflake(discordId) ? `/admin/economy/players/${encodeURIComponent(discordId)}${scopeSuffix}` : '',
       editorHref: isSnowflake(discordId) ? `/admin/economy/users/${encodeURIComponent(discordId)}` : ''
     };
   });
 }
 
-async function buildEconomyAnalyticsSnapshot({ guildId, accountGuildId }) {
+async function buildEconomyAnalyticsSnapshot({ guildId, accountGuildId, scope = ECONOMY_VIEW_SCOPES.server }) {
+  const normalizedScope = normalizeEconomyViewScope(scope);
   const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const transactionMatch = { createdAt: { $gte: since } };
+  if (normalizedScope !== ECONOMY_VIEW_SCOPES.global) {
+    transactionMatch.guildId = guildId;
+  }
+  const userFilter = buildEconomyUserFilter({ accountGuildId, guildId, scope: normalizedScope });
+
   const [usage, totals, playerCount, inventoryUsers, topPlayers, topPvp, items, flowSeries] = await Promise.all([
     Transaction.aggregate([
-      { $match: { guildId, createdAt: { $gte: since } } },
+      { $match: transactionMatch },
       { $group: { _id: '$type', count: { $sum: 1 }, net: { $sum: '$amount' } } },
       { $sort: { count: -1 } },
       { $limit: 20 }
     ]).catch(() => []),
     Transaction.aggregate([
-      { $match: { guildId, createdAt: { $gte: since } } },
+      { $match: transactionMatch },
       {
         $group: {
           _id: null,
@@ -1066,17 +1129,22 @@ async function buildEconomyAnalyticsSnapshot({ guildId, accountGuildId }) {
         }
       }
     ]).catch(() => []),
-    User.countDocuments({ guildId: accountGuildId }).catch(() => 0),
-    User.find({ guildId: accountGuildId }).select('inventory').lean().catch(() => []),
-    User.find({ guildId: accountGuildId }).select('discordId username balance level').sort({ balance: -1 }).limit(10).lean().catch(() => []),
-    User.find({ guildId: accountGuildId })
-      .select('discordId username pvpRating pvpWins level')
+    User.countDocuments(userFilter).catch(() => 0),
+    User.find(userFilter).select('inventory').lean().catch(() => []),
+    User.find(userFilter)
+      .select('discordId username balance bank gearScore level originGuildId originGuildName')
+      .sort({ balance: -1, bank: -1, updatedAt: -1 })
+      .limit(10)
+      .lean()
+      .catch(() => []),
+    User.find(userFilter)
+      .select('discordId username pvpRating pvpWins level originGuildId originGuildName')
       .sort({ pvpRating: -1, pvpWins: -1, updatedAt: -1 })
       .limit(10)
       .lean()
       .catch(() => []),
     Item.find({}).select('itemId rarity').lean().catch(() => []),
-    buildEconomyFlowSeries(guildId, { hours: 24 })
+    buildEconomyFlowSeries(guildId, { hours: 24, scope: normalizedScope })
   ]);
 
   const itemMap = new Map(items.map((item) => [item.itemId, item]));
@@ -1087,11 +1155,12 @@ async function buildEconomyAnalyticsSnapshot({ guildId, accountGuildId }) {
   }, {});
 
   return {
+    scope: normalizedScope,
     usage,
     totals: totals[0] || { generated: 0, spent: 0 },
     rarityTotals,
-    topPlayers: mapAnalyticsPlayers(topPlayers),
-    topPvp: mapAnalyticsPlayers(topPvp),
+    topPlayers: mapAnalyticsPlayers(topPlayers, { scope: normalizedScope }),
+    topPvp: mapAnalyticsPlayers(topPvp, { scope: normalizedScope }),
     flowSeries,
     playerCount: Math.max(0, Number(playerCount) || 0),
     updatedAt: new Date()
@@ -1165,6 +1234,27 @@ async function fetchGuildFromClients(discord, guildId) {
     if (guild) return guild;
   }
   return null;
+}
+
+async function resolveGuildNameMap(discord, guildIds = []) {
+  const uniqueGuildIds = [...new Set((Array.isArray(guildIds) ? guildIds : []).map((entry) => String(entry || '').trim()).filter(Boolean))];
+  if (!uniqueGuildIds.length) return new Map();
+
+  const cfgRows = await GuildConfig.find({ guildId: { $in: uniqueGuildIds } }).select('guildId guildName').lean().catch(() => []);
+  const names = new Map(
+    cfgRows
+      .map((entry) => [String(entry.guildId || '').trim(), String(entry.guildName || '').trim()])
+      .filter(([guildId]) => Boolean(guildId))
+  );
+
+  for (const guildId of uniqueGuildIds) {
+    if (names.has(guildId) && names.get(guildId)) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const guild = await fetchGuildFromClients(discord, guildId).catch(() => null);
+    if (guild?.name) names.set(guildId, guild.name);
+  }
+
+  return names;
 }
 
 async function listTextChannelsFromClients(discord, guildId) {
@@ -2486,6 +2576,7 @@ router.get('/dashboard', requireAdmin, requireGuild, async (req, res) => {
 
 // Economy: items
 router.get('/economy/items', requireAdmin, requireGuild, async (req, res) => {
+  await normalizeLegacyItemCatalog();
   const q = String(req.query.q || '').trim().slice(0, 80);
   const filter = q
     ? {
@@ -2498,7 +2589,9 @@ router.get('/economy/items', requireAdmin, requireGuild, async (req, res) => {
         ]
       }
     : {};
-  const items = await Item.find(filter).sort({ updatedAt: -1, createdAt: -1 }).limit(300).lean();
+  const items = (await Item.find(filter).sort({ updatedAt: -1, createdAt: -1 }).limit(300).lean())
+    .map((item) => normalizeItemPayload(item, { generateIdIfMissing: false }))
+    .sort((a, b) => compareRarity(a.rarity, b.rarity) || String(a.name || '').localeCompare(String(b.name || '')));
   const flash = req.session.flash || null;
   delete req.session.flash;
   return res.render('pages/admin/economy_items', {
@@ -2507,14 +2600,16 @@ router.get('/economy/items', requireAdmin, requireGuild, async (req, res) => {
     q,
     flash,
     itemTypes: ITEM_TYPES,
-    rarities: CORE_RARITIES
+    rarities: CORE_RARITIES,
+    rarityMeta: buildRarityMetaMap(),
+    generatedItemId: generateItemId()
   });
 });
 
 router.post('/economy/items', requireAdmin, requireGuild, async (req, res) => {
-  const doc = buildItemPayloadFromBody(req.body);
-  if (!doc.itemId || !doc.name || !doc.type || !doc.rarity) {
-    setFlash(req, { type: 'warning', message: 'Item ID, name, type, and rarity are required.' });
+  let doc = buildItemPayloadFromBody(req.body);
+  if (!doc.name || !doc.type || !doc.rarity) {
+    setFlash(req, { type: 'warning', message: 'Name, type, and rarity are required.' });
     return res.redirect('/admin/economy/items');
   }
   if (!ITEM_TYPES.includes(doc.type)) {
@@ -2524,6 +2619,28 @@ router.post('/economy/items', requireAdmin, requireGuild, async (req, res) => {
   if (!CORE_RARITIES.includes(doc.rarity)) {
     setFlash(req, { type: 'warning', message: 'Pick a valid rarity.' });
     return res.redirect('/admin/economy/items');
+  }
+
+  if (!doc.itemId) doc.itemId = generateItemId();
+  const existing = await Item.findOne({ itemId: doc.itemId });
+
+  try {
+    const media = await syncItemMedia({
+      client: req.app.locals.discord.economy,
+      itemId: doc.itemId,
+      itemName: doc.name,
+      imageUploadData: String(req.body.imageUploadData || '').trim(),
+      imageUrl: doc.imageUrl,
+      currentItem: existing
+    });
+    doc = { ...doc, ...media };
+  } catch (error) {
+    setFlash(req, { type: 'warning', message: String(error?.message || error || 'Could not process the item image.') });
+    return res.redirect('/admin/economy/items');
+  }
+
+  if (doc.type === 'wallpaper' && !doc.wallpaperUrl && doc.imageUrl) {
+    doc.wallpaperUrl = doc.imageUrl;
   }
   if (!doc.itemScore) doc.itemScore = itemScoreFor(doc);
   await Item.updateOne({ itemId: doc.itemId }, { $set: doc }, { upsert: true });
@@ -2542,7 +2659,9 @@ router.post('/economy/items/import', requireAdmin, requireGuild, async (req, res
   let imported = 0;
   for (const row of rows) {
     const doc = buildItemPayloadFromBody(row);
-    if (!doc.itemId || !doc.name || !ITEM_TYPES.includes(doc.type) || !CORE_RARITIES.includes(doc.rarity)) continue;
+    if (!doc.name || !ITEM_TYPES.includes(doc.type) || !CORE_RARITIES.includes(doc.rarity)) continue;
+    if (!doc.itemId) doc.itemId = generateItemId();
+    if (doc.type === 'wallpaper' && !doc.wallpaperUrl && doc.imageUrl) doc.wallpaperUrl = doc.imageUrl;
     if (!doc.itemScore) doc.itemScore = itemScoreFor(doc);
     // eslint-disable-next-line no-await-in-loop
     await Item.updateOne(
@@ -2612,35 +2731,48 @@ router.post('/economy/items/remove-global', requireAdmin, requireGuild, async (r
 
 // Economy: shop
 router.get('/economy/shop', requireAdmin, requireGuild, async (req, res) => {
-  const guildId = req.session.activeGuildId;
+  await normalizeLegacyItemCatalog();
   const q = String(req.query.q || '').trim().slice(0, 80);
-  const [listings, catalogItems] = await Promise.all([
-    ShopListing.find({ guildId }).sort({ createdAt: -1 }).limit(300),
+  const [shopState, catalogItems] = await Promise.all([
+    getActiveShopListings(),
     Item.find(
       q
         ? {
             $or: [
               { itemId: { $regex: escapeRegex(q), $options: 'i' } },
               { name: { $regex: escapeRegex(q), $options: 'i' } },
-              { type: { $regex: escapeRegex(q), $options: 'i' } }
+              { type: { $regex: escapeRegex(q), $options: 'i' } },
+              { rarity: { $regex: escapeRegex(q), $options: 'i' } }
             ]
           }
         : {}
     )
-      .sort({ name: 1 })
+      .sort({ updatedAt: -1, createdAt: -1 })
       .limit(500)
       .lean()
   ]);
-  const listingItemIds = listings.map((listing) => listing.itemId);
-  const byIdItems = await Item.find({ itemId: { $in: [...new Set([...listingItemIds, ...catalogItems.map((item) => item.itemId)])] } }).lean();
-  const byId = new Map(byIdItems.map((i) => [i.itemId, i]));
+  const listings = shopState.listings || [];
+  const byId = shopState.itemMap || new Map();
   const flash = req.session.flash || null;
   delete req.session.flash;
-  return res.render('pages/admin/economy_shop', { title: 'Shop', listings, byId, items: catalogItems, q, flash, rarities: CORE_RARITIES });
+  return res.render('pages/admin/economy_shop', {
+    title: 'Shop',
+    listings,
+    byId,
+    items: catalogItems
+      .map((item) => normalizeItemPayload(item, { generateIdIfMissing: false }))
+      .sort((a, b) => compareRarity(a.rarity, b.rarity) || String(a.name || '').localeCompare(String(b.name || ''))),
+    q,
+    flash,
+    rarities: CORE_RARITIES,
+    rarityMeta: buildRarityMetaMap(),
+    rotationCount: Number(shopState.rotationCount || 0),
+    manualCount: Number(shopState.manualCount || 0),
+    rotationEndsAt: shopState.rotationEndsAt || null
+  });
 });
 
 router.post('/economy/shop', requireAdmin, requireGuild, async (req, res) => {
-  const guildId = req.session.activeGuildId;
   const itemId = String(req.body.itemId || '').trim();
   const price = parseIntegerField(req.body.price, 0, { min: 0 });
   const limited = parseCheckboxValue(req.body.limited, false);
@@ -2649,20 +2781,27 @@ router.post('/economy/shop', requireAdmin, requireGuild, async (req, res) => {
     setFlash(req, { type: 'warning', message: 'Select an item to list in the shop.' });
     return res.redirect('/admin/economy/shop');
   }
-  await ShopListing.updateOne(
-    { guildId, itemId },
-    { $set: { guildId, itemId, price, limited, stock } },
-    { upsert: true }
-  );
+  await upsertManualShopListing({ itemId, price, limited, stock, addedBy: adminDisplayName(req.adminUser) });
   setFlash(req, { type: 'success', message: `Saved shop listing for ${itemId}.` });
   return res.redirect('/admin/economy/shop');
 });
 
 router.post('/economy/shop/delete', requireAdmin, requireGuild, async (req, res) => {
-  const guildId = req.session.activeGuildId;
   const itemId = String(req.body.itemId || '').trim();
-  if (itemId) await ShopListing.deleteOne({ guildId, itemId });
+  const listingType = String(req.body.listingType || '').trim();
+  if (itemId) await removeShopListing({ itemId, listingType });
   setFlash(req, { type: 'info', message: itemId ? `Removed ${itemId} from the shop.` : 'Listing removed.' });
+  return res.redirect('/admin/economy/shop');
+});
+
+router.post('/economy/shop/refresh', requireAdmin, requireGuild, async (req, res) => {
+  const result = await ensureGlobalShopListingsFresh({ forceRefresh: true });
+  setFlash(req, {
+    type: 'success',
+    message: result?.rotationEndsAt
+      ? `Shop rotation refreshed. Next refresh window ends ${new Date(result.rotationEndsAt).toLocaleString('en-US')}.`
+      : 'Shop rotation refreshed.'
+  });
   return res.redirect('/admin/economy/shop');
 });
 
@@ -2692,7 +2831,7 @@ router.get('/economy/users', requireAdmin, requireGuild, asyncHandler(async (req
   const page = Math.min(requestedPage, totalPages);
   const skip = (page - 1) * limit;
   const users = await User.find(filter)
-    .select('discordId username balance bank level marriedTo economyBan updatedAt')
+    .select('discordId username balance bank gearScore level marriedTo economyBan updatedAt originGuildName')
     .sort({ balance: -1, updatedAt: -1 })
     .skip(skip)
     .limit(limit)
@@ -3176,15 +3315,25 @@ router.get('/economy/users/:discordId', requireAdmin, requireGuild, asyncHandler
   const guildId = req.session.activeGuildId;
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const discordId = String(req.params.discordId || '').trim();
+  const transactionScope = normalizeEconomyViewScope(req.query.transactionScope || req.query.transactions);
   if (!isSnowflake(discordId)) {
     setFlash(req, { type: 'warning', message: 'Invalid Discord ID.' });
     return res.redirect('/admin/economy/users');
   }
 
+  const transactionFilter =
+    transactionScope === ECONOMY_VIEW_SCOPES.global
+      ? { discordId }
+      : { guildId, discordId };
+
   const [user, items, transactions, cfg] = await Promise.all([
     User.findOne({ guildId: accountGuildId, discordId }).lean(),
-    Item.find({}).select('itemId name type rarity').sort({ rarity: 1, name: 1 }).lean(),
-    Transaction.find({ guildId, discordId }).select('type amount balanceAfter createdAt').sort({ createdAt: -1 }).limit(50).lean(),
+    Item.find({}).select('itemId name type rarity imageUrl emojiText emojiUrl').sort({ rarity: 1, name: 1 }).lean(),
+    Transaction.find(transactionFilter)
+      .select('guildId type amount balanceAfter bankAfter createdAt')
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean(),
     getOrCreateGuildConfig(guildId)
   ]);
 
@@ -3201,9 +3350,14 @@ router.get('/economy/users/:discordId', requireAdmin, requireGuild, asyncHandler
   } catch (_error) {
     snapshot = buildFallbackCharacterSnapshot(user);
   }
-  const itemMap = new Map(items.map((item) => [item.itemId, item]));
+  const normalizedItems = items.map((item) => normalizeItemPayload(item, { generateIdIfMissing: false }));
+  const itemMap = new Map(normalizedItems.map((item) => [item.itemId, item]));
   const inventory = buildInventorySummary(inventoryEntries, itemMap);
   const inventoryByRarity = summarizeInventoryByRarity(inventoryEntries, itemMap);
+  const guildNameById = await resolveGuildNameMap(
+    req.app.locals.discord,
+    transactions.map((tx) => tx.guildId)
+  );
   const flash = req.session.flash || null;
   delete req.session.flash;
 
@@ -3211,13 +3365,17 @@ router.get('/economy/users/:discordId', requireAdmin, requireGuild, asyncHandler
     title: 'User Detail',
     user,
     snapshot,
-    items,
+    items: normalizedItems,
     itemMap,
     inventory,
     inventoryByRarity,
-    wallpaperItems: items.filter((item) => item.type === 'wallpaper'),
-    equipOptionsBySlot: buildEquipOptionsBySlot(items),
-    transactions,
+    wallpaperItems: normalizedItems.filter((item) => item.type === 'wallpaper'),
+    equipOptionsBySlot: buildEquipOptionsBySlot(normalizedItems),
+    transactions: transactions.map((tx) => ({
+      ...tx,
+      guildName: guildNameById.get(String(tx.guildId || '').trim()) || String(tx.guildId || '').trim()
+    })),
+    transactionScope,
     flash,
     guildId,
     whitelist: normalizeCoinGrantWhitelistEntries(cfg.economy?.coinGrantWhitelist || []),
@@ -3230,16 +3388,21 @@ router.get('/economy/players/:discordId', requireAdmin, requireGuild, asyncHandl
   const guildId = req.session.activeGuildId;
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const discordId = String(req.params.discordId || '').trim();
+  const analyticsScope = normalizeEconomyViewScope(req.query.scope);
   if (!isSnowflake(discordId)) {
     setFlash(req, { type: 'warning', message: 'Invalid Discord ID.' });
     return res.redirect('/admin/economy/analytics');
   }
 
+  const transactionFilter =
+    analyticsScope === ECONOMY_VIEW_SCOPES.global
+      ? { discordId }
+      : { guildId, discordId };
   const [user, items, transactions] = await Promise.all([
     User.findOne({ guildId: accountGuildId, discordId }).lean(),
-    Item.find({}).select('itemId name type rarity wallpaperUrl').sort({ rarity: 1, name: 1 }).lean(),
-    Transaction.find({ guildId, discordId })
-      .select('type amount balanceAfter bankAfter createdAt')
+    Item.find({}).select('itemId name type rarity wallpaperUrl imageUrl emojiText emojiUrl').sort({ rarity: 1, name: 1 }).lean(),
+    Transaction.find(transactionFilter)
+      .select('guildId type amount balanceAfter bankAfter createdAt')
       .sort({ createdAt: -1 })
       .limit(20)
       .lean()
@@ -3259,7 +3422,8 @@ router.get('/economy/players/:discordId', requireAdmin, requireGuild, asyncHandl
     snapshot = buildFallbackCharacterSnapshot(user);
   }
 
-  const itemMap = new Map(items.map((item) => [item.itemId, item]));
+  const normalizedItems = items.map((item) => normalizeItemPayload(item, { generateIdIfMissing: false }));
+  const itemMap = new Map(normalizedItems.map((item) => [item.itemId, item]));
   const inventory = buildInventorySummary(inventoryEntries, itemMap);
   const inventoryByRarity = summarizeInventoryByRarity(inventoryEntries, itemMap);
   const topInventory = inventory
@@ -3272,6 +3436,10 @@ router.get('/economy/players/:discordId', requireAdmin, requireGuild, asyncHandl
     .slice(0, 12);
   const wallpaperItem =
     user.profileWallpaper && user.profileWallpaper !== 'default' ? itemMap.get(user.profileWallpaper) || null : null;
+  const guildNameById = await resolveGuildNameMap(
+    req.app.locals.discord,
+    transactions.map((tx) => tx.guildId)
+  );
   const flash = req.session.flash || null;
   delete req.session.flash;
 
@@ -3282,7 +3450,11 @@ router.get('/economy/players/:discordId', requireAdmin, requireGuild, asyncHandl
     inventory,
     inventoryByRarity,
     topInventory,
-    transactions,
+    transactions: transactions.map((tx) => ({
+      ...tx,
+      guildName: guildNameById.get(String(tx.guildId || '').trim()) || String(tx.guildId || '').trim()
+    })),
+    analyticsScope,
     wallpaperItem,
     flash
   });
@@ -3477,7 +3649,8 @@ router.post('/economy/users/:discordId/unban', requireAdmin, requireGuild, async
 
 router.get('/economy/analytics/live', requireAdmin, requireGuild, asyncHandler(async (req, res) => {
   const guildId = req.session.activeGuildId;
-  const flowSeries = await buildEconomyFlowSeries(guildId, { hours: 24 });
+  const analyticsScope = normalizeEconomyViewScope(req.query.scope);
+  const flowSeries = await buildEconomyFlowSeries(guildId, { hours: 24, scope: analyticsScope });
   return res.json({
     updatedAt: new Date().toISOString(),
     series: flowSeries
@@ -3487,13 +3660,16 @@ router.get('/economy/analytics/live', requireAdmin, requireGuild, asyncHandler(a
 router.get('/economy/analytics', requireAdmin, requireGuild, asyncHandler(async (req, res) => {
   const guildId = req.session.activeGuildId;
   const accountGuildId = getEconomyAccountGuildId(guildId);
-  const analytics = await buildEconomyAnalyticsSnapshot({ guildId, accountGuildId });
+  const analyticsScope = normalizeEconomyViewScope(req.query.scope, ECONOMY_VIEW_SCOPES.server);
+  const analytics = await buildEconomyAnalyticsSnapshot({ guildId, accountGuildId, scope: analyticsScope });
   const flash = req.session.flash || null;
   delete req.session.flash;
 
   return res.render('pages/admin/economy_analytics', {
     title: 'RoBot Analytics',
     flash,
+    analyticsScope,
+    showOriginServer: analyticsScope === ECONOMY_VIEW_SCOPES.global,
     usage: analytics.usage,
     totals: analytics.totals,
     rarityTotals: analytics.rarityTotals,
@@ -3501,7 +3677,7 @@ router.get('/economy/analytics', requireAdmin, requireGuild, asyncHandler(async 
     topPvp: analytics.topPvp,
     playerCount: analytics.playerCount,
     flowSeries: analytics.flowSeries,
-    flowLiveUrl: '/admin/economy/analytics/live',
+    flowLiveUrl: `/admin/economy/analytics/live?scope=${encodeURIComponent(analyticsScope)}`,
     analyticsUpdatedAt: analytics.updatedAt
   });
 }));

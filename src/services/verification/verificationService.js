@@ -330,6 +330,61 @@ function buildVerificationEmbed({ user, attempt, riskScore, status, noteLines = 
   return embed;
 }
 
+async function upsertVerificationAttempt(payload = {}) {
+  const guildId = String(payload.guildId || '').trim();
+  const discordId = String(payload.discordId || '').trim();
+  if (!guildId || !discordId) {
+    return await VerificationAttempt.create({
+      verificationId: nanoid(12),
+      ...payload
+    });
+  }
+
+  const existingAttempts = await VerificationAttempt.find({ guildId, discordId }).sort({ updatedAt: -1, createdAt: -1 });
+  const primary = existingAttempts[0] || null;
+
+  if (!primary) {
+    return await VerificationAttempt.create({
+      verificationId: nanoid(12),
+      ...payload
+    });
+  }
+
+  primary.username = String(payload.username || '').trim();
+  primary.email = String(payload.email || '').trim();
+  primary.ip = String(payload.ip || '').trim();
+  primary.publicIp = String(payload.publicIp || '').trim();
+  primary.observedIp = String(payload.observedIp || '').trim();
+  primary.userAgent = String(payload.userAgent || '').trim();
+  primary.geo = payload.geo || { lat: null, lon: null, accuracy: null };
+  primary.ipGeo = payload.ipGeo || {
+    source: '',
+    country: '',
+    region: '',
+    city: '',
+    timezone: '',
+    lat: null,
+    lon: null
+  };
+  primary.answers = payload.answers || { a1Hash: '', a2Hash: '', a3Hash: '' };
+  primary.riskScore = Number(payload.riskScore) || 0;
+  primary.riskDecision = String(payload.riskDecision || '').trim();
+  primary.autoApproved = Boolean(payload.autoApproved);
+  primary.status = String(payload.status || 'pending').trim() || 'pending';
+  primary.reviewedBy = '';
+  primary.reviewedAt = null;
+  await primary.save();
+
+  if (existingAttempts.length > 1) {
+    const duplicateIds = existingAttempts.slice(1).map((attempt) => attempt._id).filter(Boolean);
+    if (duplicateIds.length) {
+      await VerificationAttempt.deleteMany({ _id: { $in: duplicateIds } }).catch(() => null);
+    }
+  }
+
+  return primary;
+}
+
 async function submitVerification({
   discordClient,
   roleClients,
@@ -437,8 +492,7 @@ async function submitVerification({
   if (!hashes.a1Hash) hashes.a1Hash = sha256('missing');
   if (!hashes.a2Hash) hashes.a2Hash = sha256('missing');
 
-  const attempt = await VerificationAttempt.create({
-    verificationId: nanoid(12),
+  const attempt = await upsertVerificationAttempt({
     guildId,
     discordId: user.id,
     username: user.username || user.globalName || '',

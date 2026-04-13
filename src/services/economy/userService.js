@@ -160,6 +160,8 @@ function normalizeEconomyUserState(user, { now = new Date() } = {}) {
   changed = setNormalizedValue(user, 'profileWallpaper', normalizeString(user.profileWallpaper, 'default')) || changed;
   changed = setNormalizedValue(user, 'profileBio', normalizeString(user.profileBio, 'default')) || changed;
   changed = setNormalizedValue(user, 'profileTitle', normalizeString(user.profileTitle, 'default')) || changed;
+  changed = setNormalizedValue(user, 'originGuildId', normalizeString(user.originGuildId)) || changed;
+  changed = setNormalizedValue(user, 'originGuildName', normalizeString(user.originGuildName)) || changed;
   changed = setNormalizedValue(user, 'marriedTo', normalizeNullableString(user.marriedTo)) || changed;
   changed = setNormalizedValue(user, 'marriageRingItemId', normalizeNullableString(user.marriageRingItemId)) || changed;
   changed = setNormalizedValue(user, 'sharedBankEnabled', Boolean(user.sharedBankEnabled)) || changed;
@@ -181,15 +183,17 @@ function normalizeEconomyUserState(user, { now = new Date() } = {}) {
   changed = setNormalizedValue(user, 'lastMarriageDaily', normalizeDate(user.lastMarriageDaily, null)) || changed;
   changed = setNormalizedValue(user, 'marriedSince', normalizeDate(user.marriedSince, null)) || changed;
   changed = setNormalizedValue(user, 'energyUpdatedAt', normalizeDate(user.energyUpdatedAt, now)) || changed;
+  changed = setNormalizedValue(user, 'firstEconomySeenAt', normalizeDate(user.firstEconomySeenAt, user.createdAt || now)) || changed;
 
   return { user, changed };
 }
 
-async function getOrCreateUser({ guildId, discordId, username }) {
+async function getOrCreateUser({ guildId, discordId, username, guildName = '' }) {
   const contextGuildId = String(guildId || '').trim();
   const accountGuildId = getEconomyAccountGuildId(contextGuildId);
   const keyDiscordId = String(discordId || '').trim();
   const keyUsername = String(username || '').trim();
+  const keyGuildName = String(guildName || '').trim();
 
   // Global economy migration: if the user had a legacy per-guild account, seed the global account once.
   if (accountGuildId && contextGuildId && accountGuildId !== contextGuildId) {
@@ -204,6 +208,9 @@ async function getOrCreateUser({ guildId, discordId, username }) {
           ...rest
         };
         if (keyUsername) seed.username = keyUsername;
+        if (contextGuildId && !seed.originGuildId) seed.originGuildId = contextGuildId;
+        if (keyGuildName && !seed.originGuildName) seed.originGuildName = keyGuildName;
+        if (!seed.firstEconomySeenAt) seed.firstEconomySeenAt = legacy.createdAt || new Date();
         await User.updateOne(
           { guildId: accountGuildId, discordId: keyDiscordId },
           { $setOnInsert: seed },
@@ -214,7 +221,14 @@ async function getOrCreateUser({ guildId, discordId, username }) {
   }
 
   const update = {
-    $setOnInsert: { guildId: accountGuildId, discordId: keyDiscordId, username: keyUsername }
+    $setOnInsert: {
+      guildId: accountGuildId,
+      discordId: keyDiscordId,
+      username: keyUsername,
+      originGuildId: contextGuildId,
+      originGuildName: keyGuildName,
+      firstEconomySeenAt: new Date()
+    }
   };
   const user = await User.findOneAndUpdate({ guildId: accountGuildId, discordId: keyDiscordId }, update, {
     upsert: true,
@@ -227,6 +241,18 @@ async function getOrCreateUser({ guildId, discordId, username }) {
 
   if (keyUsername && user.username !== keyUsername) {
     user.username = keyUsername;
+    needsSave = true;
+  }
+  if (contextGuildId && !String(user.originGuildId || '').trim()) {
+    user.originGuildId = contextGuildId;
+    needsSave = true;
+  }
+  if (keyGuildName && !String(user.originGuildName || '').trim()) {
+    user.originGuildName = keyGuildName;
+    needsSave = true;
+  }
+  if (!user.firstEconomySeenAt) {
+    user.firstEconomySeenAt = user.createdAt || new Date();
     needsSave = true;
   }
 

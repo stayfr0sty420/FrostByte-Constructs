@@ -7,34 +7,55 @@
     <%- include('../../partials/nav') %>
     <main class="container py-4">
       <section class="economy-items-hero mb-4">
-        <div class="hero-eyebrow">RoBot Item Management</div>
-        <h1 class="hero-title mb-2">Items</h1>
-        <p class="hero-text mb-0">Create, bulk import, export, and clean up the RPG item database from one screen.</p>
+        <div>
+          <div class="hero-eyebrow">RoBot Item Management</div>
+          <h1 class="hero-title mb-2">Items</h1>
+          <p class="hero-text mb-0">Auto-generate item IDs, upload a picture for emoji sync, and manage the full shared item catalog from one place.</p>
+        </div>
+        <div class="text-muted small">Loaded <strong><%= Number(items.length || 0).toLocaleString('en-US') %></strong> items</div>
       </section>
 
       <% if (flash) { %>
         <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
       <% } %>
 
+      <% const fmtFull = (value) => Math.floor(Number(value || 0)).toLocaleString('en-US'); %>
+      <% const fmtCompact = (value, threshold = 1000) => formatCompactNumber(value, { threshold }); %>
+
       <div class="row g-4">
-        <div class="col-12 col-xl-7">
+        <div class="col-12 col-xl-8">
           <div class="card shadow-sm h-100">
             <div class="card-body">
-              <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
-                <h2 class="h5 mb-0">Single Item Editor</h2>
-                <span class="badge text-bg-secondary"><%= items.length %> loaded</span>
-              </div>
-              <form method="post" action="/admin/economy/items" class="row g-3">
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                <div class="col-12 col-md-4">
-                  <label class="form-label">Item ID</label>
-                  <input class="form-control" name="itemId" placeholder="gear_arcblade" required />
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1">Single Item Editor</h2>
+                  <div class="text-muted small">Leave Item ID blank and RoBot will generate a 12-character mixed ID with safe special characters.</div>
                 </div>
-                <div class="col-12 col-md-4">
+                <span class="badge text-bg-secondary">Catalog-wide</span>
+              </div>
+
+              <form method="post" action="/admin/economy/items" class="row g-3 economy-item-form" data-item-editor>
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <input type="hidden" name="imageUploadData" value="" data-item-image-data />
+
+                <div class="col-12 col-lg-4">
+                  <label class="form-label">Item ID</label>
+                  <div class="input-group">
+                    <input
+                      class="form-control"
+                      name="itemId"
+                      placeholder="Auto-generated on save"
+                      data-item-id-input
+                    />
+                    <button class="btn btn-outline-secondary" type="button" data-item-id-regenerate>Generate</button>
+                  </div>
+                  <div class="form-text">Example: <code><%= generatedItemId %></code></div>
+                </div>
+                <div class="col-12 col-lg-4">
                   <label class="form-label">Name</label>
                   <input class="form-control" name="name" placeholder="Arcblade" required />
                 </div>
-                <div class="col-12 col-md-4">
+                <div class="col-12 col-lg-4">
                   <label class="form-label">Type</label>
                   <select class="form-select" name="type" required>
                     <% itemTypes.forEach(type => { %>
@@ -48,11 +69,39 @@
                   <textarea class="form-control" name="description" rows="2" placeholder="Short item description"></textarea>
                 </div>
 
+                <div class="col-12 col-lg-4">
+                  <label class="form-label">Item Picture</label>
+                  <input class="form-control" type="file" accept="image/*" data-item-image-input />
+                  <div class="form-text">Uploading a picture also syncs or reuses a Discord emoji for shop and inventory displays.</div>
+                </div>
+                <div class="col-12 col-lg-4">
+                  <label class="form-label">Image URL</label>
+                  <input class="form-control" name="imageUrl" placeholder="Optional remote image URL" />
+                </div>
+                <div class="col-12 col-lg-4">
+                  <label class="form-label">Wallpaper URL</label>
+                  <input class="form-control" name="wallpaperUrl" placeholder="Optional wallpaper URL" />
+                </div>
+
+                <div class="col-12">
+                  <div class="economy-item-upload-card">
+                    <div class="economy-item-upload-card__preview" data-item-image-preview>
+                      <span>No picture selected</span>
+                    </div>
+                    <div class="economy-item-upload-card__copy">
+                      <div class="fw-semibold">Emoji Sync Preview</div>
+                      <div class="text-muted small">
+                        RoBot will resize the item image, store the asset, and reuse an existing matching emoji when the same picture was already uploaded before.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 <div class="col-6 col-md-3">
                   <label class="form-label">Rarity</label>
                   <select class="form-select" name="rarity" required>
-                    <% rarities.forEach(rarity => { %>
-                      <option value="<%= rarity %>"><%= rarity %></option>
+                    <% rarities.forEach(rarity => { const meta = rarityMeta[rarity] || null; %>
+                      <option value="<%= rarity %>"><%= meta?.label || rarity %></option>
                     <% }) %>
                   </select>
                 </div>
@@ -66,12 +115,12 @@
                 </div>
                 <div class="col-6 col-md-3">
                   <label class="form-label">Box Key</label>
-                  <input class="form-control" name="boxKey" placeholder="optional" />
+                  <input class="form-control" name="boxKey" placeholder="Optional" />
                 </div>
 
                 <div class="col-12">
                   <label class="form-label">Tags</label>
-                  <input class="form-control" name="tags" placeholder="ring,wallpaper,gacha_box,refine_crystal" />
+                  <input class="form-control" name="tags" placeholder="ring, wallpaper, gacha_box, refine_crystal" />
                 </div>
 
                 <div class="col-6 col-lg-2">
@@ -106,14 +155,6 @@
                   <label class="form-label">Effect EXP</label>
                   <input class="form-control" name="effectExp" type="number" value="0" />
                 </div>
-                <div class="col-12 col-lg-4">
-                  <label class="form-label">Image URL</label>
-                  <input class="form-control" name="imageUrl" placeholder="optional" />
-                </div>
-                <div class="col-12">
-                  <label class="form-label">Wallpaper URL</label>
-                  <input class="form-control" name="wallpaperUrl" placeholder="optional" />
-                </div>
 
                 <div class="col-12 d-flex flex-wrap gap-3">
                   <div class="form-check">
@@ -138,7 +179,7 @@
           </div>
         </div>
 
-        <div class="col-12 col-xl-5">
+        <div class="col-12 col-xl-4">
           <div class="card shadow-sm mb-4">
             <div class="card-body">
               <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
@@ -176,6 +217,7 @@
                   <button class="btn btn-outline-light" type="submit">Search</button>
                 </div>
               </form>
+              <div class="form-text mt-2">Legacy rarities like <code>legendary</code> are normalized into the new rarity list automatically.</div>
             </div>
           </div>
         </div>
@@ -192,7 +234,7 @@
               <thead>
                 <tr>
                   <th>Item</th>
-                  <th>Type</th>
+                  <th>Media</th>
                   <th>Rarity</th>
                   <th class="text-end">Price</th>
                   <th class="text-end">Score</th>
@@ -206,16 +248,32 @@
                     <td colspan="7" class="text-muted py-4">No items matched this query.</td>
                   </tr>
                 <% } %>
-                <% items.forEach(it => { %>
+                <% items.forEach(it => { const meta = rarityMeta[it.rarity] || rarityMeta.common; %>
                   <tr>
                     <td data-label="Item">
                       <div class="fw-semibold"><%= it.name %></div>
-                      <div class="text-muted small"><code><%= it.itemId %></code></div>
+                      <div class="text-muted small"><code><%= it.itemId %></code> • <%= it.type %></div>
                     </td>
-                    <td data-label="Type"><%= it.type %></td>
-                    <td data-label="Rarity"><span class="badge text-bg-secondary text-uppercase"><%= it.rarity %></span></td>
-                    <td data-label="Price" class="text-end"><%= Number(it.price || 0).toLocaleString() %></td>
-                    <td data-label="Score" class="text-end"><%= Number(it.itemScore || 0).toLocaleString() %></td>
+                    <td data-label="Media">
+                      <div class="item-media-row">
+                        <div class="item-media-thumb">
+                          <% if (it.imageUrl || it.emojiUrl) { %>
+                            <img src="<%= it.imageUrl || it.emojiUrl %>" alt="<%= it.name %>" loading="lazy" />
+                          <% } else { %>
+                            <span><%= it.emojiText || 'IMG' %></span>
+                          <% } %>
+                        </div>
+                        <div class="small text-muted">
+                          <div><%= it.emojiText || 'No emoji yet' %></div>
+                          <div><%= it.imageUrl ? 'Picture ready' : 'No picture' %></div>
+                        </div>
+                      </div>
+                    </td>
+                    <td data-label="Rarity">
+                      <span class="rarity-pill rarity-pill--<%= meta.key %>" title="<%= meta.label %>"><%= meta.label %></span>
+                    </td>
+                    <td data-label="Price" class="text-end" title="<%= fmtFull(it.price) %>"><%= fmtCompact(it.price) %></td>
+                    <td data-label="Score" class="text-end" title="<%= fmtFull(it.itemScore) %>"><%= fmtCompact(it.itemScore) %></td>
                     <td data-label="Flags" class="small">
                       <%= it.sellable ? 'Sellable' : 'No Sell' %> •
                       <%= it.consumable ? 'Consumable' : 'Static' %> •
@@ -261,6 +319,62 @@
         </div>
       </div>
     </main>
+    <script nonce="<%= cspNonce %>">
+      (() => {
+        const form = document.querySelector('[data-item-editor]');
+        if (!form) return;
+
+        const idInput = form.querySelector('[data-item-id-input]');
+        const regenerateBtn = form.querySelector('[data-item-id-regenerate]');
+        const imageInput = form.querySelector('[data-item-image-input]');
+        const imageDataInput = form.querySelector('[data-item-image-data]');
+        const preview = form.querySelector('[data-item-image-preview]');
+        const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_';
+
+        const generateId = () => {
+          if (window.crypto?.getRandomValues) {
+            const values = new Uint32Array(12);
+            window.crypto.getRandomValues(values);
+            return Array.from(values, (value) => alphabet[value % alphabet.length]).join('');
+          }
+          return Array.from({ length: 12 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+        };
+
+        const ensureId = (force = false) => {
+          if (!idInput) return;
+          if (force || !String(idInput.value || '').trim()) idInput.value = generateId();
+        };
+
+        const setPreview = (src = '', label = 'No picture selected') => {
+          if (!preview) return;
+          if (!src) {
+            preview.innerHTML = `<span>${label}</span>`;
+            return;
+          }
+          preview.innerHTML = `<img src="${src}" alt="Item preview" />`;
+        };
+
+        regenerateBtn?.addEventListener('click', () => ensureId(true));
+        ensureId(false);
+
+        imageInput?.addEventListener('change', () => {
+          const [file] = Array.from(imageInput.files || []);
+          if (!file) {
+            if (imageDataInput) imageDataInput.value = '';
+            setPreview('', 'No picture selected');
+            return;
+          }
+
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = typeof reader.result === 'string' ? reader.result : '';
+            if (imageDataInput) imageDataInput.value = result;
+            setPreview(result, file.name || 'Selected picture');
+          };
+          reader.readAsDataURL(file);
+        });
+      })();
+    </script>
     <%- include('../../partials/footer') %>
   </body>
 </html>

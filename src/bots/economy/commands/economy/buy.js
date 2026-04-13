@@ -3,6 +3,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const { buyItem } = require('../../../../services/economy/shopService');
 const { getEconomyEmojis, formatCredits } = require('../../util/credits');
+const { getItemVisualToken } = require('../../../../services/economy/itemService');
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -32,7 +33,7 @@ module.exports = {
       .setTitle('Purchase Complete')
       .setColor(0x2ecc71)
       .setDescription(
-        `Bought **${result.quantity}x** **${result.item.name}** for **${formatCredits(result.totalPrice, emojis.currency)}**.`
+        `${getItemVisualToken(result.item)} Bought **${result.quantity}x** **${result.item.name}** for **${formatCredits(result.totalPrice, emojis.currency)}**.`
       )
       .addFields({ name: 'Wallet', value: formatCredits(result.balanceAfter, emojis.currency), inline: true })
       .setTimestamp();

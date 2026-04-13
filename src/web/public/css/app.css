@@ -2339,8 +2339,9 @@ code {
 
 .dashboard-stat-card .display-6 {
   margin-bottom: 0;
-  font-size: clamp(2rem, 4vw, 3rem);
+  font-size: clamp(1.7rem, 3.3vw, 2.7rem);
   line-height: 1;
+  overflow-wrap: anywhere;
 }
 
 .economy-item-form {
@@ -2386,6 +2387,160 @@ code {
 .economy-items-table td {
   vertical-align: middle;
   overflow-wrap: anywhere;
+}
+
+.economy-shop-page main.container {
+  display: grid;
+  gap: 1rem;
+}
+
+.economy-item-upload-card {
+  display: grid;
+  grid-template-columns: minmax(120px, 150px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(239, 68, 68, 0.16);
+  background: rgba(12, 5, 8, 0.66);
+}
+
+.economy-item-upload-card__preview {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  border-radius: 18px;
+  border: 1px dashed rgba(248, 113, 113, 0.28);
+  background: rgba(18, 8, 12, 0.82);
+  color: rgba(226, 232, 240, 0.65);
+  overflow: hidden;
+}
+
+.economy-item-upload-card__preview img {
+  width: 100%;
+  height: 120px;
+  object-fit: contain;
+}
+
+.item-media-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.item-media-thumb {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 16px;
+  border: 1px solid rgba(239, 68, 68, 0.22);
+  background: rgba(18, 8, 12, 0.9);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: rgba(255, 228, 230, 0.8);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.item-media-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.rarity-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 28px;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.rarity-pill--common,
+.rarity-card--common {
+  border-color: rgba(148, 163, 184, 0.34);
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+}
+
+.rarity-pill--rare,
+.rarity-card--rare {
+  border-color: rgba(56, 189, 248, 0.34);
+  background: rgba(56, 189, 248, 0.12);
+  color: #7dd3fc;
+}
+
+.rarity-pill--epic,
+.rarity-card--epic {
+  border-color: rgba(167, 139, 250, 0.34);
+  background: rgba(167, 139, 250, 0.14);
+  color: #c4b5fd;
+}
+
+.rarity-pill--pristine,
+.rarity-card--pristine {
+  border-color: rgba(251, 191, 36, 0.34);
+  background: rgba(251, 191, 36, 0.14);
+  color: #fde68a;
+}
+
+.rarity-pill--transcendent,
+.rarity-card--transcendent {
+  border-color: rgba(249, 115, 22, 0.34);
+  background: rgba(249, 115, 22, 0.14);
+  color: #fdba74;
+}
+
+.rarity-pill--primordial,
+.rarity-card--primordial {
+  border-color: rgba(239, 68, 68, 0.34);
+  background: rgba(239, 68, 68, 0.14);
+  color: #fca5a5;
+}
+
+.metric-stack {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.metric-stack__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.88rem;
+}
+
+.metric-stack__row span {
+  color: rgba(229, 231, 235, 0.62);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.68rem;
+}
+
+.metric-stack__row strong {
+  color: rgba(248, 250, 252, 0.96);
+  font-weight: 700;
+}
+
+.scope-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .accounts-hero {
@@ -3199,6 +3354,10 @@ code {
     justify-content: space-between;
   }
 
+  .economy-item-upload-card {
+    grid-template-columns: 1fr;
+  }
+
   .economy-items-table thead {
     display: none;
   }
@@ -3476,6 +3635,10 @@ code {
 @media (max-width: 576px) {
   .analytics-flow-header,
   .analytics-flow-meta {
+    align-items: flex-start;
+  }
+
+  .item-media-row {
     align-items: flex-start;
   }
 

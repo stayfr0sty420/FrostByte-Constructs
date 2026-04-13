@@ -17,14 +17,15 @@
             <% } %>
           </div>
         </div>
-        <div class="text-muted small">
-          Showing <%= users.length %> of <%= total %>
-        </div>
+        <div class="text-muted small">Showing <%= users.length %> of <%= total %></div>
       </div>
 
       <% if (flash) { %>
         <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
       <% } %>
+
+      <% const fmtFull = (value) => Math.floor(Number(value || 0)).toLocaleString('en-US'); %>
+      <% const fmtCompact = (value, threshold = 1000) => formatCompactNumber(value, { threshold }); %>
 
       <div class="card shadow-sm mb-4">
         <div class="card-body">
@@ -43,7 +44,7 @@
                 </div>
                 <div class="col-12 col-lg-auto">
                   <label class="form-label invisible d-none d-lg-block">Actions</label>
-                  <div class="economy-search-actions">
+                  <div class="economy-search-actions d-flex gap-2">
                     <button class="btn btn-outline-primary" type="submit">Search</button>
                     <a class="btn btn-outline-secondary" href="/admin/economy/users">Clear</a>
                   </div>
@@ -55,58 +56,57 @@
             </div>
 
             <div class="col-12 col-lg-5">
-                <div class="border rounded p-3 bulk-aid-stack">
-                  <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
-                    <div class="fw-semibold">Economy Booster</div>
-                    <span class="badge text-bg-warning">Bulk</span>
+              <div class="border rounded p-3 bulk-aid-stack">
+                <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+                  <div class="fw-semibold">Economy Booster</div>
+                  <span class="badge text-bg-warning">Bulk</span>
+                </div>
+                <form method="post" action="/admin/economy/users/gift-all" class="row g-2 bulk-aid-form">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <div class="col-12 col-md-7">
+                    <label class="form-label">Credits</label>
+                    <input class="form-control" name="amount" type="number" min="1" step="1" placeholder="1000" required />
                   </div>
-                  <form method="post" action="/admin/economy/users/gift-all" class="row g-2 bulk-aid-form">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                    <div class="col-12 col-md-7">
-                      <label class="form-label">Credits</label>
-                      <input class="form-control" name="amount" type="number" min="1" step="1" placeholder="1000" required />
-                    </div>
-                    <div class="col-12 col-md-5 d-grid">
-                      <label class="form-label d-none d-md-block">&nbsp;</label>
-                      <button
-                        class="btn btn-danger"
-                        type="submit"
-                        data-confirm="<%= economyScope === 'global' ? 'Provide this credit amount to ALL economy users (global across all servers)?' : 'Provide this credit amount to ALL economy users in this server?' %>"
-                        data-confirm-title="Provide credits to all?"
-                        data-confirm-ok="Provide"
-                        data-confirm-cancel="Cancel"
-                      >
-                        Provide Credits
-                      </button>
-                    </div>
-                  </form>
-                  <form method="post" action="/admin/economy/users/exp-all" class="row g-2 bulk-aid-form mt-1">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                    <div class="col-12 col-md-7">
-                      <label class="form-label">Experience</label>
-                      <input class="form-control" name="amount" type="number" min="1" step="1" placeholder="100" required />
-                    </div>
-                    <div class="col-12 col-md-5 d-grid">
-                      <label class="form-label d-none d-md-block">&nbsp;</label>
-                      <button
-                        class="btn btn-outline-info"
-                        type="submit"
-                        data-confirm="<%= economyScope === 'global' ? 'Provide this EXP amount to ALL economy users (global across all servers)?' : 'Provide this EXP amount to ALL economy users in this server?' %>"
-                        data-confirm-title="Provide EXP to all?"
-                        data-confirm-ok="Grant"
-                        data-confirm-cancel="Cancel"
-                      >
-                        Provide EXP
-                      </button>
-                    </div>
-                  </form>
-                  <div class="form-text mt-2">
-                    <% if (economyScope === 'global') { %>
-                      This modifies shared economy data for all users already in the database (global across all servers).
-                    <% } else { %>
-                      This modifies economy data for all users already in the database (this server only).
-                    <% } %>
+                  <div class="col-12 col-md-5 d-grid">
+                    <label class="form-label d-none d-md-block">&nbsp;</label>
+                    <button
+                      class="btn btn-danger"
+                      type="submit"
+                      data-confirm="<%= economyScope === 'global' ? 'Provide this credit amount to ALL economy users (global across all servers)?' : 'Provide this credit amount to ALL economy users in this server?' %>"
+                      data-confirm-title="Provide credits to all?"
+                      data-confirm-ok="Provide"
+                      data-confirm-cancel="Cancel"
+                    >
+                      Provide Credits
+                    </button>
                   </div>
+                </form>
+                <form method="post" action="/admin/economy/users/exp-all" class="row g-2 bulk-aid-form mt-1">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <div class="col-12 col-md-7">
+                    <label class="form-label">Experience</label>
+                    <input class="form-control" name="amount" type="number" min="1" step="1" placeholder="100" required />
+                  </div>
+                  <div class="col-12 col-md-5 d-grid">
+                    <label class="form-label d-none d-md-block">&nbsp;</label>
+                    <button
+                      class="btn btn-outline-info"
+                      type="submit"
+                      data-confirm="<%= economyScope === 'global' ? 'Provide this EXP amount to ALL economy users (global across all servers)?' : 'Provide this EXP amount to ALL economy users in this server?' %>"
+                      data-confirm-title="Provide EXP to all?"
+                      data-confirm-ok="Grant"
+                      data-confirm-cancel="Cancel"
+                    >
+                      Provide EXP
+                    </button>
+                  </div>
+                </form>
+                <div class="form-text mt-2">
+                  <% if (economyScope === 'global') { %>
+                    This modifies shared economy data for all users already in the database.
+                  <% } else { %>
+                    This modifies economy data for all users already in the database for this server.
+                  <% } %>
                 </div>
               </div>
             </div>
@@ -121,7 +121,7 @@
               <h2 class="h6 mb-1">Economy Action Whitelist</h2>
               <div class="text-muted small">
                 Whitelisted Discord IDs can run <code>/grant</code> or <code>robo grant</code>, and only whitelisted members can receive the manual
-                Give/Deduct Credits or EXP actions below. Economy Booster stays unrestricted.
+                Give/Deduct Credits or EXP actions below.
               </div>
             </div>
             <span class="badge text-bg-secondary"><%= (whitelistEntries || []).length %> whitelisted</span>
@@ -192,7 +192,6 @@
 
       <div class="card shadow-sm">
         <div class="card-body">
-          <% const fmt = (n) => Number(n || 0).toLocaleString(); %>
           <% const resolvedTotalPages = Math.max(1, Number(typeof totalPages !== 'undefined' ? totalPages : 0) || Math.ceil((total || 0) / (limit || 1))); %>
           <% const whitelistSet = new Set((whitelist || []).map(String)); %>
           <% const queryParams = new URLSearchParams(); %>
@@ -224,11 +223,8 @@
             <table class="table table-sm align-middle mb-0 economy-users-table">
               <thead>
                 <tr>
-                  <th>Discord ID</th>
-                  <th>Username</th>
-                  <th class="text-end">Wallet</th>
-                  <th class="text-end">Bank</th>
-                  <th class="text-end">Level</th>
+                  <th>User</th>
+                  <th>Economy</th>
                   <th>Status</th>
                   <th>Updated</th>
                   <th class="text-end">Actions</th>
@@ -237,17 +233,39 @@
               <tbody>
                 <% if (!users.length) { %>
                   <tr>
-                    <td colspan="8" class="text-muted py-4">No users found.</td>
+                    <td colspan="5" class="text-muted py-4">No users found.</td>
                   </tr>
                 <% } %>
 
-                <% users.forEach(u => { %>
+                <% users.forEach(u => { const isWhitelisted = whitelistSet.has(String(u.discordId)); %>
                   <tr>
-                    <td data-label="Discord ID"><code class="user-id-code"><%= u.discordId %></code></td>
-                    <td class="text-truncate user-name-cell" style="max-width: 220px" data-label="Username"><%= u.username || '—' %></td>
-                    <td class="text-end" data-label="Wallet"><%= fmt(u.balance) %></td>
-                    <td class="text-end" data-label="Bank"><%= fmt(u.bank) %></td>
-                    <td class="text-end" data-label="Level"><%= fmt(u.level) %></td>
+                    <td data-label="User">
+                      <div class="fw-semibold user-name-cell"><%= u.username || '—' %></div>
+                      <div class="text-muted small"><code class="user-id-code"><%= u.discordId %></code></div>
+                      <% if (economyScope === 'global' && u.originGuildName) { %>
+                        <div class="text-muted small">Origin: <%= u.originGuildName %></div>
+                      <% } %>
+                    </td>
+                    <td data-label="Economy">
+                      <div class="metric-stack">
+                        <div class="metric-stack__row">
+                          <span>Wallet</span>
+                          <strong title="<%= fmtFull(u.balance) %>"><%= fmtCompact(u.balance) %></strong>
+                        </div>
+                        <div class="metric-stack__row">
+                          <span>Bank</span>
+                          <strong title="<%= fmtFull(u.bank) %>"><%= fmtCompact(u.bank) %></strong>
+                        </div>
+                        <div class="metric-stack__row">
+                          <span>Gear</span>
+                          <strong title="<%= fmtFull(u.gearScore) %>"><%= fmtCompact(u.gearScore) %></strong>
+                        </div>
+                        <div class="metric-stack__row">
+                          <span>Level</span>
+                          <strong title="<%= fmtFull(u.level) %>"><%= fmtCompact(u.level) %></strong>
+                        </div>
+                      </div>
+                    </td>
                     <td data-label="Status">
                       <% if (u.economyBan?.active) { %>
                         <span class="badge text-bg-danger">Banned</span>
@@ -256,21 +274,21 @@
                       <% } else { %>
                         <span class="badge text-bg-secondary">Active</span>
                       <% } %>
+                      <div class="mt-2">
+                        <span class="badge <%= isWhitelisted ? 'text-bg-success' : 'text-bg-secondary' %>">
+                          <%= isWhitelisted ? 'Whitelisted' : 'Whitelist required' %>
+                        </span>
+                      </div>
                     </td>
-                    <td class="text-muted small" data-label="Updated">
-                      <%= u.updatedAt ? formatDate(u.updatedAt) : '—' %>
-                    </td>
+                    <td class="text-muted small" data-label="Updated"><%= u.updatedAt ? formatDate(u.updatedAt) : '—' %></td>
                     <td class="text-end user-actions-cell" data-label="Actions">
-                        <% const isWhitelisted = whitelistSet.has(String(u.discordId)); %>
                       <div class="user-actions-panel">
                         <div class="user-editor-link-row">
                           <a class="btn btn-outline-light btn-sm" href="/admin/economy/users/<%= u.discordId %>">Open Editor</a>
                         </div>
+
                         <div class="user-whitelist-bar">
                           <div class="user-whitelist-state">
-                            <span class="badge <%= isWhitelisted ? 'text-bg-success' : 'text-bg-secondary' %>">
-                              <%= isWhitelisted ? 'Whitelisted' : 'Whitelist required' %>
-                            </span>
                             <% if (!isWhitelisted) { %>
                               <div class="user-whitelist-note">Whitelist this user first to unlock manual Give/Deduct Credits and EXP actions.</div>
                             <% } %>
@@ -301,25 +319,8 @@
                             <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                             <input type="hidden" name="username" value="<%= u.username || '' %>" />
                             <span class="user-action-label">Give Credits</span>
-                            <input
-                              class="form-control form-control-sm user-action-input"
-                              name="amount"
-                              type="number"
-                              min="1"
-                              step="1"
-                              placeholder="Amount"
-                              <%= isWhitelisted ? '' : 'disabled' %>
-                              required
-                            />
-                            <button
-                              class="btn btn-success btn-sm icon-btn"
-                              type="submit"
-                              title="<%= isWhitelisted ? 'Give credits' : 'Whitelist required' %>"
-                              aria-label="Give credits"
-                              <%= isWhitelisted ? '' : 'disabled' %>
-                            >
-                              ➕
-                            </button>
+                            <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="Amount" <%= isWhitelisted ? '' : 'disabled' %> required />
+                            <button class="btn btn-success btn-sm icon-btn" type="submit" title="<%= isWhitelisted ? 'Give credits' : 'Whitelist required' %>" aria-label="Give credits" <%= isWhitelisted ? '' : 'disabled' %>>➕</button>
                           </form>
 
                           <form method="post" action="/admin/economy/users/deduct" class="user-action-form user-action-form--wide">
@@ -327,16 +328,7 @@
                             <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                             <input type="hidden" name="username" value="<%= u.username || '' %>" />
                             <span class="user-action-label">Deduct Credits</span>
-                            <input
-                              class="form-control form-control-sm user-action-input"
-                              name="amount"
-                              type="number"
-                              min="1"
-                              step="1"
-                              placeholder="Amount"
-                              <%= isWhitelisted ? '' : 'disabled' %>
-                              required
-                            />
+                            <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="Amount" <%= isWhitelisted ? '' : 'disabled' %> required />
                             <button
                               class="btn btn-outline-danger btn-sm icon-btn"
                               type="submit"
@@ -357,25 +349,8 @@
                             <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                             <input type="hidden" name="username" value="<%= u.username || '' %>" />
                             <span class="user-action-label">Give EXP</span>
-                            <input
-                              class="form-control form-control-sm user-action-input"
-                              name="amount"
-                              type="number"
-                              min="1"
-                              step="1"
-                              placeholder="Amount"
-                              <%= isWhitelisted ? '' : 'disabled' %>
-                              required
-                            />
-                            <button
-                              class="btn btn-outline-info btn-sm icon-btn"
-                              type="submit"
-                              title="<%= isWhitelisted ? 'Give EXP' : 'Whitelist required' %>"
-                              aria-label="Give EXP"
-                              <%= isWhitelisted ? '' : 'disabled' %>
-                            >
-                              ⚡
-                            </button>
+                            <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="Amount" <%= isWhitelisted ? '' : 'disabled' %> required />
+                            <button class="btn btn-outline-info btn-sm icon-btn" type="submit" title="<%= isWhitelisted ? 'Give EXP' : 'Whitelist required' %>" aria-label="Give EXP" <%= isWhitelisted ? '' : 'disabled' %>>⚡</button>
                           </form>
 
                           <form method="post" action="/admin/economy/users/exp/deduct" class="user-action-form user-action-form--compact">
@@ -383,16 +358,7 @@
                             <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                             <input type="hidden" name="username" value="<%= u.username || '' %>" />
                             <span class="user-action-label">Deduct EXP</span>
-                            <input
-                              class="form-control form-control-sm user-action-input"
-                              name="amount"
-                              type="number"
-                              min="1"
-                              step="1"
-                              placeholder="Amount"
-                              <%= isWhitelisted ? '' : 'disabled' %>
-                              required
-                            />
+                            <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="Amount" <%= isWhitelisted ? '' : 'disabled' %> required />
                             <button
                               class="btn btn-outline-secondary btn-sm icon-btn"
                               type="submit"

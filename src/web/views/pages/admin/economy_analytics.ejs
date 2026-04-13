@@ -7,11 +7,20 @@
     <%- include('../../partials/nav') %>
     <main class="container py-4">
       <% const flowSeriesJson = JSON.stringify(flowSeries || []).replace(/</g, '\\u003c'); %>
+      <% const fmtFull = (value) => Math.floor(Number(value || 0)).toLocaleString('en-US'); %>
+      <% const fmtCompact = (value, threshold = 1000) => formatCompactNumber(value, { threshold }); %>
+
       <section class="dashboard-hero mb-4">
         <div class="dashboard-hero__copy">
           <div class="hero-eyebrow">RoBot Analytics</div>
           <h1 class="hero-title mb-2">Economy Overview</h1>
-          <p class="hero-text mb-0">Track usage, coin flow, rarity distribution, and leaderboard previews from the last 7 days, with live wallet flow for the last 24 hours.</p>
+          <p class="hero-text mb-0">Track usage, coin flow, rarity distribution, and top players with toggles for global or server-focused analytics.</p>
+        </div>
+        <div class="dashboard-hero__actions">
+          <div class="scope-switcher">
+            <a class="btn btn-sm <%= analyticsScope === 'server' ? 'btn-primary' : 'btn-outline-secondary' %>" href="/admin/economy/analytics?scope=server">Per Server</a>
+            <a class="btn btn-sm <%= analyticsScope === 'global' ? 'btn-primary' : 'btn-outline-secondary' %>" href="/admin/economy/analytics?scope=global">Global</a>
+          </div>
         </div>
       </section>
 
@@ -24,7 +33,7 @@
           <div class="card shadow-sm dashboard-stat-card">
             <div class="card-body">
               <div class="dashboard-stat-card__label">Players</div>
-              <div class="display-6" data-analytics-stat="players"><%= Number(playerCount || 0).toLocaleString() %></div>
+              <div class="display-6" data-analytics-stat="players" title="<%= fmtFull(playerCount) %>"><%= fmtCompact(playerCount) %></div>
             </div>
           </div>
         </div>
@@ -32,7 +41,7 @@
           <div class="card shadow-sm dashboard-stat-card">
             <div class="card-body">
               <div class="dashboard-stat-card__label">Coins Generated</div>
-              <div class="display-6" data-analytics-stat="generated"><%= Number(totals.generated || 0).toLocaleString() %></div>
+              <div class="display-6" data-analytics-stat="generated" title="<%= fmtFull(totals.generated) %>"><%= fmtCompact(totals.generated) %></div>
             </div>
           </div>
         </div>
@@ -40,7 +49,7 @@
           <div class="card shadow-sm dashboard-stat-card">
             <div class="card-body">
               <div class="dashboard-stat-card__label">Coins Spent</div>
-              <div class="display-6" data-analytics-stat="spent"><%= Number(totals.spent || 0).toLocaleString() %></div>
+              <div class="display-6" data-analytics-stat="spent" title="<%= fmtFull(totals.spent) %>"><%= fmtCompact(totals.spent) %></div>
             </div>
           </div>
         </div>
@@ -48,7 +57,7 @@
           <div class="card shadow-sm dashboard-stat-card">
             <div class="card-body">
               <div class="dashboard-stat-card__label">Net Flow</div>
-              <div class="display-6" data-analytics-stat="net"><%= Number((totals.generated || 0) - (totals.spent || 0)).toLocaleString() %></div>
+              <div class="display-6" data-analytics-stat="net" title="<%= fmtFull((totals.generated || 0) - (totals.spent || 0)) %>"><%= fmtCompact((totals.generated || 0) - (totals.spent || 0)) %></div>
             </div>
           </div>
         </div>
@@ -61,13 +70,11 @@
               <div class="analytics-flow-header mb-3">
                 <div>
                   <h2 class="h5 mb-1">Live Economy Flow</h2>
-                  <div class="text-muted small">Generated, spent, and net credits over the last 24 hours.</div>
+                  <div class="text-muted small">Generated, spent, and net credits over the last 24 hours for the current analytics scope.</div>
                 </div>
                 <div class="analytics-flow-meta">
                   <span class="badge text-bg-secondary">Auto refresh 30s</span>
-                  <span class="text-muted small" data-flow-updated>
-                    Updated <%= analyticsUpdatedAt ? formatDate(analyticsUpdatedAt) : '—' %>
-                  </span>
+                  <span class="text-muted small" data-flow-updated>Updated <%= analyticsUpdatedAt ? formatDate(analyticsUpdatedAt) : '—' %></span>
                 </div>
               </div>
 
@@ -106,8 +113,8 @@
                     <% usage.forEach(entry => { %>
                       <tr>
                         <td data-label="Type"><code><%= entry._id %></code></td>
-                        <td class="text-end" data-label="Uses"><%= Number(entry.count || 0).toLocaleString() %></td>
-                        <td class="text-end" data-label="Net Amount"><%= Number(entry.net || 0).toLocaleString() %></td>
+                        <td class="text-end" data-label="Uses" title="<%= fmtFull(entry.count) %>"><%= fmtCompact(entry.count) %></td>
+                        <td class="text-end" data-label="Net Amount" title="<%= fmtFull(entry.net) %>"><%= fmtCompact(entry.net) %></td>
                       </tr>
                     <% }) %>
                   </tbody>
@@ -124,9 +131,9 @@
               <div class="row g-3 analytics-rarity-grid">
                 <% ['common','rare','epic','pristine','transcendent','primordial'].forEach(rarity => { %>
                   <div class="col-6 col-md-4">
-                    <div class="border rounded p-3 h-100 analytics-rarity-card">
+                    <div class="analytics-rarity-card rarity-card rarity-card--<%= rarity %>">
                       <div class="text-uppercase text-muted small"><%= rarity %></div>
-                      <div class="fs-4"><%= Number(rarityTotals[rarity] || 0).toLocaleString() %></div>
+                      <div class="fs-4" title="<%= fmtFull(rarityTotals[rarity] || 0) %>"><%= fmtCompact(rarityTotals[rarity] || 0) %></div>
                     </div>
                   </div>
                 <% }) %>
@@ -135,23 +142,29 @@
           </div>
         </div>
 
-        <div class="col-12 col-xl-6">
-          <div class="card shadow-sm h-100">
+        <div class="col-12">
+          <div class="card shadow-sm">
             <div class="card-body">
-              <h2 class="h5 mb-3">Top Wallets</h2>
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <h2 class="h5 mb-0">Top Players</h2>
+                <div class="text-muted small"><%= analyticsScope === 'global' ? 'Global users grouped by first RoBot server' : 'Users from the active server scope' %></div>
+              </div>
               <div class="table-responsive">
                 <table class="table table-sm align-middle mb-0 analytics-table">
                   <thead>
                     <tr>
                       <th>User</th>
+                      <% if (showOriginServer) { %><th>Origin Server</th><% } %>
                       <th class="text-end">Wallet</th>
+                      <th class="text-end">Bank</th>
+                      <th class="text-end">Gear</th>
                       <th class="text-end">Level</th>
                     </tr>
                   </thead>
                   <tbody>
                     <% if (!topPlayers.length) { %>
                       <tr>
-                        <td colspan="3" class="text-muted py-3">No players yet.</td>
+                        <td colspan="<%= showOriginServer ? 6 : 5 %>" class="text-muted py-3">No players yet.</td>
                       </tr>
                     <% } %>
                     <% topPlayers.forEach(player => { %>
@@ -164,8 +177,13 @@
                           <% } %>
                           <div class="text-muted small"><code><%= player.discordId %></code></div>
                         </td>
-                        <td class="text-end" data-label="Wallet"><%= Number(player.balance || 0).toLocaleString() %></td>
-                        <td class="text-end" data-label="Level"><%= Number(player.level || 0).toLocaleString() %></td>
+                        <% if (showOriginServer) { %>
+                          <td data-label="Origin Server"><%= player.originGuildName || 'Unknown' %></td>
+                        <% } %>
+                        <td class="text-end" data-label="Wallet" title="<%= fmtFull(player.balance) %>"><%= fmtCompact(player.balance) %></td>
+                        <td class="text-end" data-label="Bank" title="<%= fmtFull(player.bank) %>"><%= fmtCompact(player.bank) %></td>
+                        <td class="text-end" data-label="Gear" title="<%= fmtFull(player.gearScore) %>"><%= fmtCompact(player.gearScore) %></td>
+                        <td class="text-end" data-label="Level" title="<%= fmtFull(player.level) %>"><%= fmtCompact(player.level) %></td>
                       </tr>
                     <% }) %>
                   </tbody>
@@ -175,8 +193,8 @@
           </div>
         </div>
 
-        <div class="col-12 col-xl-6">
-          <div class="card shadow-sm h-100">
+        <div class="col-12">
+          <div class="card shadow-sm">
             <div class="card-body">
               <h2 class="h5 mb-3">Top PvP Players</h2>
               <div class="table-responsive">
@@ -184,14 +202,16 @@
                   <thead>
                     <tr>
                       <th>User</th>
+                      <% if (showOriginServer) { %><th>Origin Server</th><% } %>
                       <th class="text-end">Rating</th>
                       <th class="text-end">Wins</th>
+                      <th class="text-end">Level</th>
                     </tr>
                   </thead>
                   <tbody>
                     <% if (!topPvp.length) { %>
                       <tr>
-                        <td colspan="3" class="text-muted py-3">No PvP data yet.</td>
+                        <td colspan="<%= showOriginServer ? 5 : 4 %>" class="text-muted py-3">No PvP data yet.</td>
                       </tr>
                     <% } %>
                     <% topPvp.forEach(player => { %>
@@ -204,8 +224,12 @@
                           <% } %>
                           <div class="text-muted small"><code><%= player.discordId %></code></div>
                         </td>
-                        <td class="text-end" data-label="Rating"><%= Number(player.pvpRating || 0).toLocaleString() %></td>
-                        <td class="text-end" data-label="Wins"><%= Number(player.pvpWins || 0).toLocaleString() %></td>
+                        <% if (showOriginServer) { %>
+                          <td data-label="Origin Server"><%= player.originGuildName || 'Unknown' %></td>
+                        <% } %>
+                        <td class="text-end" data-label="Rating" title="<%= fmtFull(player.pvpRating) %>"><%= fmtCompact(player.pvpRating) %></td>
+                        <td class="text-end" data-label="Wins" title="<%= fmtFull(player.pvpWins) %>"><%= fmtCompact(player.pvpWins) %></td>
+                        <td class="text-end" data-label="Level" title="<%= fmtFull(player.level) %>"><%= fmtCompact(player.level) %></td>
                       </tr>
                     <% }) %>
                   </tbody>

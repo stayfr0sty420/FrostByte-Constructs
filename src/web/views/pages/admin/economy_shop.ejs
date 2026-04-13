@@ -3,14 +3,20 @@
   <head>
     <%- include('../../partials/head', { title }) %>
   </head>
-  <body class="app admin-page">
+  <body class="app admin-page economy-shop-page">
     <%- include('../../partials/nav') %>
     <main class="container py-4">
       <section class="dashboard-hero mb-4">
         <div class="dashboard-hero__copy">
           <div class="hero-eyebrow">RoBot Shop Management</div>
-          <h1 class="hero-title mb-2">Shop</h1>
-          <p class="hero-text mb-0">Control item availability, pricing, stock, and quick stat comparisons for the live shop.</p>
+          <h1 class="hero-title mb-2">Global Shop</h1>
+          <p class="hero-text mb-0">Listings are shared globally across RoBot, manual entries stay pinned, and rotation items refresh every 12 hours.</p>
+        </div>
+        <div class="dashboard-hero__actions">
+          <form method="post" action="/admin/economy/shop/refresh">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <button class="btn btn-outline-light btn-sm" type="submit">Refresh Rotation</button>
+          </form>
         </div>
       </section>
 
@@ -18,18 +24,56 @@
         <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
       <% } %>
 
+      <% const fmtFull = (value) => Math.floor(Number(value || 0)).toLocaleString('en-US'); %>
+      <% const fmtCompact = (value, threshold = 1000) => formatCompactNumber(value, { threshold }); %>
+
+      <div class="row g-3 mb-4">
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Manual Listings</div>
+              <div class="display-6"><%= fmtCompact(manualCount || 0) %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-3">
+          <div class="card shadow-sm dashboard-stat-card">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Rotation Listings</div>
+              <div class="display-6"><%= fmtCompact(rotationCount || 0) %></div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12 col-sm-6 col-xl-6">
+          <div class="card shadow-sm dashboard-stat-card h-100">
+            <div class="card-body">
+              <div class="dashboard-stat-card__label">Next Rotation Refresh</div>
+              <div class="fs-4"><%= rotationEndsAt ? formatDate(rotationEndsAt) : 'Waiting for first rotation' %></div>
+              <div class="text-muted small">Rotation items are random, global, and refreshed every 12 hours.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="row g-4">
         <div class="col-12 col-xl-5">
           <div class="card shadow-sm h-100">
             <div class="card-body">
-              <h2 class="h5 mb-3">Add / Update Listing</h2>
+              <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1">Manual Listing</h2>
+                  <div class="text-muted small">Manual entries stay visible beside the rotating global catalog.</div>
+                </div>
+                <span class="badge text-bg-secondary">Global</span>
+              </div>
+
               <form method="post" action="/admin/economy/shop" class="row g-3">
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                 <div class="col-12">
                   <label class="form-label">Item</label>
                   <select class="form-select" name="itemId" required>
-                    <% items.forEach(it => { %>
-                      <option value="<%= it.itemId %>"><%= it.name %> • <%= it.rarity %> • <%= it.type %></option>
+                    <% items.forEach(it => { const meta = rarityMeta[it.rarity] || rarityMeta.common; %>
+                      <option value="<%= it.itemId %>"><%= meta.label %> • <%= it.name %> • <%= it.type %> • <%= it.itemId %></option>
                     <% }) %>
                   </select>
                 </div>
@@ -48,7 +92,7 @@
                   </div>
                 </div>
                 <div class="col-12 d-flex justify-content-end">
-                  <button class="btn btn-primary" type="submit">Save Listing</button>
+                  <button class="btn btn-primary" type="submit">Save Manual Listing</button>
                 </div>
               </form>
             </div>
@@ -59,43 +103,58 @@
           <div class="card shadow-sm h-100">
             <div class="card-body">
               <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-                <h2 class="h5 mb-0">Catalog Search</h2>
-                <span class="text-muted small"><%= items.length %> catalog item(s)</span>
+                <div>
+                  <h2 class="h5 mb-1">Catalog Search</h2>
+                  <div class="text-muted small"><%= Number(items.length || 0).toLocaleString('en-US') %> searchable item(s)</div>
+                </div>
+                <span class="badge text-bg-secondary">Shared catalog</span>
               </div>
+
               <form method="get" action="/admin/economy/shop" class="row g-2">
                 <div class="col-12 col-md">
-                  <input class="form-control" name="q" value="<%= q || '' %>" placeholder="Search by name, item ID, or type" />
+                  <input class="form-control" name="q" value="<%= q || '' %>" placeholder="Search by name, item ID, rarity, or type" />
                 </div>
                 <div class="col-12 col-md-auto d-grid">
                   <button class="btn btn-outline-light" type="submit">Search</button>
                 </div>
               </form>
+
               <div class="table-responsive mt-3">
-                <table class="table table-sm align-middle mb-0">
+                <table class="table table-sm align-middle mb-0 analytics-table">
                   <thead>
                     <tr>
                       <th>Item</th>
-                      <th>Stats</th>
-                      <th>Score</th>
+                      <th>Rarity</th>
+                      <th class="text-end">Score</th>
+                      <th class="text-end">Base Price</th>
                     </tr>
                   </thead>
                   <tbody>
                     <% if (!items.length) { %>
                       <tr>
-                        <td colspan="3" class="text-muted py-3">No items matched this filter.</td>
+                        <td colspan="4" class="text-muted py-3">No items matched this filter.</td>
                       </tr>
                     <% } %>
-                    <% items.slice(0, 20).forEach(it => { %>
+                    <% items.slice(0, 24).forEach(it => { const meta = rarityMeta[it.rarity] || rarityMeta.common; %>
                       <tr>
-                        <td>
-                          <div class="fw-semibold"><%= it.name %></div>
-                          <div class="text-muted small"><code><%= it.itemId %></code> • <%= it.rarity %> • <%= it.type %></div>
+                        <td data-label="Item">
+                          <div class="item-media-row">
+                            <div class="item-media-thumb">
+                              <% if (it.imageUrl || it.emojiUrl) { %>
+                                <img src="<%= it.imageUrl || it.emojiUrl %>" alt="<%= it.name %>" loading="lazy" />
+                              <% } else { %>
+                                <span><%= it.emojiText || 'IMG' %></span>
+                              <% } %>
+                            </div>
+                            <div>
+                              <div class="fw-semibold"><%= it.name %></div>
+                              <div class="text-muted small"><code><%= it.itemId %></code> • <%= it.type %></div>
+                            </div>
+                          </div>
                         </td>
-                        <td class="small">
-                          STR <%= it.stats?.str || 0 %> • AGI <%= it.stats?.agi || 0 %> • VIT <%= it.stats?.vit || 0 %> •
-                          LUCK <%= it.stats?.luck || 0 %> • CRIT <%= it.stats?.crit || 0 %>
-                        </td>
-                        <td><%= Number(it.itemScore || 0).toLocaleString() %></td>
+                        <td data-label="Rarity"><span class="rarity-pill rarity-pill--<%= meta.key %>"><%= meta.label %></span></td>
+                        <td data-label="Score" class="text-end" title="<%= fmtFull(it.itemScore) %>"><%= fmtCompact(it.itemScore) %></td>
+                        <td data-label="Base Price" class="text-end" title="<%= fmtFull(it.price) %>"><%= fmtCompact(it.price) %></td>
                       </tr>
                     <% }) %>
                   </tbody>
@@ -109,18 +168,18 @@
       <div class="card shadow-sm mt-4">
         <div class="card-body">
           <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-            <h2 class="h5 mb-0">Active Listings</h2>
-            <div class="text-muted small"><%= listings.length %> listing(s)</div>
+            <h2 class="h5 mb-0">Active Global Listings</h2>
+            <div class="text-muted small"><%= Number(listings.length || 0).toLocaleString('en-US') %> listing(s)</div>
           </div>
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle analytics-table">
               <thead>
                 <tr>
                   <th>Item</th>
                   <th>Rarity</th>
                   <th class="text-end">Price</th>
                   <th class="text-end">Stock</th>
-                  <th>Comparison</th>
+                  <th>Source</th>
                   <th class="text-end">Actions</th>
                 </tr>
               </thead>
@@ -130,30 +189,39 @@
                     <td colspan="6" class="text-muted py-4">No shop listings yet.</td>
                   </tr>
                 <% } %>
-                <% listings.forEach(l => { const it = byId.get(l.itemId); %>
+                <% listings.forEach(listing => { const item = byId.get(String(listing.itemId || '').trim()); const meta = rarityMeta[item?.rarity] || rarityMeta.common; %>
                   <tr>
                     <td data-label="Item">
-                      <div class="fw-semibold"><%= it ? it.name : l.itemId %></div>
-                      <div class="text-muted small"><code><%= l.itemId %></code> <%= it ? `• ${it.type}` : '' %></div>
+                      <div class="item-media-row">
+                        <div class="item-media-thumb">
+                          <% if (item?.imageUrl || item?.emojiUrl) { %>
+                            <img src="<%= item?.imageUrl || item?.emojiUrl %>" alt="<%= item?.name || listing.itemId %>" loading="lazy" />
+                          <% } else { %>
+                            <span><%= item?.emojiText || 'IMG' %></span>
+                          <% } %>
+                        </div>
+                        <div>
+                          <div class="fw-semibold"><%= item ? item.name : listing.itemId %></div>
+                          <div class="text-muted small"><code><%= listing.itemId %></code><%= item ? ` • ${item.type}` : '' %></div>
+                        </div>
+                      </div>
                     </td>
-                    <td data-label="Rarity">
-                      <span class="badge text-bg-secondary text-uppercase"><%= it?.rarity || 'unknown' %></span>
-                    </td>
-                    <td data-label="Price" class="text-end"><%= Number(l.price || 0).toLocaleString() %></td>
-                    <td data-label="Stock" class="text-end"><%= l.limited ? Number(l.stock || 0).toLocaleString() : '∞' %></td>
-                    <td data-label="Comparison" class="small">
-                      <% if (it) { %>
-                        Score <strong><%= Number(it.itemScore || 0).toLocaleString() %></strong>
-                        <br />
-                        STR <%= it.stats?.str || 0 %> • AGI <%= it.stats?.agi || 0 %> • VIT <%= it.stats?.vit || 0 %>
-                      <% } else { %>
-                        <span class="text-muted">Missing item record</span>
+                    <td data-label="Rarity"><span class="rarity-pill rarity-pill--<%= meta.key %>"><%= meta.label %></span></td>
+                    <td data-label="Price" class="text-end" title="<%= fmtFull(listing.price) %>"><%= fmtCompact(listing.price) %></td>
+                    <td data-label="Stock" class="text-end" title="<%= listing.limited ? fmtFull(listing.stock) : 'Unlimited' %>"><%= listing.limited ? fmtCompact(listing.stock) : '∞' %></td>
+                    <td data-label="Source">
+                      <span class="badge <%= listing.listingType === 'manual' ? 'text-bg-info' : 'text-bg-secondary' %>">
+                        <%= listing.listingType === 'manual' ? 'Manual' : 'Rotation' %>
+                      </span>
+                      <% if (listing.listingType === 'rotation' && rotationEndsAt) { %>
+                        <div class="text-muted small mt-1">Ends <%= formatDate(rotationEndsAt) %></div>
                       <% } %>
                     </td>
                     <td data-label="Actions" class="text-end">
                       <form method="post" action="/admin/economy/shop/delete" class="d-inline">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                        <input type="hidden" name="itemId" value="<%= l.itemId %>" />
+                        <input type="hidden" name="itemId" value="<%= listing.itemId %>" />
+                        <input type="hidden" name="listingType" value="<%= listing.listingType %>" />
                         <button
                           class="btn btn-outline-danger btn-sm"
                           type="submit"

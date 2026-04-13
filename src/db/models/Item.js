@@ -36,6 +36,12 @@ const ItemSchema = new mongoose.Schema(
     stackable: { type: Boolean, default: true },
     tags: { type: [String], default: [], index: true },
     imageUrl: { type: String, default: '' },
+    imageHash: { type: String, default: '', index: true },
+    emojiId: { type: String, default: '' },
+    emojiName: { type: String, default: '' },
+    emojiText: { type: String, default: '' },
+    emojiUrl: { type: String, default: '' },
+    emojiGuildId: { type: String, default: '' },
     wallpaperUrl: { type: String, default: '' },
     effects: { type: ItemEffectSchema, default: () => ({}) },
     boxKey: { type: String, default: '' }

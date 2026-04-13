@@ -122,4 +122,34 @@ async function getProfile({ guildId, discordId }) {
   return { user, wallpaper };
 }
 
-module.exports = { setBio, setTitle, setWallpaper, follow, unfollow, getProfile };
+async function getSocialConnections({ guildId, discordId, type = 'followers' }) {
+  const accountGuildId = getEconomyAccountGuildId(guildId);
+  const user = await User.findOne({ guildId: accountGuildId, discordId });
+  if (!user) return { ok: false, reason: 'User not found.', entries: [] };
+  normalizeEconomyUserState(user);
+
+  const key = type === 'following' ? 'following' : 'followers';
+  const ids = [...new Set((Array.isArray(user[key]) ? user[key] : []).map((entry) => String(entry || '').trim()).filter(Boolean))];
+  if (!ids.length) return { ok: true, user, entries: [] };
+
+  const related = await User.find({ guildId: accountGuildId, discordId: { $in: ids } })
+    .select('discordId username profileTitle originGuildName')
+    .lean();
+  const relatedById = new Map(related.map((entry) => [String(entry.discordId || '').trim(), entry]));
+
+  return {
+    ok: true,
+    user,
+    entries: ids.map((id) => {
+      const match = relatedById.get(id) || null;
+      return {
+        discordId: id,
+        username: String(match?.username || '').trim(),
+        profileTitle: String(match?.profileTitle || '').trim(),
+        originGuildName: String(match?.originGuildName || '').trim()
+      };
+    })
+  };
+}
+
+module.exports = { setBio, setTitle, setWallpaper, follow, unfollow, getProfile, getSocialConnections };
