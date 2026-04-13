@@ -29,7 +29,7 @@
             <li>Optional: enable the Verification Panel to post a Verify button in a channel.</li>
           </ol>
           <div class="text-muted small mt-2">
-            Note: browser geolocation requires a secure context (HTTPS) except on <code>localhost</code>.
+            Location checks now use network/IP lookup by default. If a browser has already allowed device GPS, the verification flow can attach that more precise reading automatically. HTTPS is still required for any browser geolocation capture.
           </div>
         </div>
       </div>
@@ -66,7 +66,7 @@
                   value="1"
                   <%= (typeof cfg.verification.requireLocation === 'boolean' ? cfg.verification.requireLocation : true) ? 'checked' : '' %>
                 />
-                <label class="form-check-label">Require location</label>
+                <label class="form-check-label">Require location check</label>
               </div>
 
               <div class="form-check form-switch ms-3">
@@ -79,6 +79,12 @@
                   <%= (typeof cfg.verification.autoApprove === 'boolean' ? cfg.verification.autoApprove : true) ? 'checked' : '' %>
                 />
                 <label class="form-check-label">Auto-approve (give role)</label>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="text-muted small">
+                Members no longer get stuck on a forced browser location pop-up. Verification records network location automatically and only adds precise device GPS when that browser already has permission.
               </div>
             </div>
 

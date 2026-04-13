@@ -48,10 +48,13 @@
 
   const hasGeo = () => Boolean(parseGeoInput());
 
-  const setGeoStatus = () => {
+  const setGeoStatus = (text = '', tone = '') => {
     if (!status) return;
-    status.textContent = '';
-    status.hidden = true;
+    const value = String(text || '').trim();
+    status.textContent = value;
+    if (value && tone) status.dataset.tone = tone;
+    else delete status.dataset.tone;
+    status.hidden = !value;
   };
 
   const setIpStatus = (text) => {
@@ -133,33 +136,6 @@
 
   setIpStatus('');
 
-  const createGeoFailure = (code, message = code) => {
-    const error = new Error(String(message || code || 'geo_failed'));
-    error.code = String(code || 'geo_failed');
-    return error;
-  };
-
-  const describeGeoFailure = (code) => {
-    const normalized = String(code || '').trim().toLowerCase();
-    if (!window.isSecureContext) {
-      return 'Precise location requires HTTPS. Open the secure site URL and try again.';
-    }
-    switch (normalized) {
-      case 'permission_denied':
-        return 'Location access is required to verify. Allow browser or device location, then try again.';
-      case 'position_unavailable':
-        return 'Precise location is unavailable right now. Turn on GPS or high-accuracy location, then try again.';
-      case 'timeout':
-        return 'We could not lock a precise location in time. Keep location services on and try again.';
-      case 'low_accuracy':
-        return 'Location was detected but it is still too broad. Turn on GPS or high-accuracy mode, then try again.';
-      case 'unsupported':
-        return 'This browser cannot provide device location for verification.';
-      default:
-        return 'Precise device location is required to verify. Enable location services and try again.';
-    }
-  };
-
   const captureBestLocation = () =>
     new Promise((resolve, reject) => {
       let best = null;
@@ -231,90 +207,105 @@
       }, GEO_MAX_WAIT_MS);
     });
 
-  const ensureGeo = async () => {
-    if (!requireGeo) return true;
-    if (hasGeo()) return true;
-    if (!window.isSecureContext) {
-      setGeoStatus('');
-      setFormError(describeGeoFailure('insecure_context'));
-      return false;
-    }
-    if (!navigator.geolocation) {
-      setGeoStatus('');
-      setFormError(describeGeoFailure('unsupported'));
-      return false;
-    }
+  const getGeoPermissionState = async () => {
+    if (!requireGeo) return 'not_needed';
+    if (!window.isSecureContext) return 'insecure';
+    if (!navigator.geolocation) return 'unsupported';
+    if (!navigator.permissions || typeof navigator.permissions.query !== 'function') return 'unknown';
 
-    setGeoStatus();
     try {
-      const pos = await captureBestLocation();
-      const lat = Number(pos.coords.latitude);
-      const lon = Number(pos.coords.longitude);
-      const acc = Number(pos.coords.accuracy);
-      if (!Number.isFinite(acc)) {
-        setGeoStatus('');
-        setFormError(describeGeoFailure('position_unavailable'));
-        return false;
-      }
-      setValue('geoLat', String(lat));
-      setValue('geoLon', String(lon));
-      setValue('geoAcc', String(acc));
-      setGeoStatus();
-      clearLocationError();
-
-      if (guildId && csrfToken && token) {
-        await fetch(`/verify/${encodeURIComponent(guildId)}/geo`, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'csrf-token': csrfToken
-          },
-          body: JSON.stringify({
-            t: token,
-            lat,
-            lon,
-            accuracy: acc,
-            publicIp: publicIpValue || undefined
-          })
-        }).catch(() => null);
-      }
-      return true;
-    } catch (error) {
-      setGeoStatus();
-      setFormError(describeGeoFailure(error?.code));
-      if (guildId && csrfToken && token) {
-        fetch(`/verify/${encodeURIComponent(guildId)}/geo/denied`, {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'csrf-token': csrfToken
-          },
-          body: JSON.stringify({ t: token, reason: error?.code || 'geo_denied', publicIp: publicIpValue || undefined })
-        }).catch(() => null);
-      }
-      return false;
+      const permission = await navigator.permissions.query({ name: 'geolocation' });
+      return String(permission?.state || 'unknown').trim().toLowerCase() || 'unknown';
+    } catch {
+      return 'unknown';
     }
   };
 
-  let warmGeoStarted = false;
-  const warmGeo = async () => {
-    if (!requireGeo || warmGeoStarted || hasGeo() || !navigator.geolocation || !window.isSecureContext) return;
-    warmGeoStarted = true;
-    setGeoStatus();
-    try {
-      const pos = await captureBestLocation();
-      const lat = Number(pos.coords.latitude);
-      const lon = Number(pos.coords.longitude);
-      const acc = Number(pos.coords.accuracy);
-      if (!Number.isFinite(acc)) return;
-      setValue('geoLat', String(lat));
-      setValue('geoLon', String(lon));
-      setValue('geoAcc', String(acc));
-      setGeoStatus();
-      clearLocationError();
-    } catch {
-      setGeoStatus();
+  const buildGeoStatusCopy = (permissionState) => {
+    if (!requireGeo) return '';
+    if (hasGeo()) {
+      return 'Precise device location is already linked. Verification can continue normally.';
     }
+
+    switch (String(permissionState || '').trim().toLowerCase()) {
+      case 'granted':
+        return 'This browser already allows device location. A precise reading will be attached automatically when available.';
+      case 'denied':
+        return 'Browser location is blocked here, but verification will continue using your network location instead.';
+      case 'prompt':
+        return 'No browser location pop-up is required. Verification uses your network location by default.';
+      case 'insecure':
+        return 'This page is not in a secure browser context, so verification will use your network location instead.';
+      case 'unsupported':
+        return 'This browser does not expose device location, so verification will use your network location instead.';
+      default:
+        return 'Verification uses your network location by default. Device GPS is only attached if it was already allowed in this browser.';
+    }
+  };
+
+  const refreshGeoStatus = async () => {
+    const permissionState = await getGeoPermissionState();
+    const tone = hasGeo() ? 'success' : 'warning';
+    setGeoStatus(buildGeoStatusCopy(permissionState), tone);
+    return permissionState;
+  };
+
+  const postGeo = async ({ lat, lon, accuracy }) => {
+    if (!guildId || !csrfToken || !token) return;
+    await fetch(`/verify/${encodeURIComponent(guildId)}/geo`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'csrf-token': csrfToken
+      },
+      body: JSON.stringify({
+        t: token,
+        lat,
+        lon,
+        accuracy,
+        publicIp: publicIpValue || undefined
+      })
+    }).catch(() => null);
+  };
+
+  let geoCapturePromise = null;
+  const captureGeoSilently = async () => {
+    if (!requireGeo || hasGeo() || !navigator.geolocation || !window.isSecureContext) return false;
+    if (geoCapturePromise) return geoCapturePromise;
+
+    geoCapturePromise = (async () => {
+      const permissionState = await getGeoPermissionState();
+      if (permissionState !== 'granted') {
+        await refreshGeoStatus();
+        return false;
+      }
+
+      try {
+        const pos = await captureBestLocation();
+        const lat = Number(pos.coords.latitude);
+        const lon = Number(pos.coords.longitude);
+        const acc = Number(pos.coords.accuracy);
+        if (!Number.isFinite(acc)) {
+          await refreshGeoStatus();
+          return false;
+        }
+
+        setValue('geoLat', String(lat));
+        setValue('geoLon', String(lon));
+        setValue('geoAcc', String(acc));
+        clearLocationError();
+        setGeoStatus('Precise device location is linked. Verification can continue normally.', 'success');
+        await postGeo({ lat, lon, accuracy: acc });
+        return true;
+      } catch {
+        setGeoStatus('Verification will use your network location. Precise device GPS could not be refreshed in this browser.', 'warning');
+        return false;
+      }
+    })().finally(() => {
+      geoCapturePromise = null;
+    });
+
+    return geoCapturePromise;
   };
 
   form.addEventListener('submit', async (event) => {
@@ -325,13 +316,7 @@
     submitBtn.disabled = true;
     submitBtn.textContent = 'Securing…';
 
-    const geoOk = await ensureGeo();
-    if (!geoOk) {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Verify';
-      return;
-    }
-
+    captureGeoSilently().catch(() => null);
     await ensurePublicIp();
 
     const formData = new FormData(form);
@@ -379,7 +364,7 @@
   });
 
   if (requireGeo) {
-    setGeoStatus();
-    warmGeo().catch(() => null);
+    refreshGeoStatus().catch(() => null);
+    captureGeoSilently().catch(() => null);
   }
 })();

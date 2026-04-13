@@ -96,6 +96,14 @@ function normalizeIpGeo(ipGeo) {
   };
 }
 
+function hasUsableIpGeo(ipGeo) {
+  if (!ipGeo || typeof ipGeo !== 'object') return false;
+  if (typeof ipGeo.lat === 'number' && typeof ipGeo.lon === 'number' && !Number.isNaN(ipGeo.lat) && !Number.isNaN(ipGeo.lon)) {
+    return true;
+  }
+  return Boolean(String(ipGeo.city || '').trim() || String(ipGeo.region || '').trim() || String(ipGeo.country || '').trim());
+}
+
 async function logIpVisit({ guildId, discordId = '', username = '', email = '', ip, userAgent, geo, publicIp, ipGeo, verified = false }) {
   const now = new Date();
   const parsedGeo = normalizeGeo(geo);
@@ -369,9 +377,12 @@ async function submitVerification({
   let geoFinal = geoCheck.ok ? geoCheck.geo : null;
   const autoApprove = cfg.verification?.autoApprove !== false;
   const status = autoApprove ? 'approved' : 'pending';
+  const ipGeoFinal = parsedIpGeo.ok ? parsedIpGeo.ipGeo : null;
+  const hasNetworkLocation = hasUsableIpGeo(ipGeoFinal);
+  const hasLocationSignal = Boolean(geoFinal || hasNetworkLocation || publicIpValid || observedIp);
 
-  if (cfg.verification?.requireLocation !== false && !geoFinal) {
-    return { ok: false, reason: 'Precise device location is required to verify.' };
+  if (cfg.verification?.requireLocation !== false && !hasLocationSignal) {
+    return { ok: false, reason: 'Location check could not be completed from this connection. Please try again.' };
   }
 
   const observedIpFinal = observedIp || publicIpValid || '';
@@ -455,8 +466,12 @@ async function submitVerification({
 
   const locationNote =
     geoFinal && Number.isFinite(Number(geoFinal.accuracy))
-      ? `Device location captured at ±${Math.round(Number(geoFinal.accuracy))}m accuracy.`
-      : '';
+      ? `Precise device location captured at +/-${Math.round(Number(geoFinal.accuracy))}m accuracy.`
+      : hasNetworkLocation
+        ? 'Used a network-based location estimate from the connection without requiring a browser GPS prompt.'
+        : hasLocationSignal
+          ? 'Device GPS was not required. Connection details were recorded for review.'
+          : '';
 
   if (status === 'approved') {
     const roleClientList = roleClients || discordClient;

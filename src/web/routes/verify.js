@@ -420,11 +420,45 @@ router.post('/:guildId', async (req, res) => {
 
   const publicIpFromBody = String(req.body.publicIp || '').trim();
   const publicIp = String(session?.publicIp || publicIpFromBody || '').trim();
+  const sessionIpGeo = session?.ipGeo && typeof session.ipGeo === 'object' ? session.ipGeo : null;
+  const sessionIpGeoHasValue = Boolean(
+    sessionIpGeo &&
+      (
+        String(sessionIpGeo.city || '').trim() ||
+        String(sessionIpGeo.region || '').trim() ||
+        String(sessionIpGeo.country || '').trim() ||
+        Number.isFinite(Number(sessionIpGeo.lat)) ||
+        Number.isFinite(Number(sessionIpGeo.lon))
+      )
+  );
 
   const ip = getReqIp(req);
   const userAgent = req.headers['user-agent'] || '';
   const publicIpFinal = publicIp || ip;
-  await logIpVisit({ guildId, discordId: v.payload.uid, ip, userAgent, geo: geoPayload, publicIp: publicIpFinal }).catch(() => null);
+  const ipGeoLookup = lookupIpGeo(publicIpFinal);
+  const ipGeoPayload = sessionIpGeoHasValue
+    ? sessionIpGeo
+    : ipGeoLookup.ok
+      ? {
+          source: ipGeoLookup.source,
+          country: ipGeoLookup.country,
+          region: ipGeoLookup.region,
+          city: ipGeoLookup.city,
+          timezone: ipGeoLookup.timezone,
+          lat: ipGeoLookup.lat,
+          lon: ipGeoLookup.lon
+        }
+      : null;
+
+  await logIpVisit({
+    guildId,
+    discordId: v.payload.uid,
+    ip,
+    userAgent,
+    geo: geoPayload,
+    publicIp: publicIpFinal,
+    ...(ipGeoPayload ? { ipGeo: ipGeoPayload } : {})
+  }).catch(() => null);
 
   const expiresAt = new Date(v.payload.exp * 1000);
   await VerificationSession.findOneAndUpdate(
@@ -442,6 +476,7 @@ router.post('/:guildId', async (req, res) => {
         userAgent,
         ...(geoCaptured && geoPayload ? { geo: geoPayload, geoCapturedAt: new Date() } : {}),
         ...(publicIpFinal ? { publicIp: publicIpFinal, publicIpUpdatedAt: new Date() } : {}),
+        ...(ipGeoPayload ? { ipGeo: ipGeoPayload, ipGeoUpdatedAt: new Date() } : {}),
         answers: {
           a1Hash: sha256(answer1),
           a2Hash: sha256(answer2),

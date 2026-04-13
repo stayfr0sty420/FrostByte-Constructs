@@ -57,7 +57,7 @@
 
             <% if (error === 'location_required') { %>
               <div class="alert alert-danger" id="locationError">
-                Verification could not continue on the first attempt. Please try again.
+                Verification could not continue earlier because precise browser GPS was unavailable. You can retry now because the flow will use network location automatically.
               </div>
             <% } %>
             <% if (error === 'answers_required') { %>
@@ -72,6 +72,11 @@
             <% } %>
 
             <div class="alert alert-danger d-none" id="formError"></div>
+            <% if (needsGeo) { %>
+              <div class="verify-status-text" id="geoStatus" role="status" aria-live="polite">
+                Browser location permission is optional. Verification will use your network location automatically.
+              </div>
+            <% } %>
 
             <form
               method="post"
