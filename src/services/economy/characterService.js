@@ -9,6 +9,7 @@ const {
 const { normalizeEconomyUserState } = require('./userService');
 
 const STAT_KEYS = ['str', 'agi', 'vit', 'luck', 'crit'];
+const EQUIPPED_SLOT_KEYS = ['headGear', 'eyeGear', 'faceGear', 'rHand', 'lHand', 'robe', 'shoes', 'rAccessory', 'lAccessory'];
 
 function emptyStats() {
   return {
@@ -52,9 +53,32 @@ function defaultProgressionForLevel(level) {
   };
 }
 
+function readEquippedSlots(equipped) {
+  const source =
+    equipped && typeof equipped?.toObject === 'function'
+      ? equipped.toObject({
+          depopulate: true,
+          flattenMaps: true,
+          getters: false,
+          virtuals: false,
+          versionKey: false
+        })
+      : equipped && typeof equipped === 'object'
+        ? equipped
+        : {};
+
+  const normalized = Object.fromEntries(
+    EQUIPPED_SLOT_KEYS.map((slot) => [slot, String(source?.[slot] || '').trim()])
+  );
+
+  const legacyAccessory = String(source?.accessory || '').trim();
+  if (legacyAccessory && !normalized.rAccessory) normalized.rAccessory = legacyAccessory;
+  return normalized;
+}
+
 function resolveInventoryEntriesForEquipped(user) {
   normalizeEconomyUserState(user);
-  const equippedEntries = Object.entries(user?.equipped || {}).filter(([, itemId]) => Boolean(itemId));
+  const equippedEntries = Object.entries(readEquippedSlots(user?.equipped)).filter(([, itemId]) => Boolean(itemId));
   const inventoryByItemId = new Map();
 
   for (const invEntry of user?.inventory || []) {

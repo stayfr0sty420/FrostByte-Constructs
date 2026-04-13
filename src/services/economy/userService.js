@@ -86,17 +86,46 @@ function normalizeGachaPity(value) {
     .filter(Boolean);
 }
 
-function toComparable(value) {
+function toComparable(value, seen = new WeakSet()) {
   if (value instanceof Date) return value.toISOString();
-  if (value instanceof Map) return Object.fromEntries(value.entries());
-  if (Array.isArray(value)) return value.map((entry) => toComparable(entry));
+
+  if (value && typeof value?.toObject === 'function') {
+    try {
+      return toComparable(
+        value.toObject({
+          depopulate: true,
+          flattenMaps: true,
+          getters: false,
+          virtuals: false,
+          versionKey: false
+        }),
+        seen
+      );
+    } catch {}
+  }
+
+  if (value instanceof Map) {
+    if (seen.has(value)) return '[CircularMap]';
+    seen.add(value);
+    return Object.fromEntries(Array.from(value.entries(), ([key, entry]) => [key, toComparable(entry, seen)]));
+  }
+
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return [];
+    seen.add(value);
+    return value.map((entry) => toComparable(entry, seen));
+  }
+
   if (value && typeof value === 'object') {
+    if (seen.has(value)) return '[CircularObject]';
+    seen.add(value);
     return Object.fromEntries(
       Object.entries(value)
         .filter(([, entry]) => typeof entry !== 'function')
-        .map(([key, entry]) => [key, toComparable(entry)])
+        .map(([key, entry]) => [key, toComparable(entry, seen)])
     );
   }
+
   return value;
 }
 

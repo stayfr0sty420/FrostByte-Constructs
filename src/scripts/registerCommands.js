@@ -1,4 +1,5 @@
 const path = require('path');
+const https = require('https');
 const { REST, Routes } = require('discord.js');
 const { env } = require('../config/env');
 const { logger } = require('../config/logger');
@@ -40,6 +41,8 @@ function getBotsToRegister(arg) {
     {
       key: 'economy',
       label: 'Economy',
+      tokenEnvKey: 'ECONOMY_DISCORD_TOKEN',
+      clientIdEnvKey: 'ECONOMY_CLIENT_ID',
       token: env.ECONOMY_DISCORD_TOKEN,
       appId: env.ECONOMY_CLIENT_ID,
       commandsDir: path.join(__dirname, '..', 'bots', 'economy', 'commands')
@@ -47,6 +50,8 @@ function getBotsToRegister(arg) {
     {
       key: 'backup',
       label: 'Backup',
+      tokenEnvKey: 'BACKUP_DISCORD_TOKEN',
+      clientIdEnvKey: 'BACKUP_CLIENT_ID',
       token: env.BACKUP_DISCORD_TOKEN,
       appId: env.BACKUP_CLIENT_ID,
       commandsDir: path.join(__dirname, '..', 'bots', 'backup', 'commands')
@@ -54,6 +59,8 @@ function getBotsToRegister(arg) {
     {
       key: 'verification',
       label: 'Verification',
+      tokenEnvKey: 'VERIFICATION_DISCORD_TOKEN',
+      clientIdEnvKey: 'VERIFICATION_CLIENT_ID',
       token: env.VERIFICATION_DISCORD_TOKEN,
       appId: env.VERIFICATION_CLIENT_ID,
       commandsDir: path.join(__dirname, '..', 'bots', 'verification', 'commands')
@@ -66,9 +73,77 @@ function getBotsToRegister(arg) {
   return [bot];
 }
 
+function fetchDiscordMe(token) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: 'discord.com',
+        path: '/api/v10/users/@me',
+        method: 'GET',
+        headers: {
+          Authorization: `Bot ${String(token || '').trim()}`
+        }
+      },
+      (res) => {
+        let raw = '';
+        res.on('data', (chunk) => {
+          raw += chunk;
+        });
+        res.on('end', () => {
+          let json = null;
+          try {
+            json = raw ? JSON.parse(raw) : null;
+          } catch {}
+          resolve({
+            status: Number(res.statusCode) || 0,
+            body: json
+          });
+        });
+      }
+    );
+
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+async function validateBotCredentials(bot) {
+  const token = String(bot.token || '').trim();
+  const appId = String(bot.appId || '').trim();
+  if (!token) {
+    throw new Error(`${bot.tokenEnvKey} is missing or empty.`);
+  }
+  if (!appId) {
+    throw new Error(`${bot.clientIdEnvKey} is missing or empty.`);
+  }
+
+  const probe = await fetchDiscordMe(token);
+  if (probe.status === 401) {
+    throw new Error(
+      `${bot.tokenEnvKey} is invalid or revoked. Replace it with the current bot token from the Discord Developer Portal for ${bot.clientIdEnvKey}=${appId}.`
+    );
+  }
+  if (probe.status < 200 || probe.status >= 300) {
+    throw new Error(
+      `Discord token preflight failed for ${bot.key} (${probe.status}). ${String(probe.body?.message || 'Unknown Discord API error.')}`
+    );
+  }
+
+  const returnedId = String(probe.body?.id || '').trim();
+  if (!returnedId) {
+    throw new Error(`Discord token preflight returned no bot user id for ${bot.key}.`);
+  }
+  if (returnedId !== appId) {
+    throw new Error(
+      `${bot.tokenEnvKey} belongs to bot user ${returnedId}, but ${bot.clientIdEnvKey} is ${appId}. Make those env values point to the same Discord application.`
+    );
+  }
+}
+
 async function registerOne(bot) {
   if (!bot.appId) throw new Error(`${bot.label}_CLIENT_ID is required to register commands.`);
 
+  await validateBotCredentials(bot);
   const commands = loadCommandData(bot.commandsDir);
   const rest = new REST({ version: '10' }).setToken(bot.token);
   const useGuildScope = env.NODE_ENV !== 'production' && Boolean(env.DEV_GUILD_ID);
