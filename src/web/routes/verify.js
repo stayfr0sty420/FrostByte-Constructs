@@ -7,6 +7,7 @@ const { sha256 } = require('../../services/utils/crypto');
 const { createVerifyToken, verifyVerifyToken, getVerifyTokenFromReq } = require('../../services/verification/verifyTokenService');
 const net = require('net');
 const { lookupIpGeo } = require('../../services/verification/ipGeoService');
+const { lookupIpSecurity, isPublicIp } = require('../../services/verification/ipSecurityService');
 
 const router = express.Router();
 
@@ -22,16 +23,87 @@ function tokenFailureJson(res, reason = 'invalid_token') {
 }
 
 function parseGeoFromBody(body) {
-  const lat = body?.lat !== undefined ? Number(body.lat) : body?.geoLat ? Number(body.geoLat) : null;
-  const lon = body?.lon !== undefined ? Number(body.lon) : body?.geoLon ? Number(body.geoLon) : null;
+  const lat =
+    body?.lat !== undefined && body?.lat !== ''
+      ? Number(body.lat)
+      : body?.geoLat !== undefined && body?.geoLat !== ''
+        ? Number(body.geoLat)
+        : null;
+  const lon =
+    body?.lon !== undefined && body?.lon !== ''
+      ? Number(body.lon)
+      : body?.geoLon !== undefined && body?.geoLon !== ''
+        ? Number(body.geoLon)
+        : null;
   const accuracy =
-    body?.accuracy !== undefined ? Number(body.accuracy) : body?.geoAcc ? Number(body.geoAcc) : null;
+    body?.accuracy !== undefined && body?.accuracy !== ''
+      ? Number(body.accuracy)
+      : body?.geoAcc !== undefined && body?.geoAcc !== ''
+        ? Number(body.geoAcc)
+        : null;
 
   if (lat === null || lon === null || accuracy === null) return { ok: false, geo: { lat: null, lon: null, accuracy: null } };
   if (Number.isNaN(lat) || Number.isNaN(lon) || Number.isNaN(accuracy)) return { ok: false, geo: { lat: null, lon: null, accuracy: null } };
   if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return { ok: false, geo: { lat: null, lon: null, accuracy: null } };
   if (accuracy < 0 || accuracy > 100000) return { ok: false, geo: { lat: null, lon: null, accuracy: null } };
   return { ok: true, geo: { lat, lon, accuracy } };
+}
+
+function parseBoolish(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+}
+
+function normalizePermissionState(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'granted' || normalized === 'prompt' || normalized === 'denied') return normalized;
+  if (normalized === 'unsupported' || normalized === 'unknown' || normalized === 'insecure') return normalized;
+  return '';
+}
+
+function buildIpGeoPayload(lookup) {
+  return lookup?.ok
+    ? {
+        source: lookup.source,
+        country: lookup.country,
+        region: lookup.region,
+        city: lookup.city,
+        timezone: lookup.timezone,
+        lat: lookup.lat,
+        lon: lookup.lon
+      }
+    : null;
+}
+
+function buildBlockedReason(reason, detail = '') {
+  if (reason === 'incognito_blocked') {
+    return 'Verification is not allowed in Incognito mode. Please use normal browser.';
+  }
+  if (reason === 'vpn_proxy_blocked') {
+    return String(detail || 'VPN/Proxy detected. Disable it to continue.');
+  }
+  if (reason === 'security_check_unavailable') {
+    return 'Network safety check is unavailable right now. Please retry in a moment.';
+  }
+  return '';
+}
+
+function getSessionBlockedState(session) {
+  const reason = String(session?.accessBlockedReason || '').trim();
+  if (!reason) return { blocked: false, error: '', reason: '' };
+  const detail = String(session?.security?.ipIntelMessage || '').trim();
+  return {
+    blocked: true,
+    error: reason,
+    reason: buildBlockedReason(reason, detail)
+  };
+}
+
+function buildLocationRequiredReason(permissionState, deniedAt) {
+  if (String(permissionState || '').trim().toLowerCase() === 'denied' || deniedAt) {
+    return 'Enable location in browser settings to continue.';
+  }
+  return 'Precise device location is required to continue. Press Retry and allow location access.';
 }
 
 function normalizeQuestionPrompt(value) {
@@ -211,31 +283,42 @@ router.post('/:guildId/client', async (req, res) => {
   if (!cfg.verification?.enabled) return res.status(403).json({ ok: false, reason: 'disabled' });
   if (!cfg.verification?.verifiedRoleId) return res.status(403).json({ ok: false, reason: 'not_configured' });
 
-  const publicIp = String(req.body?.publicIp || '').trim();
-  if (!publicIp) return res.status(400).json({ ok: false, reason: 'missing_public_ip' });
-  if (!net.isIP(publicIp)) return res.status(400).json({ ok: false, reason: 'invalid_public_ip' });
-
-  const ipGeoLookup = lookupIpGeo(publicIp);
-  const ipGeo = ipGeoLookup.ok
-    ? {
-        source: ipGeoLookup.source,
-        country: ipGeoLookup.country,
-        region: ipGeoLookup.region,
-        city: ipGeoLookup.city,
-        timezone: ipGeoLookup.timezone,
-        lat: ipGeoLookup.lat,
-        lon: ipGeoLookup.lon
-      }
-    : null;
+  const providedPublicIp = String(req.body?.publicIp || '').trim();
+  const permissionState = normalizePermissionState(req.body?.geoPermissionState);
+  const incognitoDetected = parseBoolish(req.body?.incognitoDetected);
+  const incognitoMethod = String(req.body?.incognitoMethod || '').trim().slice(0, 80);
 
   const ip = getReqIp(req);
+  const publicIp = net.isIP(providedPublicIp) ? providedPublicIp : isPublicIp(ip) ? ip : '';
+  const ipGeoLookup = lookupIpGeo(publicIp || ip);
+  const ipGeo = buildIpGeoPayload(ipGeoLookup);
+  const ipSecurity = incognitoDetected
+    ? { ok: false, skipped: true, provider: 'ipapi.is' }
+    : publicIp
+      ? await lookupIpSecurity(publicIp)
+      : { ok: false, skipped: true, provider: 'ipapi.is' };
+
+  const blockedReason = incognitoDetected
+    ? 'incognito_blocked'
+    : ipSecurity.ok && ipSecurity.blocked
+      ? 'vpn_proxy_blocked'
+      : '';
+  const blockedMessage = buildBlockedReason(blockedReason, ipSecurity?.rawMessage || '');
   const userAgent = req.headers['user-agent'] || '';
+
+  if (!blockedReason && publicIp && !ipSecurity.ok && !ipSecurity.skipped) {
+    return res.status(503).json({
+      ok: false,
+      reason: 'security_check_unavailable',
+      message: buildBlockedReason('security_check_unavailable')
+    });
+  }
   await logIpVisit({
     guildId,
     discordId: v.payload.uid,
     ip,
     userAgent,
-    publicIp,
+    ...(publicIp ? { publicIp } : {}),
     ...(ipGeo ? { ipGeo } : {})
   }).catch(() => null);
 
@@ -253,9 +336,27 @@ router.post('/:guildId/client', async (req, res) => {
       $set: {
         ip,
         userAgent,
-        publicIp,
-        publicIpUpdatedAt: new Date(),
-        ...(ipGeo ? { ipGeo, ipGeoUpdatedAt: new Date() } : {})
+        ...(publicIp ? { publicIp, publicIpUpdatedAt: new Date() } : {}),
+        ...(ipGeo ? { ipGeo, ipGeoUpdatedAt: new Date() } : {}),
+        ...(permissionState ? { geoPermissionState: permissionState } : {}),
+        security: {
+          incognitoDetected,
+          incognitoMethod,
+          incognitoCheckedAt: new Date(),
+          ipIntelProvider: String(ipSecurity?.provider || 'ipapi.is'),
+          ipIntelCheckedAt: ipSecurity?.ok ? new Date() : null,
+          ipIntelBlocked: Boolean(ipSecurity?.ok && ipSecurity.blocked),
+          ipIntelMessage: String(ipSecurity?.rawMessage || ''),
+          ipIntelService: String(ipSecurity?.service || ''),
+          ipIntelFlags: {
+            vpn: Boolean(ipSecurity?.vpn),
+            proxy: Boolean(ipSecurity?.proxy),
+            hosting: Boolean(ipSecurity?.hosting),
+            tor: Boolean(ipSecurity?.tor)
+          }
+        },
+        accessBlockedReason: blockedReason,
+        accessBlockedAt: blockedReason ? new Date() : null
       }
     },
     { upsert: true }
@@ -263,7 +364,35 @@ router.post('/:guildId/client', async (req, res) => {
 
   // Intermediate log suppressed.
 
-  return res.json({ ok: true });
+  if (blockedReason) {
+    return res.status(403).json({
+      ok: false,
+      reason: blockedReason,
+      message: blockedMessage,
+      security: {
+        blocked: true,
+        provider: String(ipSecurity?.provider || 'ipapi.is'),
+        vpn: Boolean(ipSecurity?.vpn),
+        proxy: Boolean(ipSecurity?.proxy),
+        hosting: Boolean(ipSecurity?.hosting),
+        tor: Boolean(ipSecurity?.tor)
+      }
+    });
+  }
+
+  return res.json({
+    ok: true,
+    publicIp,
+    security: {
+      blocked: false,
+      checked: Boolean(ipSecurity?.ok),
+      provider: String(ipSecurity?.provider || 'ipapi.is'),
+      vpn: Boolean(ipSecurity?.vpn),
+      proxy: Boolean(ipSecurity?.proxy),
+      hosting: Boolean(ipSecurity?.hosting),
+      tor: Boolean(ipSecurity?.tor)
+    }
+  });
 });
 
 router.post('/:guildId/geo', async (req, res) => {
@@ -280,6 +409,7 @@ router.post('/:guildId/geo', async (req, res) => {
 
   const parsed = parseGeoFromBody(req.body);
   if (!parsed.ok) return res.status(400).json({ ok: false, reason: 'invalid_geo' });
+  const permissionState = normalizePermissionState(req.body?.geoPermissionState);
 
   const publicIp = String(req.body?.publicIp || '').trim();
   const publicIpValid = publicIp && net.isIP(publicIp);
@@ -310,8 +440,10 @@ router.post('/:guildId/geo', async (req, res) => {
         ip,
         userAgent,
         ...(publicIpValid ? { publicIp, publicIpUpdatedAt: new Date() } : {}),
+        ...(permissionState ? { geoPermissionState: permissionState } : {}),
         geo: parsed.geo,
-        geoCapturedAt: new Date()
+        geoCapturedAt: new Date(),
+        geoDeniedAt: null
       }
     },
     { upsert: true }
@@ -332,6 +464,9 @@ router.post('/:guildId/geo/denied', async (req, res) => {
   const cfg = await getOrCreateGuildConfig(guildId);
   if (botApprovalStatus(cfg, 'verification') !== 'approved') return res.status(403).json({ ok: false, reason: 'not_approved' });
   if (!cfg.verification?.enabled) return res.status(403).json({ ok: false, reason: 'disabled' });
+  if (!cfg.verification?.verifiedRoleId) return res.status(403).json({ ok: false, reason: 'not_configured' });
+
+  const permissionState = normalizePermissionState(req.body?.geoPermissionState);
 
   const publicIp = String(req.body?.publicIp || '').trim();
   const publicIpValid = publicIp && net.isIP(publicIp);
@@ -357,7 +492,13 @@ router.post('/:guildId/geo/denied', async (req, res) => {
         status: 'opened',
         expiresAt
       },
-      $set: { ip, userAgent, ...(publicIpValid ? { publicIp, publicIpUpdatedAt: new Date() } : {}), geoDeniedAt: new Date() }
+      $set: {
+        ip,
+        userAgent,
+        ...(publicIpValid ? { publicIp, publicIpUpdatedAt: new Date() } : {}),
+        ...(permissionState ? { geoPermissionState: permissionState } : {}),
+        geoDeniedAt: new Date()
+      }
     },
     { upsert: true }
   ).catch(() => null);
@@ -392,6 +533,16 @@ router.post('/:guildId', async (req, res) => {
     });
   }
 
+  const session = await VerificationSession.findOne({
+    sessionId: v.payload.sid,
+    guildId,
+    discordId: v.payload.uid
+  });
+  const sessionBlocked = getSessionBlockedState(session);
+  if (sessionBlocked.blocked) {
+    return fail(sessionBlocked.error, sessionBlocked.reason);
+  }
+
   const questionConfigs = buildVerificationQuestionConfigs(cfg);
   const validatedAnswers = validateVerificationAnswers(questionConfigs, req.body);
   if (!validatedAnswers.ok) {
@@ -400,12 +551,6 @@ router.post('/:guildId', async (req, res) => {
   const answer1 = String(validatedAnswers.answers[0] || '').trim();
   const answer2 = String(validatedAnswers.answers[1] || '').trim();
   const answer3 = String(validatedAnswers.answers[2] || '').trim();
-
-  const session = await VerificationSession.findOne({
-    sessionId: v.payload.sid,
-    guildId,
-    discordId: v.payload.uid
-  });
 
   const parsedGeo = parseGeoFromBody(req.body);
   const sessionGeo = session?.geo || { lat: null, lon: null, accuracy: null };
@@ -435,20 +580,32 @@ router.post('/:guildId', async (req, res) => {
   const ip = getReqIp(req);
   const userAgent = req.headers['user-agent'] || '';
   const publicIpFinal = publicIp || ip;
+  const permissionState = normalizePermissionState(req.body?.geoPermissionState || session?.geoPermissionState);
+
+  if (session?.security?.incognitoDetected) {
+    return fail('incognito_blocked', buildBlockedReason('incognito_blocked'));
+  }
+
+  if (!session?.security?.ipIntelCheckedAt && isPublicIp(publicIpFinal)) {
+    const liveIpSecurity = await lookupIpSecurity(publicIpFinal);
+    if (!liveIpSecurity.ok && !liveIpSecurity.skipped) {
+      return fail('security_check_unavailable', buildBlockedReason('security_check_unavailable'));
+    }
+    if (liveIpSecurity.ok && liveIpSecurity.blocked) {
+      return fail('vpn_proxy_blocked', buildBlockedReason('vpn_proxy_blocked', liveIpSecurity.rawMessage));
+    }
+  } else if (session?.security?.ipIntelBlocked) {
+    return fail('vpn_proxy_blocked', buildBlockedReason('vpn_proxy_blocked', session?.security?.ipIntelMessage));
+  }
+
+  if (cfg.verification?.requireLocation !== false && !geoPayload) {
+    return fail('location_required', buildLocationRequiredReason(permissionState, session?.geoDeniedAt));
+  }
+
   const ipGeoLookup = lookupIpGeo(publicIpFinal);
   const ipGeoPayload = sessionIpGeoHasValue
     ? sessionIpGeo
-    : ipGeoLookup.ok
-      ? {
-          source: ipGeoLookup.source,
-          country: ipGeoLookup.country,
-          region: ipGeoLookup.region,
-          city: ipGeoLookup.city,
-          timezone: ipGeoLookup.timezone,
-          lat: ipGeoLookup.lat,
-          lon: ipGeoLookup.lon
-        }
-      : null;
+    : buildIpGeoPayload(ipGeoLookup);
 
   await logIpVisit({
     guildId,
@@ -477,6 +634,7 @@ router.post('/:guildId', async (req, res) => {
         ...(geoCaptured && geoPayload ? { geo: geoPayload, geoCapturedAt: new Date() } : {}),
         ...(publicIpFinal ? { publicIp: publicIpFinal, publicIpUpdatedAt: new Date() } : {}),
         ...(ipGeoPayload ? { ipGeo: ipGeoPayload, ipGeoUpdatedAt: new Date() } : {}),
+        ...(permissionState ? { geoPermissionState: permissionState } : {}),
         answers: {
           a1Hash: sha256(answer1),
           a2Hash: sha256(answer2),
@@ -562,6 +720,16 @@ router.get('/:guildId/complete', requireAuth, async (req, res) => {
     return res.render('pages/verify_result', {
       title: 'Verification Result',
       result: { ok: false, reason: 'This verification link was already used. Please run /verify again.' },
+      guildId,
+      guildName: resolveGuildName(req.app, guildId) || guildId
+    });
+  }
+
+  const sessionBlocked = getSessionBlockedState(session);
+  if (sessionBlocked.blocked) {
+    return res.render('pages/verify_result', {
+      title: 'Verification Result',
+      result: { ok: false, reason: sessionBlocked.reason },
       guildId,
       guildName: resolveGuildName(req.app, guildId) || guildId
     });

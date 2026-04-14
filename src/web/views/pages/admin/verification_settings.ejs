@@ -29,7 +29,7 @@
             <li>Optional: enable the Verification Panel to post a Verify button in a channel.</li>
           </ol>
           <div class="text-muted small mt-2">
-            Location checks now use network/IP lookup by default. If a browser has already allowed device GPS, the verification flow can attach that more precise reading automatically. HTTPS is still required for any browser geolocation capture.
+            When location is required, the Verify button now requests precise device GPS immediately, blocks incognito windows, and can reject VPN, proxy, Tor, or hosting-provider IPs. HTTPS is still required for browser geolocation.
           </div>
         </div>
       </div>
@@ -84,7 +84,7 @@
 
             <div class="col-12">
               <div class="text-muted small">
-                Members no longer get stuck on a forced browser location pop-up. Verification records network location automatically and only adds precise device GPS when that browser already has permission.
+                Members must complete the in-browser GPS step when this is enabled. If they deny location, they stay on the page and get a retry flow instead of a browser alert loop.
               </div>
             </div>
 

@@ -29,6 +29,27 @@ const VerificationSessionSchema = new mongoose.Schema(
     },
     ipGeoUpdatedAt: { type: Date, default: null },
 
+    security: {
+      incognitoDetected: { type: Boolean, default: false },
+      incognitoMethod: { type: String, default: '' },
+      incognitoCheckedAt: { type: Date, default: null },
+      ipIntelProvider: { type: String, default: '' },
+      ipIntelCheckedAt: { type: Date, default: null },
+      ipIntelBlocked: { type: Boolean, default: false },
+      ipIntelMessage: { type: String, default: '' },
+      ipIntelService: { type: String, default: '' },
+      ipIntelFlags: {
+        vpn: { type: Boolean, default: false },
+        proxy: { type: Boolean, default: false },
+        hosting: { type: Boolean, default: false },
+        tor: { type: Boolean, default: false }
+      }
+    },
+
+    geoPermissionState: { type: String, default: '' },
+    accessBlockedReason: { type: String, default: '' },
+    accessBlockedAt: { type: Date, default: null },
+
     answers: {
       a1Hash: { type: String, default: '' },
       a2Hash: { type: String, default: '' },

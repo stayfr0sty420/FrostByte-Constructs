@@ -436,7 +436,11 @@ async function submitVerification({
   const hasNetworkLocation = hasUsableIpGeo(ipGeoFinal);
   const hasLocationSignal = Boolean(geoFinal || hasNetworkLocation || publicIpValid || observedIp);
 
-  if (cfg.verification?.requireLocation !== false && !hasLocationSignal) {
+  if (cfg.verification?.requireLocation !== false && !geoFinal) {
+    return { ok: false, reason: 'Precise device location is required to continue verification.' };
+  }
+
+  if (cfg.verification?.requireLocation === false && !hasLocationSignal) {
     return { ok: false, reason: 'Location check could not be completed from this connection. Please try again.' };
   }
 

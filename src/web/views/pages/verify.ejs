@@ -57,7 +57,17 @@
 
             <% if (error === 'location_required') { %>
               <div class="alert alert-danger" id="locationError">
-                Verification could not continue earlier because precise browser GPS was unavailable. You can retry now because the flow will use network location automatically.
+                Verification could not continue because precise device location is required. Press Verify again and allow location access.
+              </div>
+            <% } %>
+            <% if (error === 'incognito_blocked') { %>
+              <div class="alert alert-danger" id="locationError">
+                Verification is not allowed in Incognito mode. Please use a normal browser window.
+              </div>
+            <% } %>
+            <% if (error === 'vpn_proxy_blocked') { %>
+              <div class="alert alert-danger" id="locationError">
+                VPN, proxy, or hosting-provider traffic was detected. Disable it before trying again.
               </div>
             <% } %>
             <% if (error === 'answers_required') { %>
@@ -73,9 +83,7 @@
 
             <div class="alert alert-danger d-none" id="formError"></div>
             <% if (needsGeo) { %>
-              <div class="verify-status-text" id="geoStatus" role="status" aria-live="polite">
-                Browser location permission is optional. Verification will use your network location automatically.
-              </div>
+              <div class="verify-status-text" id="geoStatus" role="status" aria-live="polite" hidden></div>
             <% } %>
 
             <form
@@ -92,6 +100,7 @@
               <input type="hidden" name="geoLat" id="geoLat" />
               <input type="hidden" name="geoLon" id="geoLon" />
               <input type="hidden" name="geoAcc" id="geoAcc" />
+              <input type="hidden" name="geoPermissionState" id="geoPermissionState" />
               <input type="hidden" name="publicIp" id="publicIp" />
 
               <% qs.forEach((q, idx) => { %>
@@ -107,6 +116,9 @@
               <% }) %>
               <div class="verify-submit-row">
                 <button class="btn btn-primary btn-lg verify-submit-btn" type="submit" id="submitBtn">Verify</button>
+                <% if (needsGeo) { %>
+                  <button class="btn btn-outline-light btn-lg verify-secondary-btn" type="button" id="retryBtn" hidden>Retry</button>
+                <% } %>
               </div>
               <div class="verify-inline-error" id="ipStatus" role="status" aria-live="polite"></div>
             </form>

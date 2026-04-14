@@ -44,6 +44,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   TRUST_PROXY: z.string().optional().default('false'),
   PUBLIC_BASE_URL: z.string().optional().default(''),
+  VERIFICATION_IPAPI_KEY: z.string().optional().default(''),
   ADMIN_ALLOWED_EMAILS: z.string().optional().default(''),
   EMAIL_USER: z.string().optional().default(''),
   EMAIL_PASS: z.string().optional().default(''),
