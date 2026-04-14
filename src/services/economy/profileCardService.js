@@ -84,31 +84,53 @@ function createOverlaySvg({
   stats,
   followers,
   following,
-  marriageLabel
+  marriageLabel,
+  topPvpItems = []
 }) {
+  const topGearMarkup = topPvpItems
+    .slice(0, 3)
+    .map((entry, index) => {
+      const x = 610 + index * 118;
+      const rarity = clampText(String(entry?.item?.rarity || 'gear').toUpperCase(), 12);
+      const name = clampText(entry?.item?.name || entry?.itemId || 'Unknown Gear', 14);
+      const score = Math.max(0, Number(entry?.combatScore) || 0);
+      const refinement = Math.max(0, Number(entry?.refinement) || 0);
+      return `
+        <g transform="translate(${x}, 82)">
+          <rect width="108" height="84" rx="18" fill="rgba(6, 4, 8, 0.54)" stroke="rgba(255,255,255,0.08)" />
+          <text x="16" y="24" fill="rgba(248, 113, 113, 0.82)" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">TOP ${index + 1}</text>
+          <text x="16" y="46" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">${escapeXml(name)}</text>
+          <text x="16" y="62" fill="rgba(255,255,255,0.7)" font-family="Segoe UI, Arial, sans-serif" font-size="11">${escapeXml(rarity)}</text>
+          <text x="16" y="76" fill="rgba(255,255,255,0.86)" font-family="Segoe UI, Arial, sans-serif" font-size="11">GS ${escapeXml(String(score))}${refinement ? ` • +${escapeXml(String(refinement))}` : ''}</text>
+        </g>
+      `;
+    })
+    .join('');
+
   return Buffer.from(`
     <svg width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <linearGradient id="bgShade" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="rgba(9, 3, 7, 0.08)" />
-          <stop offset="100%" stop-color="rgba(0, 0, 0, 0.56)" />
+          <stop offset="0%" stop-color="rgba(9, 3, 7, 0.04)" />
+          <stop offset="100%" stop-color="rgba(0, 0, 0, 0.42)" />
         </linearGradient>
         <linearGradient id="panelGlow" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="rgba(239, 68, 68, 0.92)" />
-          <stop offset="50%" stop-color="rgba(190, 24, 93, 0.92)" />
-          <stop offset="100%" stop-color="rgba(15, 23, 42, 0.86)" />
+          <stop offset="0%" stop-color="rgba(239, 68, 68, 0.74)" />
+          <stop offset="50%" stop-color="rgba(190, 24, 93, 0.74)" />
+          <stop offset="100%" stop-color="rgba(15, 23, 42, 0.62)" />
         </linearGradient>
       </defs>
-      <rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="rgba(5, 2, 5, 0.76)" />
+      <rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="rgba(5, 2, 5, 0.5)" />
       <rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="url(#bgShade)" />
-      <rect x="34" y="34" width="${CARD_WIDTH - 68}" height="${CARD_HEIGHT - 68}" rx="30" fill="rgba(7, 4, 8, 0.58)" stroke="rgba(255,255,255,0.12)" />
-      <rect x="54" y="54" width="932" height="178" rx="28" fill="url(#panelGlow)" opacity="0.82" />
-      <rect x="286" y="256" width="700" height="290" rx="24" fill="rgba(6, 4, 8, 0.74)" stroke="rgba(255,255,255,0.08)" />
-      <rect x="54" y="256" width="206" height="290" rx="24" fill="rgba(6, 4, 8, 0.72)" stroke="rgba(255,255,255,0.08)" />
+      <rect x="34" y="34" width="${CARD_WIDTH - 68}" height="${CARD_HEIGHT - 68}" rx="30" fill="rgba(7, 4, 8, 0.42)" stroke="rgba(255,255,255,0.12)" />
+      <rect x="54" y="54" width="932" height="178" rx="28" fill="url(#panelGlow)" opacity="0.92" />
+      <rect x="286" y="256" width="700" height="290" rx="24" fill="rgba(6, 4, 8, 0.62)" stroke="rgba(255,255,255,0.08)" />
+      <rect x="54" y="256" width="206" height="290" rx="24" fill="rgba(6, 4, 8, 0.62)" stroke="rgba(255,255,255,0.08)" />
 
       <text x="286" y="105" fill="rgba(255, 230, 230, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="18" letter-spacing="5">ROBOT PROFILE</text>
       <text x="286" y="154" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="44" font-weight="700">${escapeXml(displayName)}</text>
       <text x="286" y="194" fill="rgba(255, 228, 230, 0.82)" font-family="Segoe UI, Arial, sans-serif" font-size="22">${escapeXml(title)}</text>
+      ${topGearMarkup}
 
       <text x="306" y="300" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">BIO</text>
       <text x="306" y="338" fill="rgba(255,255,255,0.92)" font-family="Segoe UI, Arial, sans-serif" font-size="20">${escapeXml(bio)}</text>
@@ -172,20 +194,32 @@ async function createBackgroundLayer(wallpaperUrl) {
 
   return await sharp(wallpaperBuffer, { failOnError: false })
     .resize(CARD_WIDTH, CARD_HEIGHT, { fit: 'cover' })
-    .blur(1.8)
-    .modulate({ brightness: 0.82, saturation: 1.08 })
+    .blur(1.15)
+    .modulate({ brightness: 0.92, saturation: 1.12 })
     .png()
     .toBuffer();
 }
 
-async function createProfileCardBuffer({ user, wallpaper, snapshot, displayName, guildName = '', avatarUrl = '' }) {
+async function createProfileCardBuffer({
+  user,
+  wallpaper,
+  marriageRing,
+  snapshot,
+  displayName,
+  guildName = '',
+  avatarUrl = '',
+  spouseName = '',
+  topPvpItems = []
+}) {
   const safeName = clampText(displayName || user?.username || user?.discordId || 'Unknown Player', 28);
   const safeTitle = clampText(user?.profileTitle && user.profileTitle !== 'default' ? user.profileTitle : 'No title equipped', 34);
   const safeBio = clampText(user?.profileBio && user.profileBio !== 'default' ? user.profileBio : 'No profile bio set yet.', 86);
   const safeGuildName = clampText(guildName || user?.originGuildName || 'RoBot Network', 32);
   const followers = Number(user?.followers?.length || 0).toLocaleString('en-US');
   const following = Number(user?.following?.length || 0).toLocaleString('en-US');
-  const marriageLabel = user?.marriedTo ? `Married to ${user.marriedTo}` : 'Single';
+  const ringName = clampText(marriageRing?.name || snapshot?.ring?.name || '', 22);
+  const safeSpouse = clampText(spouseName || user?.marriedTo || '', 22);
+  const marriageLabel = safeSpouse ? `Married to ${safeSpouse}${ringName ? ` • Ring ${ringName}` : ''}` : 'Single';
   const stats = {
     level: formatCompactNumber(user?.level || 0),
     wallet: formatCompactNumber(user?.balance || 0),
@@ -207,7 +241,8 @@ async function createProfileCardBuffer({ user, wallpaper, snapshot, displayName,
         stats,
         followers,
         following,
-        marriageLabel
+        marriageLabel,
+        topPvpItems
       })
     )
   ]);

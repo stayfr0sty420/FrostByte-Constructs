@@ -67,7 +67,7 @@ const { sendLog } = require('../../services/discord/loggingService');
 const { LOG_SECTIONS, assignLogSettings, normalizeChannelOverrides } = require('../../services/discord/logDefinitions');
 const { getEconomyAccountGuildId, getEconomyAccountScope } = require('../../services/economy/accountScope');
 const { applyExpDelta, requiredExpForLevel, totalAccumulatedExp } = require('../../services/economy/levelService');
-const { buildCharacterSnapshot, itemScoreFor, normalizeStats } = require('../../services/economy/characterService');
+const { buildCharacterSnapshot, itemScoreFor, normalizeStats, buildTopCombatInventory } = require('../../services/economy/characterService');
 const { addItemToInventory, countInventoryQuantity, removeItemFromInventory } = require('../../services/economy/inventoryService');
 const { formatCompactNumber, formatDisplayNumber, formatTransactionNumber } = require('../../services/economy/economyFormatService');
 const {
@@ -213,6 +213,21 @@ function normalizeEconomyViewScope(value, fallback = ECONOMY_VIEW_SCOPES.server)
   if (normalized === ECONOMY_VIEW_SCOPES.global) return ECONOMY_VIEW_SCOPES.global;
   if (normalized === ECONOMY_VIEW_SCOPES.server) return ECONOMY_VIEW_SCOPES.server;
   return fallback;
+}
+
+function resolveEconomyAdminViewScope(value, fallback = ECONOMY_VIEW_SCOPES.server) {
+  if (getEconomyAccountScope() !== 'global') return ECONOMY_VIEW_SCOPES.server;
+  return normalizeEconomyViewScope(value, fallback);
+}
+
+function resolveEconomyWhitelistConfigId({ guildId, scope = ECONOMY_VIEW_SCOPES.server } = {}) {
+  const normalizedScope = resolveEconomyAdminViewScope(scope);
+  return normalizedScope === ECONOMY_VIEW_SCOPES.global ? getEconomyAccountGuildId(guildId) : String(guildId || '').trim();
+}
+
+function buildEconomyUsersRedirect(scope = ECONOMY_VIEW_SCOPES.server) {
+  const normalizedScope = resolveEconomyAdminViewScope(scope);
+  return normalizedScope === ECONOMY_VIEW_SCOPES.global ? '/admin/economy/users?scope=global' : '/admin/economy/users';
 }
 
 function buildEconomyUserFilter({ accountGuildId, guildId, scope = ECONOMY_VIEW_SCOPES.server } = {}) {
@@ -975,6 +990,16 @@ function buildInventorySummary(inventory = [], itemMap = new Map()) {
       item
     };
   });
+}
+
+function resolveOriginServerLabel(player = {}, guildNameById = new Map(), fallback = '') {
+  const originGuildName = String(player?.originGuildName || '').trim();
+  if (originGuildName) return originGuildName;
+  const originGuildId = String(player?.originGuildId || '').trim();
+  if (originGuildId && guildNameById.has(originGuildId)) {
+    return String(guildNameById.get(originGuildId) || '').trim();
+  }
+  return String(fallback || '').trim();
 }
 
 function summarizeInventoryByRarity(inventory = [], itemMap = new Map()) {
@@ -2623,6 +2648,10 @@ router.post('/economy/items', requireAdmin, requireGuild, async (req, res) => {
 
   if (!doc.itemId) doc.itemId = generateItemId();
   const existing = await Item.findOne({ itemId: doc.itemId });
+  if (existing) {
+    setFlash(req, { type: 'warning', message: `Editing existing items is disabled. Create a new item instead of reusing ${String(doc.itemId || '').toUpperCase()}.` });
+    return res.redirect('/admin/economy/items');
+  }
 
   try {
     const media = await syncItemMedia({
@@ -2643,13 +2672,12 @@ router.post('/economy/items', requireAdmin, requireGuild, async (req, res) => {
     doc.wallpaperUrl = doc.imageUrl;
   }
   if (!doc.itemScore) doc.itemScore = itemScoreFor(doc);
-  await Item.updateOne({ itemId: doc.itemId }, { $set: doc }, { upsert: true });
-  setFlash(req, { type: 'success', message: `Saved item ${doc.name} (${doc.itemId}).` });
+  await Item.create(doc);
+  setFlash(req, { type: 'success', message: `Created item ${doc.name} (${doc.itemId}).` });
   return res.redirect('/admin/economy/items');
 });
 
 router.post('/economy/items/import', requireAdmin, requireGuild, async (req, res) => {
-  const overwrite = parseCheckboxValue(req.body.overwrite, true);
   const rows = parseItemsCsv(req.body.csv || '');
   if (!rows.length) {
     setFlash(req, { type: 'warning', message: 'Paste a CSV with a header row before importing.' });
@@ -2664,15 +2692,14 @@ router.post('/economy/items/import', requireAdmin, requireGuild, async (req, res
     if (doc.type === 'wallpaper' && !doc.wallpaperUrl && doc.imageUrl) doc.wallpaperUrl = doc.imageUrl;
     if (!doc.itemScore) doc.itemScore = itemScoreFor(doc);
     // eslint-disable-next-line no-await-in-loop
-    await Item.updateOne(
-      { itemId: doc.itemId },
-      overwrite ? { $set: doc } : { $setOnInsert: doc },
-      { upsert: true }
-    );
+    const existing = await Item.exists({ itemId: doc.itemId });
+    if (existing) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await Item.create(doc);
     imported += 1;
   }
 
-  setFlash(req, { type: 'success', message: `Imported ${imported.toLocaleString('en-US')} item rows.` });
+  setFlash(req, { type: 'success', message: `Imported ${imported.toLocaleString('en-US')} new item rows. Existing item IDs were skipped.` });
   return res.redirect('/admin/economy/items');
 });
 
@@ -2809,18 +2836,21 @@ router.post('/economy/shop/refresh', requireAdmin, requireGuild, async (req, res
 router.get('/economy/users', requireAdmin, requireGuild, asyncHandler(async (req, res) => {
   const guildId = req.session.activeGuildId;
   const accountGuildId = getEconomyAccountGuildId(guildId);
+  const economyScope = getEconomyAccountScope();
+  const usersViewScope = resolveEconomyAdminViewScope(req.query.scope, ECONOMY_VIEW_SCOPES.server);
+  const whitelistConfigId = resolveEconomyWhitelistConfigId({ guildId, scope: usersViewScope });
   const q = String(req.query.q || '').trim().slice(0, 64);
   const requestedPage = Math.min(1000, Math.max(1, Math.floor(Number(req.query.page) || 1)));
   const limit = 100;
 
-  const { whitelist: whitelistUnique } = await getCoinGrantWhitelistDetails(guildId);
+  const { whitelist: whitelistUnique } = await getCoinGrantWhitelistDetails(whitelistConfigId);
   const whitelistDbUsers = whitelistUnique.length
     ? await User.find({ guildId: accountGuildId, discordId: { $in: whitelistUnique } }).select('discordId username').lean()
     : [];
   const whitelistNameById = new Map(whitelistDbUsers.map((u) => [String(u.discordId), String(u.username || '')]));
   const whitelistEntries = whitelistUnique.map((id) => ({ discordId: id, username: whitelistNameById.get(id) || '' }));
 
-  const filter = { guildId: accountGuildId };
+  const filter = buildEconomyUserFilter({ accountGuildId, guildId, scope: usersViewScope });
   if (q) {
     if (isSnowflake(q)) filter.discordId = q;
     else filter.username = { $regex: escapeRegex(q), $options: 'i' };
@@ -2848,7 +2878,9 @@ router.get('/economy/users', requireAdmin, requireGuild, asyncHandler(async (req
     limit,
     total,
     totalPages,
-    economyScope: getEconomyAccountScope(),
+    economyScope,
+    usersViewScope,
+    supportsGlobalUserScope: economyScope === 'global',
     accountGuildId,
     whitelist: whitelistUnique,
     whitelistEntries,
@@ -2858,22 +2890,24 @@ router.get('/economy/users', requireAdmin, requireGuild, asyncHandler(async (req
 
 router.post('/economy/users/whitelist/add', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
+  const scope = resolveEconomyAdminViewScope(req.body.scope, ECONOMY_VIEW_SCOPES.server);
+  const whitelistConfigId = resolveEconomyWhitelistConfigId({ guildId, scope });
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
   const label = buildEconomyUserLabel(discordId, username);
   const actor = adminDisplayName(req.adminUser);
   if (!isSnowflake(discordId)) {
     setFlash(req, { type: 'warning', message: 'Valid Discord ID is required.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
-  const { cfg } = await getCoinGrantWhitelistDetails(guildId);
+  const { cfg } = await getCoinGrantWhitelistDetails(whitelistConfigId);
   const set = new Set(normalizeCoinGrantWhitelistEntries(cfg.economy?.coinGrantWhitelist || []));
   const before = set.size;
   set.add(discordId);
   if (set.size === before) {
     setFlash(req, { type: 'info', message: `${label} is already on the economy action whitelist.` });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
   cfg.economy.coinGrantWhitelist = [...set];
@@ -2888,26 +2922,28 @@ router.post('/economy/users/whitelist/add', requireAdmin, requireGuild, async (r
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Added ${label} to the economy action whitelist.` });
-  return res.redirect('/admin/economy/users');
+  return res.redirect(buildEconomyUsersRedirect(scope));
 });
 
 router.post('/economy/users/whitelist/remove', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
+  const scope = resolveEconomyAdminViewScope(req.body.scope, ECONOMY_VIEW_SCOPES.server);
+  const whitelistConfigId = resolveEconomyWhitelistConfigId({ guildId, scope });
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
   const label = buildEconomyUserLabel(discordId, username);
   const actor = adminDisplayName(req.adminUser);
   if (!isSnowflake(discordId)) {
     setFlash(req, { type: 'warning', message: 'Valid Discord ID is required.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
-  const { cfg } = await getCoinGrantWhitelistDetails(guildId);
+  const { cfg } = await getCoinGrantWhitelistDetails(whitelistConfigId);
   const set = new Set(normalizeCoinGrantWhitelistEntries(cfg.economy?.coinGrantWhitelist || []));
   const had = set.delete(discordId);
   if (!had) {
     setFlash(req, { type: 'info', message: `${label} is not on the economy action whitelist.` });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
   cfg.economy.coinGrantWhitelist = [...set];
@@ -2922,11 +2958,12 @@ router.post('/economy/users/whitelist/remove', requireAdmin, requireGuild, async
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Removed ${label} from the economy action whitelist.` });
-  return res.redirect('/admin/economy/users');
+  return res.redirect(buildEconomyUsersRedirect(scope));
 });
 
 router.post('/economy/users/grant', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
+  const scope = resolveEconomyAdminViewScope(req.body.scope, ECONOMY_VIEW_SCOPES.server);
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
@@ -2937,14 +2974,14 @@ router.post('/economy/users/grant', requireAdmin, requireGuild, async (req, res)
 
   if (!isSnowflake(discordId)) {
     setFlash(req, { type: 'warning', message: 'Valid Discord ID is required.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
   if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
-  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'give credits' }))) {
-    return res.redirect('/admin/economy/users');
+  if (!(await ensureWhitelistedEconomyTarget(req, { guildId: resolveEconomyWhitelistConfigId({ guildId, scope }), discordId, username, actionLabel: 'give credits' }))) {
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
   const user = await User.findOneAndUpdate(
@@ -2974,11 +3011,12 @@ router.post('/economy/users/grant', requireAdmin, requireGuild, async (req, res)
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Granted ${safeAmount.toLocaleString('en-US')} Rodstarkian Credits to ${label}.` });
-  return res.redirect('/admin/economy/users');
+  return res.redirect(buildEconomyUsersRedirect(scope));
 });
 
 router.post('/economy/users/deduct', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
+  const scope = resolveEconomyAdminViewScope(req.body.scope, ECONOMY_VIEW_SCOPES.server);
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
@@ -2989,14 +3027,14 @@ router.post('/economy/users/deduct', requireAdmin, requireGuild, async (req, res
 
   if (!isSnowflake(discordId)) {
     setFlash(req, { type: 'warning', message: 'Valid Discord ID is required.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
   if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
-  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'deduct credits' }))) {
-    return res.redirect('/admin/economy/users');
+  if (!(await ensureWhitelistedEconomyTarget(req, { guildId: resolveEconomyWhitelistConfigId({ guildId, scope }), discordId, username, actionLabel: 'deduct credits' }))) {
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
   const user = await User.findOneAndUpdate(
@@ -3006,7 +3044,7 @@ router.post('/economy/users/deduct', requireAdmin, requireGuild, async (req, res
   );
   if (!user) {
     setFlash(req, { type: 'danger', message: 'User not found or insufficient wallet balance.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
   await Transaction.create({
@@ -3030,7 +3068,7 @@ router.post('/economy/users/deduct', requireAdmin, requireGuild, async (req, res
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Deducted ${safeAmount.toLocaleString('en-US')} Rodstarkian Credits from ${label}.` });
-  return res.redirect('/admin/economy/users');
+  return res.redirect(buildEconomyUsersRedirect(scope));
 });
 
 router.post('/economy/users/gift', requireAdmin, requireGuild, async (req, res) => {
@@ -3087,6 +3125,7 @@ router.post('/economy/users/gift', requireAdmin, requireGuild, async (req, res) 
 
 router.post('/economy/users/exp', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
+  const scope = resolveEconomyAdminViewScope(req.body.scope, ECONOMY_VIEW_SCOPES.server);
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
@@ -3097,14 +3136,14 @@ router.post('/economy/users/exp', requireAdmin, requireGuild, async (req, res) =
 
   if (!isSnowflake(discordId)) {
     setFlash(req, { type: 'warning', message: 'Valid Discord ID is required.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
   if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
-  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'give EXP' }))) {
-    return res.redirect('/admin/economy/users');
+  if (!(await ensureWhitelistedEconomyTarget(req, { guildId: resolveEconomyWhitelistConfigId({ guildId, scope }), discordId, username, actionLabel: 'give EXP' }))) {
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
   const expChange = await applyAdminExpChange({
@@ -3116,7 +3155,7 @@ router.post('/economy/users/exp', requireAdmin, requireGuild, async (req, res) =
   });
   if (!expChange.ok || !expChange.user) {
     setFlash(req, { type: 'danger', message: 'Failed to grant EXP to this user.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
   const user = expChange.user;
 
@@ -3141,11 +3180,12 @@ router.post('/economy/users/exp', requireAdmin, requireGuild, async (req, res) =
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Granted ${safeAmount.toLocaleString('en-US')} EXP to ${label}.` });
-  return res.redirect('/admin/economy/users');
+  return res.redirect(buildEconomyUsersRedirect(scope));
 });
 
 router.post('/economy/users/exp/deduct', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
+  const scope = resolveEconomyAdminViewScope(req.body.scope, ECONOMY_VIEW_SCOPES.server);
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const discordId = String(req.body.discordId || '').trim();
   const username = String(req.body.username || '').trim();
@@ -3156,14 +3196,14 @@ router.post('/economy/users/exp/deduct', requireAdmin, requireGuild, async (req,
 
   if (!isSnowflake(discordId)) {
     setFlash(req, { type: 'warning', message: 'Valid Discord ID is required.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
   if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
-  if (!(await ensureWhitelistedEconomyTarget(req, { guildId, discordId, username, actionLabel: 'deduct EXP' }))) {
-    return res.redirect('/admin/economy/users');
+  if (!(await ensureWhitelistedEconomyTarget(req, { guildId: resolveEconomyWhitelistConfigId({ guildId, scope }), discordId, username, actionLabel: 'deduct EXP' }))) {
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
   const expChange = await applyAdminExpChange({
@@ -3181,7 +3221,7 @@ router.post('/economy/users/exp/deduct', requireAdmin, requireGuild, async (req,
           ? 'User does not have enough total EXP to deduct that amount.'
           : 'Failed to deduct EXP from this user.';
     setFlash(req, { type: 'danger', message });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
   const user = expChange.user;
@@ -3206,26 +3246,28 @@ router.post('/economy/users/exp/deduct', requireAdmin, requireGuild, async (req,
   }).catch(() => null);
 
   setFlash(req, { type: 'success', message: `Deducted ${safeAmount.toLocaleString('en-US')} EXP from ${label}.` });
-  return res.redirect('/admin/economy/users');
+  return res.redirect(buildEconomyUsersRedirect(scope));
 });
 
 router.post('/economy/users/gift-all', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
+  const scope = resolveEconomyAdminViewScope(req.body.scope, ECONOMY_VIEW_SCOPES.server);
   const accountGuildId = getEconomyAccountGuildId(guildId);
+  const userFilter = buildEconomyUserFilter({ accountGuildId, guildId, scope });
   const actor = adminDisplayName(req.adminUser);
   const amount = Math.floor(Number(req.body.amount) || 0);
   const safeAmount = Math.min(1_000_000_000, Math.max(0, amount));
   if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
-  const result = await User.updateMany({ guildId: accountGuildId }, { $inc: { balance: safeAmount } });
+  const result = await User.updateMany(userFilter, { $inc: { balance: safeAmount } });
   const modified = Number(result?.modifiedCount ?? result?.nModified ?? 0);
 
   if (!modified) {
     setFlash(req, { type: 'info', message: 'No users found to gift.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
   await sendLog({
@@ -3242,24 +3284,26 @@ router.post('/economy/users/gift-all', requireAdmin, requireGuild, async (req, r
     type: 'success',
     message: `Gifted ${safeAmount.toLocaleString('en-US')} Rodstarkian Credits to ${Number(modified || 0).toLocaleString('en-US')} users.`
   });
-  return res.redirect('/admin/economy/users');
+  return res.redirect(buildEconomyUsersRedirect(scope));
 });
 
 router.post('/economy/users/exp-all', requireAdmin, requireGuild, async (req, res) => {
   const guildId = req.session.activeGuildId;
+  const scope = resolveEconomyAdminViewScope(req.body.scope, ECONOMY_VIEW_SCOPES.server);
   const accountGuildId = getEconomyAccountGuildId(guildId);
+  const userFilter = buildEconomyUserFilter({ accountGuildId, guildId, scope });
   const actor = adminDisplayName(req.adminUser);
   const amount = Math.floor(Number(req.body.amount) || 0);
   const safeAmount = Math.min(1_000_000_000, Math.max(0, amount));
   if (!Number.isFinite(safeAmount) || safeAmount <= 0) {
     setFlash(req, { type: 'warning', message: 'Amount must be greater than 0.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
-  const usersToBoost = await User.find({ guildId: accountGuildId });
+  const usersToBoost = await User.find(userFilter);
   if (!usersToBoost.length) {
     setFlash(req, { type: 'info', message: 'No users found to grant EXP.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
   const now = new Date();
@@ -3289,7 +3333,7 @@ router.post('/economy/users/exp-all', requireAdmin, requireGuild, async (req, re
 
   if (!operations.length) {
     setFlash(req, { type: 'info', message: 'No users found to grant EXP.' });
-    return res.redirect('/admin/economy/users');
+    return res.redirect(buildEconomyUsersRedirect(scope));
   }
 
   await User.bulkWrite(operations);
@@ -3308,7 +3352,7 @@ router.post('/economy/users/exp-all', requireAdmin, requireGuild, async (req, re
     type: 'success',
     message: `Granted ${safeAmount.toLocaleString('en-US')} EXP to ${Number(modified || 0).toLocaleString('en-US')} users.`
   });
-  return res.redirect('/admin/economy/users');
+  return res.redirect(buildEconomyUsersRedirect(scope));
 });
 
 router.get('/economy/users/:discordId', requireAdmin, requireGuild, asyncHandler(async (req, res) => {
@@ -3426,6 +3470,7 @@ router.get('/economy/players/:discordId', requireAdmin, requireGuild, asyncHandl
   const itemMap = new Map(normalizedItems.map((item) => [item.itemId, item]));
   const inventory = buildInventorySummary(inventoryEntries, itemMap);
   const inventoryByRarity = summarizeInventoryByRarity(inventoryEntries, itemMap);
+  const topPvpItems = buildTopCombatInventory(inventoryEntries, itemMap, { limit: 3 });
   const topInventory = inventory
     .slice()
     .sort((a, b) => {
@@ -3436,6 +3481,10 @@ router.get('/economy/players/:discordId', requireAdmin, requireGuild, asyncHandl
     .slice(0, 12);
   const wallpaperItem =
     user.profileWallpaper && user.profileWallpaper !== 'default' ? itemMap.get(user.profileWallpaper) || null : null;
+  const spouseUser =
+    user.marriedTo && isSnowflake(user.marriedTo)
+      ? await User.findOne({ guildId: accountGuildId, discordId: user.marriedTo }).select('discordId username').lean().catch(() => null)
+      : null;
   const guildNameById = await resolveGuildNameMap(
     req.app.locals.discord,
     transactions.map((tx) => tx.guildId)
@@ -3456,6 +3505,8 @@ router.get('/economy/players/:discordId', requireAdmin, requireGuild, asyncHandl
     })),
     analyticsScope,
     wallpaperItem,
+    spouseUser,
+    topPvpItems,
     flash
   });
 }));
@@ -3662,6 +3713,14 @@ router.get('/economy/analytics', requireAdmin, requireGuild, asyncHandler(async 
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const analyticsScope = normalizeEconomyViewScope(req.query.scope, ECONOMY_VIEW_SCOPES.server);
   const analytics = await buildEconomyAnalyticsSnapshot({ guildId, accountGuildId, scope: analyticsScope });
+  const originGuildIds = [
+    ...new Set(
+      [...(analytics.topPlayers || []), ...(analytics.topPvp || [])]
+        .map((player) => String(player?.originGuildId || '').trim())
+        .filter(Boolean)
+    )
+  ];
+  const originGuildNameById = await resolveGuildNameMap(req.app.locals.discord, originGuildIds);
   const flash = req.session.flash || null;
   delete req.session.flash;
 
@@ -3673,8 +3732,14 @@ router.get('/economy/analytics', requireAdmin, requireGuild, asyncHandler(async 
     usage: analytics.usage,
     totals: analytics.totals,
     rarityTotals: analytics.rarityTotals,
-    topPlayers: analytics.topPlayers,
-    topPvp: analytics.topPvp,
+    topPlayers: analytics.topPlayers.map((player) => ({
+      ...player,
+      originGuildName: resolveOriginServerLabel(player, originGuildNameById, analyticsScope === ECONOMY_VIEW_SCOPES.global ? 'Shared Global Account' : '')
+    })),
+    topPvp: analytics.topPvp.map((player) => ({
+      ...player,
+      originGuildName: resolveOriginServerLabel(player, originGuildNameById, analyticsScope === ECONOMY_VIEW_SCOPES.global ? 'Shared Global Account' : '')
+    })),
     playerCount: analytics.playerCount,
     flowSeries: analytics.flowSeries,
     flowLiveUrl: `/admin/economy/analytics/live?scope=${encodeURIComponent(analyticsScope)}`,

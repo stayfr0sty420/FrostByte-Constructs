@@ -114,12 +114,13 @@ async function getProfile({ guildId, discordId }) {
   if (!user) return null;
   normalizeEconomyUserState(user);
 
-  const wallpaper =
-    user.profileWallpaper && user.profileWallpaper !== 'default'
-      ? await Item.findOne({ itemId: user.profileWallpaper })
-      : null;
+  const [wallpaper, spouse, marriageRing] = await Promise.all([
+    user.profileWallpaper && user.profileWallpaper !== 'default' ? Item.findOne({ itemId: user.profileWallpaper }) : null,
+    user.marriedTo ? User.findOne({ guildId: accountGuildId, discordId: user.marriedTo }).select('discordId username').lean() : null,
+    user.marriageRingItemId ? Item.findOne({ itemId: user.marriageRingItemId }) : null
+  ]);
 
-  return { user, wallpaper };
+  return { user, wallpaper, spouse, marriageRing };
 }
 
 async function getSocialConnections({ guildId, discordId, type = 'followers' }) {

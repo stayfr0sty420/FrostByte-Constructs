@@ -9,11 +9,13 @@
       <% const safeInventoryByRarity = inventoryByRarity && typeof inventoryByRarity === 'object' ? inventoryByRarity : {}; %>
       <% const safeInventory = Array.isArray(inventory) ? inventory : []; %>
       <% const safeTopInventory = Array.isArray(topInventory) ? topInventory : []; %>
+      <% const safeTopPvpItems = Array.isArray(topPvpItems) ? topPvpItems : []; %>
       <% const safeTransactions = Array.isArray(transactions) ? transactions : []; %>
       <% const loadout = Array.isArray(snapshot?.loadout) ? snapshot.loadout.filter(entry => entry?.item) : []; %>
       <% const effectiveStats = snapshot?.effectiveStats || {}; %>
       <% const bonusStats = snapshot?.bonusStats || {}; %>
       <% const totalInventoryItems = safeInventory.reduce((sum, entry) => sum + Math.max(0, Number(entry.quantity) || 0), 0); %>
+      <% const spouseLabel = spouseUser?.username || spouseUser?.discordId || user.marriedTo || ''; %>
       <% const fmtFull = (value) => Math.floor(Number(value || 0)).toLocaleString('en-US'); %>
       <% const fmtCompact = (value, threshold = 1000) => formatCompactNumber(value, { threshold }); %>
       <% const analyticsQuery = analyticsScope === 'global' ? '?scope=global' : ''; %>
@@ -95,16 +97,34 @@
           <div class="card shadow-sm mb-4">
             <div class="card-body">
               <h2 class="h5 mb-3">Profile Summary</h2>
-              <div class="row g-3">
-                <div class="col-12 col-lg-7">
+              <div class="player-profile-banner" <% if (wallpaperItem?.wallpaperUrl) { %>style="--player-wallpaper:url('<%= wallpaperItem.wallpaperUrl %>');"<% } %>>
+                <div class="player-profile-banner__glass"></div>
+                <div class="player-profile-banner__content">
                   <div class="player-profile-copy">
                     <div class="player-profile-label">Title</div>
                     <div class="player-profile-value"><%= user.profileTitle || 'default' %></div>
                     <div class="player-profile-label mt-3">Bio</div>
                     <div class="player-profile-value player-profile-bio"><%= user.profileBio || 'default' %></div>
                   </div>
+                  <div class="player-profile-badge-strip">
+                    <% if (safeTopPvpItems.length) { %>
+                      <% safeTopPvpItems.forEach((entry, index) => { const rarityClass = String(entry.item?.rarity || 'common').toLowerCase(); %>
+                        <div class="player-profile-badge">
+                          <span class="player-profile-badge__rank">TOP <%= index + 1 %></span>
+                          <span class="player-profile-badge__name"><%= entry.item?.name || entry.itemId %></span>
+                          <span class="rarity-pill rarity-pill--<%= rarityClass %>"><%= entry.item?.rarity || 'unknown' %></span>
+                          <span class="player-profile-badge__score">GS <%= fmtCompact(entry.combatScore || 0, 1) %><% if (entry.refinement) { %> • +<%= fmtCompact(entry.refinement, 1) %><% } %></span>
+                        </div>
+                      <% }) %>
+                    <% } else { %>
+                      <div class="player-profile-badge player-profile-badge--empty">No PvP gear highlights yet.</div>
+                    <% } %>
+                  </div>
                 </div>
-                <div class="col-12 col-lg-5">
+              </div>
+
+              <div class="row g-3 mt-1">
+                <div class="col-12 col-lg-6">
                   <div class="player-profile-meta-card">
                     <div class="player-profile-meta-row">
                       <span>Wallpaper</span>
@@ -122,17 +142,28 @@
                       <span>Shared Bank</span>
                       <strong><%= user.sharedBankEnabled ? 'Enabled' : 'Disabled' %></strong>
                     </div>
+                  </div>
+                </div>
+                <div class="col-12 col-lg-6">
+                  <div class="player-profile-meta-card">
                     <div class="player-profile-meta-row">
-                      <span>Marriage</span>
-                      <strong><%= user.marriedTo ? user.marriedTo : 'Single' %></strong>
+                      <span>Spouse</span>
+                      <strong><%= spouseLabel || 'Single' %></strong>
+                    </div>
+                    <div class="player-profile-meta-row">
+                      <span>Marriage Ring</span>
+                      <strong><%= snapshot?.ring?.name || user.marriageRingItemId || 'None' %></strong>
+                    </div>
+                    <div class="player-profile-meta-row">
+                      <span>Ring Rarity</span>
+                      <strong><%= snapshot?.ring?.rarity || '—' %></strong>
+                    </div>
+                    <div class="player-profile-meta-row">
+                      <span>Married Since</span>
+                      <strong><%= user.marriedSince ? formatDate(user.marriedSince) : '—' %></strong>
                     </div>
                   </div>
                 </div>
-                <% if (wallpaperItem?.wallpaperUrl) { %>
-                  <div class="col-12">
-                    <img class="player-profile-wallpaper" src="<%= wallpaperItem.wallpaperUrl %>" alt="Profile wallpaper" loading="lazy" />
-                  </div>
-                <% } %>
               </div>
             </div>
           </div>

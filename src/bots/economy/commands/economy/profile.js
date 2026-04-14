@@ -1,6 +1,7 @@
 'use strict';
 
 const { AttachmentBuilder, EmbedBuilder, SlashCommandBuilder } = require('discord.js');
+const Item = require('../../../../db/models/Item');
 const { getOrCreateUser } = require('../../../../services/economy/userService');
 const { resolveItemByQuery } = require('../../../../services/economy/shopService');
 const { getEconomyEmojis, formatCredits, formatNumber } = require('../../util/credits');
@@ -13,7 +14,7 @@ const {
   getProfile,
   getSocialConnections
 } = require('../../../../services/economy/profileService');
-const { buildCharacterSnapshot } = require('../../../../services/economy/characterService');
+const { buildCharacterSnapshot, buildTopCombatInventory } = require('../../../../services/economy/characterService');
 const { createProfileCardBuffer } = require('../../../../services/economy/profileCardService');
 
 async function resolveDisplayName(interaction, target) {
@@ -109,17 +110,24 @@ module.exports = {
       const profile = await getProfile({ guildId, discordId: target.id });
       if (!profile) return await interaction.reply({ content: 'No profile data found.', ephemeral: true });
 
-      const { user, wallpaper } = profile;
+      const { user, wallpaper, spouse, marriageRing } = profile;
       const snapshot = await buildCharacterSnapshot(user);
+      const ownedItemIds = [...new Set((Array.isArray(user.inventory) ? user.inventory : []).map((entry) => String(entry?.itemId || '').trim()).filter(Boolean))];
+      const ownedItems = ownedItemIds.length ? await Item.find({ itemId: { $in: ownedItemIds } }).lean() : [];
+      const itemMap = new Map(ownedItems.map((item) => [String(item.itemId || '').trim(), item]));
+      const topPvpItems = buildTopCombatInventory(user.inventory, itemMap, { limit: 3 });
 
       try {
         const buffer = await createProfileCardBuffer({
           user,
           wallpaper,
+          marriageRing,
           snapshot,
           displayName,
           guildName: interaction.guild?.name || user.originGuildName || 'RoBot Network',
-          avatarUrl: target.displayAvatarURL({ extension: 'png', size: 256 })
+          avatarUrl: target.displayAvatarURL({ extension: 'png', size: 256 }),
+          spouseName: spouse?.username || spouse?.discordId || user.marriedTo || '',
+          topPvpItems
         });
         const attachment = new AttachmentBuilder(buffer, { name: 'robot-profile.png' });
         return await interaction.reply({ files: [attachment], ephemeral: false });

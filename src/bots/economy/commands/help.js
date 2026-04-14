@@ -25,6 +25,7 @@ module.exports = {
         { name: 'Shop / Items', value: '`/shop` `/buy` `/sell` `/inventory` `/use` `/equip`', inline: false },
         { name: 'Gambling', value: '`/coinflip` `/slots` `/dice` `/blackjack` `/crash` `/color` `/colorgame`', inline: false },
         { name: 'RPG / Social', value: '`/hunt` `/stats` `/rstats` `/levelup` `/refine` `/gacha` `/profile` `/marry` `/mdaily` `/divorce` `/pvp`', inline: false },
+        { name: 'Profile Social', value: '`/profile follow` `/profile unfollow` `/profile followers` `/profile following`', inline: false },
         { name: 'Profiles', value: '`/dev` `/exec` `/execs`', inline: false }
       )
       .setFooter({ text: 'Tip: If you see “not approved”, ask the dashboard owner to approve the server.' })

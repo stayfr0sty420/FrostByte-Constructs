@@ -1,4 +1,5 @@
 const Item = require('../../db/models/Item');
+const { compareRarity } = require('./itemService');
 const {
   BASE_HP,
   LEVEL_HP_BONUS,
@@ -10,6 +11,7 @@ const { normalizeEconomyUserState } = require('./userService');
 
 const STAT_KEYS = ['str', 'agi', 'vit', 'luck', 'crit'];
 const EQUIPPED_SLOT_KEYS = ['headGear', 'eyeGear', 'faceGear', 'rHand', 'lHand', 'robe', 'shoes', 'rAccessory', 'lAccessory'];
+const NON_COMBAT_ITEM_TYPES = new Set(['consumable', 'material', 'wallpaper']);
 
 function emptyStats() {
   return {
@@ -163,6 +165,37 @@ async function buildCharacterSnapshot(user) {
   };
 }
 
+function isCombatItem(item) {
+  const type = String(item?.type || '').trim();
+  if (!type || NON_COMBAT_ITEM_TYPES.has(type)) return false;
+  return itemScoreFor(item) > 0 || statsToScore(item?.stats) > 0;
+}
+
+function buildTopCombatInventory(inventory = [], itemMap = new Map(), { limit = 3 } = {}) {
+  return (Array.isArray(inventory) ? inventory : [])
+    .map((entry) => {
+      const item = itemMap.get(String(entry?.itemId || '').trim()) || null;
+      return {
+        itemId: String(entry?.itemId || '').trim(),
+        quantity: Math.max(0, Number(entry?.quantity) || 0),
+        refinement: Math.max(0, Number(entry?.refinement) || 0),
+        item,
+        combatScore: item ? itemScoreFor(item) : 0
+      };
+    })
+    .filter((entry) => entry.item && entry.quantity > 0 && isCombatItem(entry.item))
+    .sort((a, b) => {
+      const rarityDiff = compareRarity(b.item?.rarity, a.item?.rarity);
+      if (rarityDiff !== 0) return rarityDiff;
+      const scoreDiff = (Number(b.combatScore) || 0) - (Number(a.combatScore) || 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      const refineDiff = (Number(b.refinement) || 0) - (Number(a.refinement) || 0);
+      if (refineDiff !== 0) return refineDiff;
+      return String(a.item?.name || a.itemId || '').localeCompare(String(b.item?.name || b.itemId || ''));
+    })
+    .slice(0, Math.max(1, Number(limit) || 3));
+}
+
 module.exports = {
   STAT_KEYS,
   emptyStats,
@@ -171,6 +204,7 @@ module.exports = {
   statsToScore,
   itemScoreFor,
   defaultProgressionForLevel,
+  buildTopCombatInventory,
   resolveInventoryEntriesForEquipped,
   getEquipmentLoadout,
   getMarriageRing,

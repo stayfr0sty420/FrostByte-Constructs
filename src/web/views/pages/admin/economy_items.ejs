@@ -10,7 +10,7 @@
         <div>
           <div class="hero-eyebrow">RoBot Item Management</div>
           <h1 class="hero-title mb-2">Items</h1>
-          <p class="hero-text mb-0">Auto-generate item IDs, upload a picture for emoji sync, and manage the full shared item catalog from one place.</p>
+          <p class="hero-text mb-0">Create new catalog entries, upload a media image for emoji sync, and manage the full shared item catalog from one place.</p>
         </div>
         <div class="text-muted small">Loaded <strong><%= Number(items.length || 0).toLocaleString('en-US') %></strong> items</div>
       </section>
@@ -28,8 +28,8 @@
             <div class="card-body">
               <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
                 <div>
-                  <h2 class="h5 mb-1">Single Item Editor</h2>
-                  <div class="text-muted small">Leave Item ID blank and RoBot will generate a 12-character mixed ID with safe special characters.</div>
+                  <h2 class="h5 mb-1">Create Item</h2>
+                  <div class="text-muted small">Leave Item ID blank and RoBot will generate a clean 12-character uppercase ID. Editing existing items is disabled here.</div>
                 </div>
                 <span class="badge text-bg-secondary">Catalog-wide</span>
               </div>
@@ -42,14 +42,14 @@
                   <label class="form-label">Item ID</label>
                   <div class="input-group">
                     <input
-                      class="form-control"
+                      class="form-control item-id-input"
                       name="itemId"
                       placeholder="Auto-generated on save"
                       data-item-id-input
                     />
                     <button class="btn btn-outline-secondary" type="button" data-item-id-regenerate>Generate</button>
                   </div>
-                  <div class="form-text">Example: <code><%= generatedItemId %></code></div>
+                  <div class="form-text">Example: <code class="item-id-code"><%= generatedItemId %></code></div>
                 </div>
                 <div class="col-12 col-lg-4">
                   <label class="form-label">Name</label>
@@ -194,10 +194,7 @@
                   <div class="form-text">Supported headers are the same as the export file.</div>
                 </div>
                 <div class="col-12">
-                  <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="overwrite" value="1" checked />
-                    <label class="form-check-label">Overwrite existing items with the same itemId</label>
-                  </div>
+                  <div class="form-text">Existing item IDs are skipped automatically during CSV import. Imports are create-only.</div>
                 </div>
                 <div class="col-12 d-flex justify-content-end">
                   <button class="btn btn-outline-primary" type="submit">Import CSV</button>
@@ -233,8 +230,8 @@
             <table class="table table-sm align-middle economy-items-table">
               <thead>
                 <tr>
-                  <th>Item</th>
                   <th>Media</th>
+                  <th>Item</th>
                   <th>Rarity</th>
                   <th class="text-end">Price</th>
                   <th class="text-end">Score</th>
@@ -250,24 +247,18 @@
                 <% } %>
                 <% items.forEach(it => { const meta = rarityMeta[it.rarity] || rarityMeta.common; %>
                   <tr>
+                    <td data-label="Media">
+                      <div class="item-media-thumb">
+                        <% if (it.imageUrl || it.emojiUrl) { %>
+                          <img src="<%= it.imageUrl || it.emojiUrl %>" alt="<%= it.name %>" loading="lazy" />
+                        <% } else { %>
+                          <span><%= it.emojiText || 'IMG' %></span>
+                        <% } %>
+                      </div>
+                    </td>
                     <td data-label="Item">
                       <div class="fw-semibold"><%= it.name %></div>
-                      <div class="text-muted small"><code><%= it.itemId %></code> • <%= it.type %></div>
-                    </td>
-                    <td data-label="Media">
-                      <div class="item-media-row">
-                        <div class="item-media-thumb">
-                          <% if (it.imageUrl || it.emojiUrl) { %>
-                            <img src="<%= it.imageUrl || it.emojiUrl %>" alt="<%= it.name %>" loading="lazy" />
-                          <% } else { %>
-                            <span><%= it.emojiText || 'IMG' %></span>
-                          <% } %>
-                        </div>
-                        <div class="small text-muted">
-                          <div><%= it.emojiText || 'No emoji yet' %></div>
-                          <div><%= it.imageUrl ? 'Picture ready' : 'No picture' %></div>
-                        </div>
-                      </div>
+                      <div class="text-muted small"><code class="item-id-code"><%= it.itemId %></code> • <%= it.type %></div>
                     </td>
                     <td data-label="Rarity">
                       <span class="rarity-pill rarity-pill--<%= meta.key %>" title="<%= meta.label %>"><%= meta.label %></span>
@@ -329,7 +320,7 @@
         const imageInput = form.querySelector('[data-item-image-input]');
         const imageDataInput = form.querySelector('[data-item-image-data]');
         const preview = form.querySelector('[data-item-image-preview]');
-        const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_';
+        const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
         const generateId = () => {
           if (window.crypto?.getRandomValues) {

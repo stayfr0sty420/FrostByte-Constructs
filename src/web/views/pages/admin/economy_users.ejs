@@ -11,13 +11,21 @@
           <h1 class="h4 mb-1">Economy Users</h1>
           <div class="text-muted small">
             <% if (economyScope === 'global') { %>
-              Shared economy account across all servers.
+              <%= usersViewScope === 'global' ? 'Viewing the shared global roster and global whitelist.' : 'Viewing the active server slice of the shared global economy.' %>
             <% } else { %>
               Economy accounts are per server.
             <% } %>
           </div>
         </div>
-        <div class="text-muted small">Showing <%= users.length %> of <%= total %></div>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <% if (supportsGlobalUserScope) { %>
+            <div class="scope-switcher">
+              <a class="btn btn-sm <%= usersViewScope === 'server' ? 'btn-primary' : 'btn-outline-secondary' %>" href="/admin/economy/users?scope=server">Per Server</a>
+              <a class="btn btn-sm <%= usersViewScope === 'global' ? 'btn-primary' : 'btn-outline-secondary' %>" href="/admin/economy/users?scope=global">Global</a>
+            </div>
+          <% } %>
+          <div class="text-muted small">Showing <%= users.length %> of <%= total %></div>
+        </div>
       </div>
 
       <% if (flash) { %>
@@ -32,6 +40,9 @@
           <div class="row g-3 align-items-end">
             <div class="col-12 col-lg-7">
               <form method="get" action="/admin/economy/users" class="row g-2 align-items-end economy-search-form">
+                <% if (supportsGlobalUserScope) { %>
+                  <input type="hidden" name="scope" value="<%= usersViewScope %>" />
+                <% } %>
                 <div class="col-12 col-lg">
                   <label class="form-label">Search</label>
                   <input
@@ -46,7 +57,7 @@
                   <label class="form-label invisible d-none d-lg-block">Actions</label>
                   <div class="economy-search-actions d-flex gap-2">
                     <button class="btn btn-outline-primary" type="submit">Search</button>
-                    <a class="btn btn-outline-secondary" href="/admin/economy/users">Clear</a>
+                    <a class="btn btn-outline-secondary" href="/admin/economy/users<%= supportsGlobalUserScope && usersViewScope === 'global' ? '?scope=global' : '' %>">Clear</a>
                   </div>
                 </div>
                 <div class="col-12">
@@ -63,6 +74,7 @@
                 </div>
                 <form method="post" action="/admin/economy/users/gift-all" class="row g-2 bulk-aid-form">
                   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <input type="hidden" name="scope" value="<%= usersViewScope %>" />
                   <div class="col-12 col-md-7">
                     <label class="form-label">Credits</label>
                     <input class="form-control" name="amount" type="number" min="1" step="1" placeholder="1000" required />
@@ -83,6 +95,7 @@
                 </form>
                 <form method="post" action="/admin/economy/users/exp-all" class="row g-2 bulk-aid-form mt-1">
                   <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                  <input type="hidden" name="scope" value="<%= usersViewScope %>" />
                   <div class="col-12 col-md-7">
                     <label class="form-label">Experience</label>
                     <input class="form-control" name="amount" type="number" min="1" step="1" placeholder="100" required />
@@ -122,6 +135,9 @@
               <div class="text-muted small">
                 Whitelisted Discord IDs can run <code>/grant</code> or <code>robo grant</code>, and only whitelisted members can receive the manual
                 Give/Deduct Credits or EXP actions below.
+                <% if (supportsGlobalUserScope) { %>
+                  <span class="d-block mt-1">Current whitelist scope: <strong><%= usersViewScope === 'global' ? 'Global shared whitelist' : 'Active server whitelist' %></strong>.</span>
+                <% } %>
               </div>
             </div>
             <span class="badge text-bg-secondary"><%= (whitelistEntries || []).length %> whitelisted</span>
@@ -129,6 +145,7 @@
 
           <form method="post" action="/admin/economy/users/whitelist/add" class="row g-2 align-items-end whitelist-add-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+            <input type="hidden" name="scope" value="<%= usersViewScope %>" />
             <div class="col-12 col-lg">
               <label class="form-label">Discord ID</label>
               <input class="form-control" name="discordId" placeholder="123456789012345678" required />
@@ -167,6 +184,7 @@
                     <td class="text-end whitelist-actions-cell" data-label="Actions">
                       <form method="post" action="/admin/economy/users/whitelist/remove" class="d-inline">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                        <input type="hidden" name="scope" value="<%= usersViewScope %>" />
                         <input type="hidden" name="discordId" value="<%= w.discordId %>" />
                         <button
                           class="btn btn-outline-danger btn-sm icon-btn"
@@ -196,6 +214,7 @@
           <% const whitelistSet = new Set((whitelist || []).map(String)); %>
           <% const queryParams = new URLSearchParams(); %>
           <% if (q) queryParams.set('q', q); %>
+          <% if (supportsGlobalUserScope && usersViewScope === 'global') queryParams.set('scope', 'global'); %>
           <% const buildPageUrl = (targetPage) => { const params = new URLSearchParams(queryParams); params.set('page', String(targetPage)); return `/admin/economy/users?${params.toString()}`; }; %>
           <% const canGoPrev = page > 1; %>
           <% const canGoNext = page < resolvedTotalPages; %>
@@ -242,9 +261,28 @@
                     <td data-label="User">
                       <div class="fw-semibold user-name-cell"><%= u.username || '—' %></div>
                       <div class="text-muted small"><code class="user-id-code"><%= u.discordId %></code></div>
-                      <% if (economyScope === 'global' && u.originGuildName) { %>
-                        <div class="text-muted small">Origin: <%= u.originGuildName %></div>
+                      <% if (economyScope === 'global' && usersViewScope === 'global') { %>
+                        <div class="text-muted small">Origin: <%= u.originGuildName || 'Shared Global Account' %></div>
                       <% } %>
+                      <div class="user-primary-actions">
+                        <a class="btn btn-outline-light btn-sm" href="/admin/economy/users/<%= u.discordId %>">Open Editor</a>
+                        <form method="post" action="/admin/economy/users/whitelist/<%= isWhitelisted ? 'remove' : 'add' %>" class="d-inline">
+                          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                          <input type="hidden" name="scope" value="<%= usersViewScope %>" />
+                          <input type="hidden" name="discordId" value="<%= u.discordId %>" />
+                          <input type="hidden" name="username" value="<%= u.username || '' %>" />
+                          <button
+                            class="btn <%= isWhitelisted ? 'btn-outline-danger' : 'btn-outline-warning' %> btn-sm"
+                            type="submit"
+                            data-confirm="<%= isWhitelisted ? 'Remove this user from the economy action whitelist?' : 'Add this user to the economy action whitelist?' %>"
+                            data-confirm-title="<%= isWhitelisted ? 'Remove whitelist?' : 'Add to whitelist?' %>"
+                            data-confirm-ok="<%= isWhitelisted ? 'Remove' : 'Add' %>"
+                            data-confirm-cancel="Cancel"
+                          >
+                            <%= isWhitelisted ? 'Unwhitelist' : 'Whitelist' %>
+                          </button>
+                        </form>
+                      </div>
                     </td>
                     <td data-label="Economy">
                       <div class="metric-stack">
@@ -283,48 +321,20 @@
                     <td class="text-muted small" data-label="Updated"><%= u.updatedAt ? formatDate(u.updatedAt) : '—' %></td>
                     <td class="text-end user-actions-cell" data-label="Actions">
                       <div class="user-actions-panel">
-                        <div class="user-editor-link-row">
-                          <a class="btn btn-outline-light btn-sm" href="/admin/economy/users/<%= u.discordId %>">Open Editor</a>
-                        </div>
-
-                        <div class="user-whitelist-bar">
-                          <div class="user-whitelist-state">
-                            <% if (!isWhitelisted) { %>
-                              <div class="user-whitelist-note">Whitelist this user first to unlock manual Give/Deduct Credits and EXP actions.</div>
-                            <% } %>
-                          </div>
-
-                          <form method="post" action="/admin/economy/users/whitelist/<%= isWhitelisted ? 'remove' : 'add' %>" class="user-action-form user-action-form--toggle">
-                            <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-                            <input type="hidden" name="discordId" value="<%= u.discordId %>" />
-                            <input type="hidden" name="username" value="<%= u.username || '' %>" />
-                            <button
-                              class="btn <%= isWhitelisted ? 'btn-outline-danger' : 'btn-outline-warning' %> btn-sm icon-btn user-whitelist-toggle-btn"
-                              type="submit"
-                              data-confirm="<%= isWhitelisted ? 'Remove this user from the economy action whitelist?' : 'Add this user to the economy action whitelist?' %>"
-                              data-confirm-title="<%= isWhitelisted ? 'Remove whitelist?' : 'Add to whitelist?' %>"
-                              data-confirm-ok="<%= isWhitelisted ? 'Remove' : 'Add' %>"
-                              data-confirm-cancel="Cancel"
-                              title="<%= isWhitelisted ? 'Unwhitelist' : 'Whitelist' %>"
-                              aria-label="<%= isWhitelisted ? 'Unwhitelist' : 'Whitelist' %>"
-                            >
-                              <span aria-hidden="true"><%= isWhitelisted ? '✖' : '🛡' %></span>
-                            </button>
-                          </form>
-                        </div>
-
                         <div class="user-actions-grid">
-                          <form method="post" action="/admin/economy/users/grant" class="user-action-form user-action-form--wide">
+                          <form method="post" action="/admin/economy/users/grant" class="user-action-form user-action-form--metric">
                             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                            <input type="hidden" name="scope" value="<%= usersViewScope %>" />
                             <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                             <input type="hidden" name="username" value="<%= u.username || '' %>" />
                             <span class="user-action-label">Give Credits</span>
                             <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="Amount" <%= isWhitelisted ? '' : 'disabled' %> required />
-                            <button class="btn btn-success btn-sm icon-btn" type="submit" title="<%= isWhitelisted ? 'Give credits' : 'Whitelist required' %>" aria-label="Give credits" <%= isWhitelisted ? '' : 'disabled' %>>➕</button>
+                            <button class="btn btn-success btn-sm icon-btn" type="submit" title="<%= isWhitelisted ? 'Give credits' : 'Whitelist required' %>" aria-label="Give credits" <%= isWhitelisted ? '' : 'disabled' %>>+</button>
                           </form>
 
-                          <form method="post" action="/admin/economy/users/deduct" class="user-action-form user-action-form--wide">
+                          <form method="post" action="/admin/economy/users/deduct" class="user-action-form user-action-form--metric">
                             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                            <input type="hidden" name="scope" value="<%= usersViewScope %>" />
                             <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                             <input type="hidden" name="username" value="<%= u.username || '' %>" />
                             <span class="user-action-label">Deduct Credits</span>
@@ -340,21 +350,23 @@
                               aria-label="Deduct credits"
                               <%= isWhitelisted ? '' : 'disabled' %>
                             >
-                              ➖
+                              -
                             </button>
                           </form>
 
-                          <form method="post" action="/admin/economy/users/exp" class="user-action-form user-action-form--compact">
+                          <form method="post" action="/admin/economy/users/exp" class="user-action-form user-action-form--metric">
                             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                            <input type="hidden" name="scope" value="<%= usersViewScope %>" />
                             <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                             <input type="hidden" name="username" value="<%= u.username || '' %>" />
                             <span class="user-action-label">Give EXP</span>
                             <input class="form-control form-control-sm user-action-input" name="amount" type="number" min="1" step="1" placeholder="Amount" <%= isWhitelisted ? '' : 'disabled' %> required />
-                            <button class="btn btn-outline-info btn-sm icon-btn" type="submit" title="<%= isWhitelisted ? 'Give EXP' : 'Whitelist required' %>" aria-label="Give EXP" <%= isWhitelisted ? '' : 'disabled' %>>⚡</button>
+                            <button class="btn btn-outline-info btn-sm icon-btn" type="submit" title="<%= isWhitelisted ? 'Give EXP' : 'Whitelist required' %>" aria-label="Give EXP" <%= isWhitelisted ? '' : 'disabled' %>>+</button>
                           </form>
 
-                          <form method="post" action="/admin/economy/users/exp/deduct" class="user-action-form user-action-form--compact">
+                          <form method="post" action="/admin/economy/users/exp/deduct" class="user-action-form user-action-form--metric">
                             <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                            <input type="hidden" name="scope" value="<%= usersViewScope %>" />
                             <input type="hidden" name="discordId" value="<%= u.discordId %>" />
                             <input type="hidden" name="username" value="<%= u.username || '' %>" />
                             <span class="user-action-label">Deduct EXP</span>
@@ -370,10 +382,13 @@
                               data-confirm-cancel="Cancel"
                               <%= isWhitelisted ? '' : 'disabled' %>
                             >
-                              📉
+                              -
                             </button>
                           </form>
                         </div>
+                        <% if (!isWhitelisted) { %>
+                          <div class="user-manual-note">Whitelist this user first to unlock manual Give/Deduct Credits and EXP actions.</div>
+                        <% } %>
                       </div>
                     </td>
                   </tr>

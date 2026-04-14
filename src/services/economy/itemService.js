@@ -1,7 +1,7 @@
 const { customAlphabet } = require('nanoid');
 const { CORE_RARITIES, ITEM_TYPES } = require('../../config/constants');
 
-const ITEM_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_';
+const ITEM_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ITEM_ID_LENGTH = 12;
 const generateItemId = customAlphabet(ITEM_ID_ALPHABET, ITEM_ID_LENGTH);
 
