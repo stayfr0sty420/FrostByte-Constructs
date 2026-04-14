@@ -85,7 +85,7 @@
               </div>
 
               <div class="analytics-flow-chart" data-flow-chart data-live-url="<%= flowLiveUrl %>">
-                <svg viewBox="0 0 760 280" preserveAspectRatio="none" data-flow-chart-svg aria-label="Economy flow chart"></svg>
+                <svg data-flow-chart-svg aria-label="Economy flow chart" role="img"></svg>
               </div>
             </div>
           </div>
@@ -250,15 +250,13 @@
         const liveUrl = chartRoot.getAttribute('data-live-url') || '';
         let series = <%- flowSeriesJson %>;
 
-        const width = 760;
-        const height = 280;
-        const pad = { top: 16, right: 20, bottom: 38, left: 58 };
         const colors = {
           generated: '#22c55e',
           spent: '#f97316',
           net: '#38bdf8',
           grid: 'rgba(148, 163, 184, 0.18)',
-          label: 'rgba(226, 232, 240, 0.72)'
+          label: 'rgba(226, 232, 240, 0.72)',
+          zero: 'rgba(248, 113, 113, 0.28)'
         };
 
         const formatNumber = (value) => Number(value || 0).toLocaleString('en-US');
@@ -270,7 +268,25 @@
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
 
-        const buildPoints = (rows, key, minValue, maxValue) => {
+        const getChartMetrics = (rows) => {
+          const chartWidth = Math.max(320, Math.round(chartRoot.clientWidth || 760));
+          const measuredHeight = Math.round(svg.getBoundingClientRect().height || 0);
+          const chartHeight = Math.max(260, measuredHeight || (chartWidth < 560 ? 260 : chartWidth < 900 ? 290 : 320));
+          const values = rows.flatMap((row) => [Number(row.generated || 0), Number(row.spent || 0), Number(row.net || 0)]);
+          const widestLabel = values.reduce((max, value) => Math.max(max, formatNumber(Math.round(value)).length), 1);
+          const leftPad = Math.min(124, Math.max(84, widestLabel * (chartWidth < 560 ? 7.2 : 7.9) + 18));
+          const rightPad = chartWidth < 560 ? 16 : 24;
+          const topPad = 22;
+          const bottomPad = chartWidth < 560 ? 46 : 42;
+          return {
+            width: chartWidth,
+            height: chartHeight,
+            pad: { top: topPad, right: rightPad, bottom: bottomPad, left: leftPad }
+          };
+        };
+
+        const buildPoints = (rows, key, minValue, maxValue, metrics) => {
+          const { width, height, pad } = metrics;
           const plotWidth = width - pad.left - pad.right;
           const plotHeight = height - pad.top - pad.bottom;
           const safeRange = Math.max(1, maxValue - minValue);
@@ -284,22 +300,55 @@
             .join(' ');
         };
 
+        const buildAreaPath = (rows, key, minValue, maxValue, metrics) => {
+          if (!rows.length) return '';
+          const { width, height, pad } = metrics;
+          const plotHeight = height - pad.top - pad.bottom;
+          const safeRange = Math.max(1, maxValue - minValue);
+          const baselineY = pad.top + ((maxValue - 0) / safeRange) * plotHeight;
+          const points = buildPoints(rows, key, minValue, maxValue, metrics)
+            .split(' ')
+            .filter(Boolean);
+          if (!points.length) return '';
+          const firstPoint = points[0]?.split(',') || [pad.left, baselineY];
+          const lastPoint = points[points.length - 1]?.split(',') || [width - pad.right, baselineY];
+          return [
+            `M ${Number(firstPoint[0]).toFixed(2)} ${baselineY.toFixed(2)}`,
+            ...points.map((point) => `L ${point.replace(',', ' ')}`),
+            `L ${Number(lastPoint[0]).toFixed(2)} ${baselineY.toFixed(2)}`,
+            'Z'
+          ].join(' ');
+        };
+
         const renderChart = (rows) => {
           const safeRows = Array.isArray(rows) ? rows : [];
           if (!safeRows.length) {
-            svg.innerHTML = '';
+            svg.setAttribute('viewBox', '0 0 760 280');
+            svg.innerHTML = `
+              <g>
+                <rect x="0" y="0" width="760" height="280" rx="22" fill="transparent"></rect>
+                <text x="380" y="140" fill="${colors.label}" font-size="14" text-anchor="middle">No economy flow data yet.</text>
+              </g>
+            `;
             return;
           }
 
+          const metrics = getChartMetrics(safeRows);
+          const { width, height, pad } = metrics;
           const values = safeRows.flatMap((row) => [Number(row.generated || 0), Number(row.spent || 0), Number(row.net || 0)]);
           const minValue = Math.min(0, ...values);
           const maxValue = Math.max(1, ...values);
           const plotWidth = width - pad.left - pad.right;
           const plotHeight = height - pad.top - pad.bottom;
           const safeRange = Math.max(1, maxValue - minValue);
+          const zeroY = pad.top + ((maxValue - 0) / safeRange) * plotHeight;
+          const xLabelStep = width < 480 ? 8 : width < 640 ? 6 : width < 900 ? 4 : 3;
 
-          const yTicks = Array.from({ length: 4 }, (_, index) => {
-            const ratio = index / 3;
+          svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+          svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+
+          const yTicks = Array.from({ length: 5 }, (_, index) => {
+            const ratio = index / 4;
             const value = maxValue - safeRange * ratio;
             const y = pad.top + plotHeight * ratio;
             return { value, y };
@@ -307,10 +356,12 @@
 
           const xLabels = safeRows
             .map((row, index) => {
-              if (index !== 0 && index !== safeRows.length - 1 && index % 4 !== 0) return '';
+              if (index !== 0 && index !== safeRows.length - 1 && index % xLabelStep !== 0) return '';
               const span = Math.max(1, safeRows.length - 1);
               const x = pad.left + (index / span) * plotWidth;
-              return `<text x="${x.toFixed(2)}" y="${height - 12}" fill="${colors.label}" font-size="11" text-anchor="middle">${escapeText(row.label)}</text>`;
+              const anchor = index === 0 ? 'start' : index === safeRows.length - 1 ? 'end' : 'middle';
+              const labelX = index === 0 ? x + 2 : index === safeRows.length - 1 ? x - 2 : x;
+              return `<text x="${labelX.toFixed(2)}" y="${height - 14}" fill="${colors.label}" font-size="11" text-anchor="${anchor}">${escapeText(row.label)}</text>`;
             })
             .filter(Boolean)
             .join('');
@@ -319,17 +370,35 @@
             .map(
               (tick) => `
                 <line x1="${pad.left}" y1="${tick.y.toFixed(2)}" x2="${width - pad.right}" y2="${tick.y.toFixed(2)}" stroke="${colors.grid}" stroke-width="1" />
-                <text x="${pad.left - 10}" y="${(tick.y + 4).toFixed(2)}" fill="${colors.label}" font-size="11" text-anchor="end">${escapeText(formatNumber(Math.round(tick.value)))}</text>
+                <text x="${pad.left - 14}" y="${(tick.y + 4).toFixed(2)}" fill="${colors.label}" font-size="11" text-anchor="end">${escapeText(formatNumber(Math.round(tick.value)))}</text>
               `
             )
             .join('');
 
+          const lastRow = safeRows[safeRows.length - 1] || {};
+          const buildMarker = (key, color) => {
+            const span = Math.max(1, safeRows.length - 1);
+            const x = pad.left + plotWidth;
+            const y = pad.top + ((maxValue - Number(lastRow[key] || 0)) / safeRange) * plotHeight;
+            return `
+              <circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="4.5" fill="${color}" stroke="rgba(8, 6, 10, 0.9)" stroke-width="2" />
+            `;
+          };
+
           svg.innerHTML = `
             <g>
+              <rect x="${pad.left}" y="${pad.top}" width="${plotWidth}" height="${plotHeight}" rx="18" fill="rgba(13, 10, 16, 0.48)" />
               ${grid}
-              <polyline fill="none" stroke="${colors.generated}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${buildPoints(safeRows, 'generated', minValue, maxValue)}" />
-              <polyline fill="none" stroke="${colors.spent}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${buildPoints(safeRows, 'spent', minValue, maxValue)}" />
-              <polyline fill="none" stroke="${colors.net}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${buildPoints(safeRows, 'net', minValue, maxValue)}" />
+              <line x1="${pad.left}" y1="${zeroY.toFixed(2)}" x2="${width - pad.right}" y2="${zeroY.toFixed(2)}" stroke="${colors.zero}" stroke-width="1.5" stroke-dasharray="6 6" />
+              <path d="${buildAreaPath(safeRows, 'generated', minValue, maxValue, metrics)}" fill="rgba(34, 197, 94, 0.08)" />
+              <path d="${buildAreaPath(safeRows, 'spent', minValue, maxValue, metrics)}" fill="rgba(249, 115, 22, 0.08)" />
+              <path d="${buildAreaPath(safeRows, 'net', minValue, maxValue, metrics)}" fill="rgba(56, 189, 248, 0.08)" />
+              <polyline fill="none" stroke="${colors.generated}" stroke-width="3.25" stroke-linecap="round" stroke-linejoin="round" points="${buildPoints(safeRows, 'generated', minValue, maxValue, metrics)}" />
+              <polyline fill="none" stroke="${colors.spent}" stroke-width="3.25" stroke-linecap="round" stroke-linejoin="round" points="${buildPoints(safeRows, 'spent', minValue, maxValue, metrics)}" />
+              <polyline fill="none" stroke="${colors.net}" stroke-width="3.25" stroke-linecap="round" stroke-linejoin="round" points="${buildPoints(safeRows, 'net', minValue, maxValue, metrics)}" />
+              ${buildMarker('generated', colors.generated)}
+              ${buildMarker('spent', colors.spent)}
+              ${buildMarker('net', colors.net)}
               ${xLabels}
             </g>
           `;
@@ -365,6 +434,12 @@
 
         renderChart(series);
         setUpdatedLabel(<%- JSON.stringify(analyticsUpdatedAt ? analyticsUpdatedAt.toISOString() : '') %>);
+        if (window.ResizeObserver) {
+          const resizeObserver = new ResizeObserver(() => renderChart(series));
+          resizeObserver.observe(chartRoot);
+        } else {
+          window.addEventListener('resize', () => renderChart(series));
+        }
         window.setInterval(refresh, 30000);
       })();
     </script>
