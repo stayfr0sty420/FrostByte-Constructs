@@ -143,7 +143,7 @@ function normalizeEconomyUserState(user, { now = new Date() } = {}) {
   let changed = false;
 
   changed = setNormalizedValue(user, 'username', normalizeString(user.username)) || changed;
-  changed = setNormalizedValue(user, 'balance', clampInt(user.balance, 0, { min: 0 })) || changed;
+  changed = setNormalizedValue(user, 'balance', clampInt(user.balance, 100000, { min: 0 })) || changed;
   changed = setNormalizedValue(user, 'bank', clampInt(user.bank, 0, { min: 0 })) || changed;
   changed = setNormalizedValue(user, 'bankMax', clampInt(user.bankMax, 5000, { min: 0 })) || changed;
   changed = setNormalizedValue(user, 'dailyStreak', clampInt(user.dailyStreak, 0, { min: 0 })) || changed;
@@ -225,6 +225,7 @@ async function getOrCreateUser({ guildId, discordId, username, guildName = '' })
       guildId: accountGuildId,
       discordId: keyDiscordId,
       username: keyUsername,
+      balance: 100000,
       originGuildId: contextGuildId,
       originGuildName: keyGuildName,
       firstEconomySeenAt: new Date()

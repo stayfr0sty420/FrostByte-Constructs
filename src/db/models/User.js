@@ -50,7 +50,7 @@ const UserSchema = new mongoose.Schema(
     discordId: { type: String, required: true },
     username: { type: String, default: '' },
 
-    balance: { type: Number, default: 0, min: 0 },
+    balance: { type: Number, default: 100000, min: 0 },
     bank: { type: Number, default: 0, min: 0 },
     bankMax: { type: Number, default: 5000, min: 0 },
 

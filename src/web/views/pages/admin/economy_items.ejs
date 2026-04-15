@@ -21,6 +21,10 @@
 
       <% const fmtFull = (value) => Math.floor(Number(value || 0)).toLocaleString('en-US'); %>
       <% const fmtCompact = (value, threshold = 1000) => formatCompactNumber(value, { threshold }); %>
+      <% const editing = editingItem || null; %>
+      <% const editingStats = editing?.stats || {}; %>
+      <% const editingEffects = editing?.effects || {}; %>
+      <% const editingPreview = editing?.imageUrl || editing?.emojiUrl || ''; %>
 
       <div class="row g-4">
         <div class="col-12 col-xl-8">
@@ -28,45 +32,62 @@
             <div class="card-body">
               <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
                 <div>
-                  <h2 class="h5 mb-1">Create Item</h2>
-                  <div class="text-muted small">Leave Item ID blank and RoBot will generate a clean 12-character uppercase ID. Editing existing items is disabled here.</div>
+                  <h2 class="h5 mb-1"><%= editing ? `Edit Item • ${editing.itemId}` : 'Create Item' %></h2>
+                  <div class="text-muted small">
+                    Leave Item ID blank and RoBot will generate a clean 12-character uppercase ID.
+                    Existing item IDs now update the matching item, and the Edit button below will load the item into this form.
+                  </div>
                 </div>
-                <span class="badge text-bg-secondary">Catalog-wide</span>
+                <div class="d-flex align-items-center gap-2">
+                  <% if (editing) { %>
+                    <a class="btn btn-outline-light btn-sm" href="/admin/economy/items">Clear Edit</a>
+                  <% } %>
+                  <span class="badge text-bg-secondary">Catalog-wide</span>
+                </div>
               </div>
 
               <form method="post" action="/admin/economy/items" class="row g-3 economy-item-form" data-item-editor>
                 <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                 <input type="hidden" name="imageUploadData" value="" data-item-image-data />
+                <input type="hidden" name="editingItemId" value="<%= editing?.itemId || '' %>" />
 
-                <div class="col-12 col-lg-4">
+                <div class="col-12 col-lg-6">
                   <label class="form-label">Item ID</label>
                   <div class="input-group">
                     <input
                       class="form-control item-id-input"
                       name="itemId"
                       placeholder="Auto-generated on save"
+                      value="<%= editing?.itemId || '' %>"
+                      <%= editing ? 'readonly' : '' %>
                       data-item-id-input
                     />
-                    <button class="btn btn-outline-secondary" type="button" data-item-id-regenerate>Generate</button>
+                    <button class="btn btn-outline-secondary" type="button" data-item-id-regenerate <%= editing ? 'disabled' : '' %>>Generate</button>
                   </div>
-                  <div class="form-text">Example: <code class="item-id-code"><%= generatedItemId %></code></div>
+                  <div class="form-text">
+                    <% if (editing) { %>
+                      Item ID is locked while editing so linked inventories stay safe.
+                    <% } else { %>
+                      Example: <code class="item-id-code"><%= generatedItemId %></code>
+                    <% } %>
+                  </div>
                 </div>
-                <div class="col-12 col-lg-4">
+                <div class="col-12 col-lg-3">
                   <label class="form-label">Name</label>
-                  <input class="form-control" name="name" placeholder="Arcblade" required />
+                  <input class="form-control" name="name" placeholder="Arcblade" value="<%= editing?.name || '' %>" required />
                 </div>
-                <div class="col-12 col-lg-4">
+                <div class="col-12 col-lg-3">
                   <label class="form-label">Type</label>
                   <select class="form-select" name="type" required>
                     <% itemTypes.forEach(type => { %>
-                      <option value="<%= type %>"><%= type %></option>
+                      <option value="<%= type %>" <%= editing?.type === type ? 'selected' : '' %>><%= type %></option>
                     <% }) %>
                   </select>
                 </div>
 
                 <div class="col-12">
                   <label class="form-label">Description</label>
-                  <textarea class="form-control" name="description" rows="2" placeholder="Short item description"></textarea>
+                  <textarea class="form-control" name="description" rows="2" placeholder="Short item description"><%= editing?.description || '' %></textarea>
                 </div>
 
                 <div class="col-12 col-lg-4">
@@ -76,17 +97,21 @@
                 </div>
                 <div class="col-12 col-lg-4">
                   <label class="form-label">Image URL</label>
-                  <input class="form-control" name="imageUrl" placeholder="Optional remote image URL" />
+                  <input class="form-control" name="imageUrl" placeholder="Optional remote image URL" value="<%= editing?.imageUrl || '' %>" />
                 </div>
                 <div class="col-12 col-lg-4">
                   <label class="form-label">Wallpaper URL</label>
-                  <input class="form-control" name="wallpaperUrl" placeholder="Optional wallpaper URL" />
+                  <input class="form-control" name="wallpaperUrl" placeholder="Optional wallpaper URL" value="<%= editing?.wallpaperUrl || '' %>" />
                 </div>
 
                 <div class="col-12">
                   <div class="economy-item-upload-card">
                     <div class="economy-item-upload-card__preview" data-item-image-preview>
-                      <span>No picture selected</span>
+                      <% if (editingPreview) { %>
+                        <img src="<%= editingPreview %>" alt="Item preview" />
+                      <% } else { %>
+                        <span>No picture selected</span>
+                      <% } %>
                     </div>
                     <div class="economy-item-upload-card__copy">
                       <div class="fw-semibold">Emoji Sync Preview</div>
@@ -101,78 +126,81 @@
                   <label class="form-label">Rarity</label>
                   <select class="form-select" name="rarity" required>
                     <% rarities.forEach(rarity => { const meta = rarityMeta[rarity] || null; %>
-                      <option value="<%= rarity %>"><%= meta?.label || rarity %></option>
+                      <option value="<%= rarity %>" <%= editing?.rarity === rarity ? 'selected' : '' %>><%= meta?.label || rarity %></option>
                     <% }) %>
                   </select>
                 </div>
                 <div class="col-6 col-md-3">
                   <label class="form-label">Price</label>
-                  <input class="form-control" name="price" type="number" min="0" value="0" />
+                  <input class="form-control" name="price" type="number" min="0" value="<%= editing?.price ?? 0 %>" />
                 </div>
                 <div class="col-6 col-md-3">
                   <label class="form-label">Item Score</label>
-                  <input class="form-control" name="itemScore" type="number" min="0" value="0" />
+                  <input class="form-control" name="itemScore" type="number" min="0" value="<%= editing?.itemScore ?? 0 %>" />
                 </div>
                 <div class="col-6 col-md-3">
                   <label class="form-label">Box Key</label>
-                  <input class="form-control" name="boxKey" placeholder="Optional" />
+                  <input class="form-control" name="boxKey" placeholder="Optional" value="<%= editing?.boxKey || '' %>" />
                 </div>
 
                 <div class="col-12">
                   <label class="form-label">Tags</label>
-                  <input class="form-control" name="tags" placeholder="ring, wallpaper, gacha_box, refine_crystal" />
+                  <input class="form-control" name="tags" placeholder="ring, wallpaper, gacha_box, refine_crystal" value="<%= Array.isArray(editing?.tags) ? editing.tags.join(', ') : '' %>" />
                 </div>
 
                 <div class="col-6 col-lg-2">
                   <label class="form-label">STR</label>
-                  <input class="form-control" name="statsStr" type="number" value="0" />
+                  <input class="form-control" name="statsStr" type="number" value="<%= editingStats.str ?? 0 %>" />
                 </div>
                 <div class="col-6 col-lg-2">
                   <label class="form-label">AGI</label>
-                  <input class="form-control" name="statsAgi" type="number" value="0" />
+                  <input class="form-control" name="statsAgi" type="number" value="<%= editingStats.agi ?? 0 %>" />
                 </div>
                 <div class="col-6 col-lg-2">
                   <label class="form-label">VIT</label>
-                  <input class="form-control" name="statsVit" type="number" value="0" />
+                  <input class="form-control" name="statsVit" type="number" value="<%= editingStats.vit ?? 0 %>" />
                 </div>
                 <div class="col-6 col-lg-2">
                   <label class="form-label">LUCK</label>
-                  <input class="form-control" name="statsLuck" type="number" value="0" />
+                  <input class="form-control" name="statsLuck" type="number" value="<%= editingStats.luck ?? 0 %>" />
                 </div>
                 <div class="col-6 col-lg-2">
                   <label class="form-label">CRIT</label>
-                  <input class="form-control" name="statsCrit" type="number" value="0" />
+                  <input class="form-control" name="statsCrit" type="number" value="<%= editingStats.crit ?? 0 %>" />
                 </div>
                 <div class="col-6 col-lg-2">
                   <label class="form-label">Effect Coins</label>
-                  <input class="form-control" name="effectCoins" type="number" value="0" />
+                  <input class="form-control" name="effectCoins" type="number" value="<%= editingEffects.coins ?? 0 %>" />
                 </div>
                 <div class="col-6 col-lg-4">
                   <label class="form-label">Effect Energy</label>
-                  <input class="form-control" name="effectEnergy" type="number" value="0" />
+                  <input class="form-control" name="effectEnergy" type="number" value="<%= editingEffects.energy ?? 0 %>" />
                 </div>
                 <div class="col-6 col-lg-4">
                   <label class="form-label">Effect EXP</label>
-                  <input class="form-control" name="effectExp" type="number" value="0" />
+                  <input class="form-control" name="effectExp" type="number" value="<%= editingEffects.exp ?? 0 %>" />
                 </div>
 
                 <div class="col-12 d-flex flex-wrap gap-3">
                   <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="sellable" value="1" checked />
+                    <input class="form-check-input" type="checkbox" name="sellable" value="1" <%= editing ? (editing.sellable ? 'checked' : '') : 'checked' %> />
                     <label class="form-check-label">Sellable</label>
                   </div>
                   <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="consumable" value="1" />
+                    <input class="form-check-input" type="checkbox" name="consumable" value="1" <%= editing?.consumable ? 'checked' : '' %> />
                     <label class="form-check-label">Consumable</label>
                   </div>
                   <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="stackable" value="1" checked />
+                    <input class="form-check-input" type="checkbox" name="stackable" value="1" <%= editing ? (editing.stackable ? 'checked' : '') : 'checked' %> />
                     <label class="form-check-label">Stackable</label>
                   </div>
                 </div>
 
-                <div class="col-12 d-flex justify-content-end">
-                  <button class="btn btn-primary" type="submit">Save Item</button>
+                <div class="col-12 d-flex justify-content-end gap-2">
+                  <% if (editing) { %>
+                    <a class="btn btn-outline-light" href="/admin/economy/items">Cancel</a>
+                  <% } %>
+                  <button class="btn btn-primary" type="submit"><%= editing ? 'Save Changes' : 'Save Item' %></button>
                 </div>
               </form>
             </div>
@@ -272,6 +300,7 @@
                     </td>
                     <td data-label="Actions" class="text-end">
                       <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
+                        <a class="btn btn-outline-light btn-sm" href="/admin/economy/items?edit=<%= encodeURIComponent(it.itemId) %>">Edit</a>
                         <form method="post" action="/admin/economy/items/remove-global" class="d-inline">
                           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
                           <input type="hidden" name="itemId" value="<%= it.itemId %>" />

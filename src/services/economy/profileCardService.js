@@ -2,6 +2,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const sharp = require('sharp');
 const { formatCompactNumber } = require('./economyFormatService');
+const { getRarityMeta } = require('./itemService');
 const { env } = require('../../config/env');
 
 const CARD_WIDTH = 1040;
@@ -25,6 +26,57 @@ function clampText(value, max) {
   const safe = normalizeString(value);
   if (safe.length <= max) return safe;
   return `${safe.slice(0, Math.max(0, max - 1))}…`;
+}
+
+function wrapText(value, { maxChars = 36, maxLines = 2 } = {}) {
+  const safe = normalizeString(value);
+  if (!safe) return [];
+
+  const words = safe.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= maxChars) {
+      current = next;
+      continue;
+    }
+
+    if (current) lines.push(current);
+    current = word;
+    if (lines.length >= maxLines - 1) break;
+  }
+
+  if (lines.length < maxLines && current) lines.push(current);
+  if (!lines.length) lines.push(clampText(safe, maxChars));
+
+  if (lines.length > maxLines) lines.length = maxLines;
+  const consumed = lines.join(' ').length;
+  if (consumed < safe.length) {
+    lines[lines.length - 1] = clampText(lines[lines.length - 1], Math.max(6, maxChars - 1));
+    if (!lines[lines.length - 1].endsWith('…')) lines[lines.length - 1] = `${lines[lines.length - 1]}…`;
+  }
+
+  return lines;
+}
+
+function renderTextLines(lines, { x, y, lineHeight, fill, fontSize, fontWeight = '400' }) {
+  return lines
+    .map(
+      (line, index) => `
+        <text x="${x}" y="${y + index * lineHeight}" fill="${fill}" font-family="Segoe UI, Arial, sans-serif" font-size="${fontSize}" font-weight="${fontWeight}">${escapeXml(line)}</text>
+      `
+    )
+    .join('');
+}
+
+function getTopItemSlots() {
+  return [
+    { left: 658, top: 92, size: 92 },
+    { left: 770, top: 92, size: 92 },
+    { left: 882, top: 92, size: 92 }
+  ];
 }
 
 async function fetchImageBuffer(url) {
@@ -87,22 +139,24 @@ function createOverlaySvg({
   marriageLabel,
   topPvpItems = []
 }) {
-  const topGearMarkup = topPvpItems
-    .slice(0, 3)
-    .map((entry, index) => {
-      const x = 610 + index * 118;
-      const rarity = clampText(String(entry?.item?.rarity || 'gear').toUpperCase(), 12);
-      const name = clampText(entry?.item?.name || entry?.itemId || 'Unknown Gear', 14);
-      const score = Math.max(0, Number(entry?.combatScore) || 0);
-      const refinement = Math.max(0, Number(entry?.refinement) || 0);
+  const bioLines = wrapText(bio, { maxChars: 40, maxLines: 2 });
+  const serverLines = wrapText(guildName, { maxChars: 28, maxLines: 1 });
+  const socialLines = wrapText(`Followers ${followers} • Following ${following}`, { maxChars: 28, maxLines: 1 });
+  const marriageLines = wrapText(marriageLabel, { maxChars: 42, maxLines: 1 });
+  const bioLabelY = 292;
+  const bioTextY = 326;
+  const serverLabelY = bioTextY + Math.max(1, bioLines.length) * 24 + 18;
+  const serverTextY = serverLabelY + 30;
+  const socialLabelY = serverTextY + Math.max(1, serverLines.length) * 22 + 18;
+  const socialTextY = socialLabelY + 30;
+  const marriageTextY = socialTextY + Math.max(1, socialLines.length) * 22 + 18;
+  const topSlotMarkup = getTopItemSlots()
+    .map((slot, index) => {
+      const rarityMeta = getRarityMeta(topPvpItems[index]?.item?.rarity || 'common');
       return `
-        <g transform="translate(${x}, 82)">
-          <rect width="108" height="84" rx="18" fill="rgba(6, 4, 8, 0.54)" stroke="rgba(255,255,255,0.08)" />
-          <text x="16" y="24" fill="rgba(248, 113, 113, 0.82)" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">TOP ${index + 1}</text>
-          <text x="16" y="46" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">${escapeXml(name)}</text>
-          <text x="16" y="62" fill="rgba(255,255,255,0.7)" font-family="Segoe UI, Arial, sans-serif" font-size="11">${escapeXml(rarity)}</text>
-          <text x="16" y="76" fill="rgba(255,255,255,0.86)" font-family="Segoe UI, Arial, sans-serif" font-size="11">GS ${escapeXml(String(score))}${refinement ? ` • +${escapeXml(String(refinement))}` : ''}</text>
-        </g>
+        <rect x="${slot.left}" y="${slot.top}" width="${slot.size}" height="${slot.size}" rx="24" fill="rgba(6, 4, 8, 0.52)" stroke="${escapeXml(
+          rarityMeta.color
+        )}" stroke-width="3.5" opacity="${topPvpItems[index] ? '1' : '0.28'}" />
       `;
     })
     .join('');
@@ -130,16 +184,40 @@ function createOverlaySvg({
       <text x="286" y="105" fill="rgba(255, 230, 230, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="18" letter-spacing="5">ROBOT PROFILE</text>
       <text x="286" y="154" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="44" font-weight="700">${escapeXml(displayName)}</text>
       <text x="286" y="194" fill="rgba(255, 228, 230, 0.82)" font-family="Segoe UI, Arial, sans-serif" font-size="22">${escapeXml(title)}</text>
-      ${topGearMarkup}
+      ${topSlotMarkup}
 
-      <text x="306" y="300" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">BIO</text>
-      <text x="306" y="338" fill="rgba(255,255,255,0.92)" font-family="Segoe UI, Arial, sans-serif" font-size="20">${escapeXml(bio)}</text>
-      <text x="306" y="388" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">SERVER</text>
-      <text x="306" y="425" fill="rgba(255,255,255,0.9)" font-family="Segoe UI, Arial, sans-serif" font-size="22">${escapeXml(guildName)}</text>
+      <text x="306" y="${bioLabelY}" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">BIO</text>
+      ${renderTextLines(bioLines, {
+        x: 306,
+        y: bioTextY,
+        lineHeight: 24,
+        fill: 'rgba(255,255,255,0.92)',
+        fontSize: 18
+      })}
+      <text x="306" y="${serverLabelY}" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">SERVER</text>
+      ${renderTextLines(serverLines, {
+        x: 306,
+        y: serverTextY,
+        lineHeight: 22,
+        fill: 'rgba(255,255,255,0.9)',
+        fontSize: 20
+      })}
 
-      <text x="306" y="474" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">SOCIAL</text>
-      <text x="306" y="512" fill="rgba(255,255,255,0.9)" font-family="Segoe UI, Arial, sans-serif" font-size="22">Followers ${escapeXml(String(followers))} • Following ${escapeXml(String(following))}</text>
-      <text x="306" y="542" fill="rgba(255,255,255,0.72)" font-family="Segoe UI, Arial, sans-serif" font-size="19">${escapeXml(marriageLabel)}</text>
+      <text x="306" y="${socialLabelY}" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">SOCIAL</text>
+      ${renderTextLines(socialLines, {
+        x: 306,
+        y: socialTextY,
+        lineHeight: 22,
+        fill: 'rgba(255,255,255,0.9)',
+        fontSize: 20
+      })}
+      ${renderTextLines(marriageLines, {
+        x: 306,
+        y: marriageTextY,
+        lineHeight: 20,
+        fill: 'rgba(255,255,255,0.72)',
+        fontSize: 17
+      })}
 
       <text x="84" y="292" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">STATS</text>
       <text x="84" y="345" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="20">Level</text>
@@ -200,6 +278,49 @@ async function createBackgroundLayer(wallpaperUrl) {
     .toBuffer();
 }
 
+async function createTopItemIconLayer(entry, size = 92) {
+  const borderColor = getRarityMeta(entry?.item?.rarity || 'common').color;
+  const frame = Buffer.from(`
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="2" width="${size - 4}" height="${size - 4}" rx="24" fill="rgba(8, 6, 10, 0.92)" stroke="${escapeXml(borderColor)}" stroke-width="4" />
+      <rect x="12" y="12" width="${size - 24}" height="${size - 24}" rx="18" fill="rgba(18, 8, 12, 0.96)" />
+    </svg>
+  `);
+
+  const base = sharp({
+    create: {
+      width: size,
+      height: size,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 }
+    }
+  }).composite([{ input: frame }]);
+
+  const imageBuffer = await fetchImageBuffer(entry?.item?.imageUrl || entry?.item?.emojiUrl || '');
+  if (!imageBuffer) return await base.png().toBuffer();
+
+  const innerSize = size - 24;
+  const mask = Buffer.from(`
+    <svg width="${innerSize}" height="${innerSize}" viewBox="0 0 ${innerSize} ${innerSize}" xmlns="http://www.w3.org/2000/svg">
+      <rect width="${innerSize}" height="${innerSize}" rx="18" fill="#ffffff" />
+    </svg>
+  `);
+
+  const icon = await sharp(imageBuffer, { failOnError: false })
+    .resize(innerSize, innerSize, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .composite([{ input: mask, blend: 'dest-in' }])
+    .png()
+    .toBuffer()
+    .catch(() => null);
+
+  if (!icon) return await base.png().toBuffer();
+
+  return await base
+    .composite([{ input: icon, top: 12, left: 12 }])
+    .png()
+    .toBuffer();
+}
+
 async function createProfileCardBuffer({
   user,
   wallpaper,
@@ -213,8 +334,8 @@ async function createProfileCardBuffer({
 }) {
   const safeName = clampText(displayName || user?.username || user?.discordId || 'Unknown Player', 28);
   const safeTitle = clampText(user?.profileTitle && user.profileTitle !== 'default' ? user.profileTitle : 'No title equipped', 34);
-  const safeBio = clampText(user?.profileBio && user.profileBio !== 'default' ? user.profileBio : 'No profile bio set yet.', 86);
-  const safeGuildName = clampText(guildName || user?.originGuildName || 'RoBot Network', 32);
+  const safeBio = clampText(user?.profileBio && user.profileBio !== 'default' ? user.profileBio : 'No profile bio set yet.', 120);
+  const safeGuildName = clampText(guildName || user?.originGuildName || 'RoBot Network', 56);
   const followers = Number(user?.followers?.length || 0).toLocaleString('en-US');
   const following = Number(user?.following?.length || 0).toLocaleString('en-US');
   const ringName = clampText(marriageRing?.name || snapshot?.ring?.name || '', 22);
@@ -229,7 +350,9 @@ async function createProfileCardBuffer({
     energy: `${formatCompactNumber(user?.energy || 0)}/${formatCompactNumber(user?.energyMax || 0)}`
   };
 
-  const [background, avatar, overlay] = await Promise.all([
+  const topSlots = getTopItemSlots();
+  const topEntries = topSlots.map((_, index) => topPvpItems[index] || null);
+  const [background, avatar, overlay, ...topItemLayers] = await Promise.all([
     createBackgroundLayer(wallpaper?.wallpaperUrl || ''),
     createAvatarLayer(avatarUrl),
     Promise.resolve(
@@ -244,7 +367,8 @@ async function createProfileCardBuffer({
         marriageLabel,
         topPvpItems
       })
-    )
+    ),
+    ...topEntries.map((entry) => createTopItemIconLayer(entry))
   ]);
 
   const composites = [{ input: overlay }];
@@ -267,6 +391,16 @@ async function createProfileCardBuffer({
     input: avatarRing,
     top: 78,
     left: 68
+  });
+
+  topSlots.forEach((slot, index) => {
+    const layer = topItemLayers[index];
+    if (!layer) return;
+    composites.push({
+      input: layer,
+      top: slot.top,
+      left: slot.left
+    });
   });
 
   return await sharp(background)

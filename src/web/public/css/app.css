@@ -2391,6 +2391,10 @@ code {
   min-height: 44px;
 }
 
+.economy-item-form .input-group {
+  flex-wrap: nowrap;
+}
+
 .economy-item-flags {
   display: flex;
   align-items: center;
@@ -2472,6 +2476,10 @@ code {
 .item-id-code {
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.item-id-input {
+  min-width: 16rem;
 }
 
 .item-media-thumb {

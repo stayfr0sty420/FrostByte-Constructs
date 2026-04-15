@@ -2603,6 +2603,7 @@ router.get('/dashboard', requireAdmin, requireGuild, async (req, res) => {
 router.get('/economy/items', requireAdmin, requireGuild, async (req, res) => {
   await normalizeLegacyItemCatalog();
   const q = String(req.query.q || '').trim().slice(0, 80);
+  const editItemId = String(req.query.edit || '').trim();
   const filter = q
     ? {
         $or: [
@@ -2617,11 +2618,14 @@ router.get('/economy/items', requireAdmin, requireGuild, async (req, res) => {
   const items = (await Item.find(filter).sort({ updatedAt: -1, createdAt: -1 }).limit(300).lean())
     .map((item) => normalizeItemPayload(item, { generateIdIfMissing: false }))
     .sort((a, b) => compareRarity(a.rarity, b.rarity) || String(a.name || '').localeCompare(String(b.name || '')));
+  const editingItemRaw = editItemId ? await Item.findOne({ itemId: editItemId }).lean().catch(() => null) : null;
+  const editingItem = editingItemRaw ? normalizeItemPayload(editingItemRaw, { generateIdIfMissing: false }) : null;
   const flash = req.session.flash || null;
   delete req.session.flash;
   return res.render('pages/admin/economy_items', {
     title: 'Items',
     items,
+    editingItem,
     q,
     flash,
     itemTypes: ITEM_TYPES,
@@ -2633,6 +2637,7 @@ router.get('/economy/items', requireAdmin, requireGuild, async (req, res) => {
 
 router.post('/economy/items', requireAdmin, requireGuild, async (req, res) => {
   let doc = buildItemPayloadFromBody(req.body);
+  const editingItemId = String(req.body.editingItemId || '').trim();
   if (!doc.name || !doc.type || !doc.rarity) {
     setFlash(req, { type: 'warning', message: 'Name, type, and rarity are required.' });
     return res.redirect('/admin/economy/items');
@@ -2646,11 +2651,18 @@ router.post('/economy/items', requireAdmin, requireGuild, async (req, res) => {
     return res.redirect('/admin/economy/items');
   }
 
-  if (!doc.itemId) doc.itemId = generateItemId();
-  const existing = await Item.findOne({ itemId: doc.itemId });
-  if (existing) {
-    setFlash(req, { type: 'warning', message: `Editing existing items is disabled. Create a new item instead of reusing ${String(doc.itemId || '').toUpperCase()}.` });
-    return res.redirect('/admin/economy/items');
+  let existing = null;
+  if (editingItemId) {
+    existing = await Item.findOne({ itemId: editingItemId });
+    if (!existing) {
+      setFlash(req, { type: 'warning', message: `Could not find item ${editingItemId} to edit.` });
+      return res.redirect('/admin/economy/items');
+    }
+    doc.itemId = existing.itemId;
+  } else if (!doc.itemId) {
+    doc.itemId = generateItemId();
+  } else {
+    existing = await Item.findOne({ itemId: doc.itemId });
   }
 
   try {
@@ -2672,6 +2684,12 @@ router.post('/economy/items', requireAdmin, requireGuild, async (req, res) => {
     doc.wallpaperUrl = doc.imageUrl;
   }
   if (!doc.itemScore) doc.itemScore = itemScoreFor(doc);
+  if (existing) {
+    await Item.updateOne({ _id: existing._id }, { $set: doc });
+    setFlash(req, { type: 'success', message: `Updated item ${doc.name} (${doc.itemId}).` });
+    return res.redirect('/admin/economy/items');
+  }
+
   await Item.create(doc);
   setFlash(req, { type: 'success', message: `Created item ${doc.name} (${doc.itemId}).` });
   return res.redirect('/admin/economy/items');
