@@ -51,13 +51,13 @@
                 <input type="hidden" name="imageUploadData" value="" data-item-image-data />
                 <input type="hidden" name="editingItemId" value="<%= editing?.itemId || '' %>" />
 
-                <div class="col-12 col-lg-6">
+                <div class="col-12 col-lg-7">
                   <label class="form-label">Item ID</label>
                   <div class="input-group">
                     <input
                       class="form-control item-id-input"
                       name="itemId"
-                      placeholder="Auto-generated on save"
+                      placeholder="Leave blank for auto ID or paste an existing ID to update"
                       value="<%= editing?.itemId || '' %>"
                       <%= editing ? 'readonly' : '' %>
                       data-item-id-input
@@ -68,7 +68,7 @@
                     <% if (editing) { %>
                       Item ID is locked while editing so linked inventories stay safe.
                     <% } else { %>
-                      Example: <code class="item-id-code"><%= generatedItemId %></code>
+                      Example: <code class="item-id-code"><%= generatedItemId %></code> • entering an existing Item ID will update that item.
                     <% } %>
                   </div>
                 </div>
@@ -76,7 +76,7 @@
                   <label class="form-label">Name</label>
                   <input class="form-control" name="name" placeholder="Arcblade" value="<%= editing?.name || '' %>" required />
                 </div>
-                <div class="col-12 col-lg-3">
+                <div class="col-12 col-lg-2">
                   <label class="form-label">Type</label>
                   <select class="form-select" name="type" required>
                     <% itemTypes.forEach(type => { %>

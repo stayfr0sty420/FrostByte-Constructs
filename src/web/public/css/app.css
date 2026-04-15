@@ -2393,6 +2393,7 @@ code {
 
 .economy-item-form .input-group {
   flex-wrap: nowrap;
+  width: 100%;
 }
 
 .economy-item-flags {
@@ -2479,7 +2480,8 @@ code {
 }
 
 .item-id-input {
-  min-width: 16rem;
+  flex: 1 1 24rem;
+  min-width: min(100%, 24rem);
 }
 
 .item-media-thumb {
@@ -3253,6 +3255,7 @@ code {
 .player-profile-copy {
   display: grid;
   gap: 0.35rem;
+  min-width: 0;
 }
 
 .player-profile-banner {
@@ -3280,43 +3283,84 @@ code {
   position: relative;
   z-index: 1;
   display: grid;
-  gap: 1rem;
+  grid-template-columns: minmax(0, 1.4fr) auto;
+  align-items: start;
+  gap: 1rem 1.25rem;
   padding: 1.15rem;
 }
 
 .player-profile-badge-strip {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(3, 88px);
+  justify-content: end;
   gap: 0.75rem;
 }
 
 .player-profile-badge {
   display: grid;
-  gap: 0.35rem;
-  min-width: min(100%, 210px);
-  padding: 0.8rem 0.9rem;
-  border-radius: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(8, 6, 10, 0.52);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  padding: 0.55rem;
+  border-radius: 22px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 6, 10, 0.72);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
+    0 12px 28px rgba(0, 0, 0, 0.24);
+  overflow: hidden;
 }
 
 .player-profile-badge--empty {
+  width: 100%;
+  height: auto;
+  min-height: 88px;
+  padding: 1rem;
+  border-width: 1px;
   color: rgba(226, 232, 240, 0.72);
+  place-items: start;
 }
 
-.player-profile-badge__rank {
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(248, 113, 113, 0.76);
+.player-profile-badge img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
-.player-profile-badge__name,
-.player-profile-badge__score {
+.player-profile-badge__fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 1.5rem;
+  font-weight: 700;
   color: rgba(248, 250, 252, 0.95);
-  font-weight: 600;
+}
+
+.player-profile-badge--common {
+  border-color: #94a3b8;
+}
+
+.player-profile-badge--rare {
+  border-color: #38bdf8;
+}
+
+.player-profile-badge--epic {
+  border-color: #a78bfa;
+}
+
+.player-profile-badge--pristine {
+  border-color: #fbbf24;
+}
+
+.player-profile-badge--transcendent {
+  border-color: #f97316;
+}
+
+.player-profile-badge--primordial {
+  border-color: #ef4444;
 }
 
 .player-profile-label {
@@ -3808,6 +3852,14 @@ code {
   .player-profile-meta-row {
     flex-direction: column;
     gap: 0.35rem;
+  }
+
+  .player-profile-banner__content {
+    grid-template-columns: 1fr;
+  }
+
+  .player-profile-badge-strip {
+    justify-content: start;
   }
 
   .user-action-form .btn {

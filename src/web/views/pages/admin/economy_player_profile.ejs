@@ -109,11 +109,16 @@
                   <div class="player-profile-badge-strip">
                     <% if (safeTopPvpItems.length) { %>
                       <% safeTopPvpItems.forEach((entry, index) => { const rarityClass = String(entry.item?.rarity || 'common').toLowerCase(); %>
-                        <div class="player-profile-badge">
-                          <span class="player-profile-badge__rank">TOP <%= index + 1 %></span>
-                          <span class="player-profile-badge__name"><%= entry.item?.name || entry.itemId %></span>
-                          <span class="rarity-pill rarity-pill--<%= rarityClass %>"><%= entry.item?.rarity || 'unknown' %></span>
-                          <span class="player-profile-badge__score">GS <%= fmtCompact(entry.combatScore || 0, 1) %><% if (entry.refinement) { %> • +<%= fmtCompact(entry.refinement, 1) %><% } %></span>
+                        <% const badgeSrc = entry.item?.imageUrl || entry.item?.emojiUrl || ''; %>
+                        <div
+                          class="player-profile-badge player-profile-badge--<%= rarityClass %>"
+                          title="<%= entry.item?.name || entry.itemId %> • <%= entry.item?.rarity || 'unknown' %><% if (entry.refinement) { %> • +<%= fmtCompact(entry.refinement, 1) %><% } %>"
+                        >
+                          <% if (badgeSrc) { %>
+                            <img src="<%= badgeSrc %>" alt="<%= entry.item?.name || entry.itemId %>" loading="lazy" />
+                          <% } else { %>
+                            <span class="player-profile-badge__fallback"><%= entry.item?.emojiText || `#${index + 1}` %></span>
+                          <% } %>
                         </div>
                       <% }) %>
                     <% } else { %>

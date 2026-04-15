@@ -3641,7 +3641,7 @@ router.post('/economy/users/:discordId/reset', requireAdmin, requireGuild, async
   }
 
   const preserved = { guildId: user.guildId, discordId: user.discordId, username: user.username };
-  user.balance = 0;
+  user.balance = 100000;
   user.bank = 0;
   user.bankMax = 5000;
   user.dailyStreak = 0;

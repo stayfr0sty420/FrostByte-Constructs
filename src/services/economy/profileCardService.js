@@ -139,17 +139,26 @@ function createOverlaySvg({
   marriageLabel,
   topPvpItems = []
 }) {
-  const bioLines = wrapText(bio, { maxChars: 40, maxLines: 2 });
-  const serverLines = wrapText(guildName, { maxChars: 28, maxLines: 1 });
-  const socialLines = wrapText(`Followers ${followers} • Following ${following}`, { maxChars: 28, maxLines: 1 });
-  const marriageLines = wrapText(marriageLabel, { maxChars: 42, maxLines: 1 });
-  const bioLabelY = 292;
-  const bioTextY = 326;
-  const serverLabelY = bioTextY + Math.max(1, bioLines.length) * 24 + 18;
-  const serverTextY = serverLabelY + 30;
-  const socialLabelY = serverTextY + Math.max(1, serverLines.length) * 22 + 18;
-  const socialTextY = socialLabelY + 30;
-  const marriageTextY = socialTextY + Math.max(1, socialLines.length) * 22 + 18;
+  const bioLines = wrapText(bio, { maxChars: 36, maxLines: 2 });
+  const serverLines = wrapText(guildName, { maxChars: 24, maxLines: 1 });
+  const socialLines = wrapText(`Followers ${followers} • Following ${following}`, { maxChars: 24, maxLines: 1 });
+  const marriageLines = wrapText(marriageLabel, { maxChars: 28, maxLines: 2 });
+  const infoLeft = 306;
+  const infoTop = 292;
+  const sectionGap = 14;
+  const labelSpacing = 26;
+  const bioLineHeight = 22;
+  const serverLineHeight = 20;
+  const socialLineHeight = 20;
+  const relationshipLineHeight = 18;
+  const bioLabelY = infoTop;
+  const bioTextY = bioLabelY + labelSpacing;
+  const serverLabelY = bioTextY + Math.max(1, bioLines.length) * bioLineHeight + sectionGap;
+  const serverTextY = serverLabelY + labelSpacing;
+  const socialLabelY = serverTextY + Math.max(1, serverLines.length) * serverLineHeight + sectionGap;
+  const socialTextY = socialLabelY + labelSpacing;
+  const relationshipLabelY = socialTextY + Math.max(1, socialLines.length) * socialLineHeight + sectionGap;
+  const relationshipTextY = relationshipLabelY + 24;
   const topSlotMarkup = getTopItemSlots()
     .map((slot, index) => {
       const rarityMeta = getRarityMeta(topPvpItems[index]?.item?.rarity || 'common');
@@ -188,35 +197,36 @@ function createOverlaySvg({
 
       <text x="306" y="${bioLabelY}" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">BIO</text>
       ${renderTextLines(bioLines, {
-        x: 306,
+        x: infoLeft,
         y: bioTextY,
-        lineHeight: 24,
+        lineHeight: bioLineHeight,
         fill: 'rgba(255,255,255,0.92)',
+        fontSize: 17
+      })}
+      <text x="${infoLeft}" y="${serverLabelY}" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">SERVER</text>
+      ${renderTextLines(serverLines, {
+        x: infoLeft,
+        y: serverTextY,
+        lineHeight: serverLineHeight,
+        fill: 'rgba(255,255,255,0.9)',
         fontSize: 18
       })}
-      <text x="306" y="${serverLabelY}" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">SERVER</text>
-      ${renderTextLines(serverLines, {
-        x: 306,
-        y: serverTextY,
-        lineHeight: 22,
-        fill: 'rgba(255,255,255,0.9)',
-        fontSize: 20
-      })}
 
-      <text x="306" y="${socialLabelY}" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">SOCIAL</text>
+      <text x="${infoLeft}" y="${socialLabelY}" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">SOCIAL</text>
       ${renderTextLines(socialLines, {
-        x: 306,
+        x: infoLeft,
         y: socialTextY,
-        lineHeight: 22,
+        lineHeight: socialLineHeight,
         fill: 'rgba(255,255,255,0.9)',
-        fontSize: 20
+        fontSize: 18
       })}
+      <text x="${infoLeft}" y="${relationshipLabelY}" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="15" letter-spacing="4">RELATIONSHIP</text>
       ${renderTextLines(marriageLines, {
-        x: 306,
-        y: marriageTextY,
-        lineHeight: 20,
+        x: infoLeft,
+        y: relationshipTextY,
+        lineHeight: relationshipLineHeight,
         fill: 'rgba(255,255,255,0.72)',
-        fontSize: 17
+        fontSize: 15
       })}
 
       <text x="84" y="292" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="16" letter-spacing="4">STATS</text>
