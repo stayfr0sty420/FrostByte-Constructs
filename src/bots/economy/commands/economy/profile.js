@@ -11,11 +11,11 @@ const {
   setWallpaper,
   follow,
   unfollow,
-  getProfile,
-  getSocialConnections
+  getProfile
 } = require('../../../../services/economy/profileService');
 const { buildCharacterSnapshot, buildTopCombatInventory } = require('../../../../services/economy/characterService');
 const { createProfileCardBuffer } = require('../../../../services/economy/profileCardService');
+const { replyWithSocialConnections } = require('./profileSocialShared');
 
 async function resolveDisplayName(interaction, target) {
   if (target?.id === interaction.user.id) {
@@ -24,22 +24,6 @@ async function resolveDisplayName(interaction, target) {
   const guild = interaction.guild;
   const member = guild ? await guild.members.fetch(target.id).catch(() => null) : null;
   return member?.displayName || target.globalName || target.username;
-}
-
-function buildSocialEmbed({ title, entries = [] }) {
-  const lines = entries.slice(0, 20).map((entry, index) => {
-    const username = entry.username || entry.discordId;
-    const titleText = entry.profileTitle && entry.profileTitle !== 'default' ? ` • ${entry.profileTitle}` : '';
-    const origin = entry.originGuildName ? ` • ${entry.originGuildName}` : '';
-    return `**${index + 1}.** <@${entry.discordId}> (${username})${titleText}${origin}`;
-  });
-
-  return new EmbedBuilder()
-    .setTitle(title)
-    .setColor(0xe11d48)
-    .setDescription(lines.length ? lines.join('\n') : 'No entries yet.')
-    .setFooter({ text: entries.length > 20 ? `Showing 20 of ${entries.length}` : `${entries.length} total` })
-    .setTimestamp();
 }
 
 module.exports = {
@@ -202,18 +186,7 @@ module.exports = {
 
     if (sub === 'followers' || sub === 'following') {
       const target = interaction.options.getUser('user') || interaction.user;
-      if (target.id === interaction.user.id) {
-        await getOrCreateUser({ guildId, discordId: target.id, username: target.username });
-      }
-
-      const result = await getSocialConnections({ guildId, discordId: target.id, type: sub });
-      if (!result.ok) return await interaction.reply({ content: result.reason, ephemeral: true });
-
-      const title = sub === 'followers' ? `${target.username}'s Followers` : `${target.username}'s Following`;
-      return await interaction.reply({
-        embeds: [buildSocialEmbed({ title, entries: result.entries })],
-        ephemeral: true
-      });
+      return await replyWithSocialConnections(interaction, { guildId, targetUser: target, type: sub });
     }
   }
 };

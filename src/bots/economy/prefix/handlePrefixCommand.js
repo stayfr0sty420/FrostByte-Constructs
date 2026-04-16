@@ -63,6 +63,11 @@ const ALIASES = new Map([
   ['gcoins', 'grant'],
   ['grantcoins', 'grant'],
   ['award', 'grant'],
+  ['send', 'pay'],
+  ['tip', 'pay'],
+  ['sendcredits', 'pay'],
+  ['givecredits', 'pay'],
+  ['paycredits', 'pay'],
 
   // Gambling
   ['cf', 'coinflip'],

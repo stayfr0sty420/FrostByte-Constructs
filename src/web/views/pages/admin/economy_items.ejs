@@ -24,7 +24,7 @@
       <% const editing = editingItem || null; %>
       <% const editingStats = editing?.stats || {}; %>
       <% const editingEffects = editing?.effects || {}; %>
-      <% const editingPreview = editing?.imageUrl || editing?.emojiUrl || ''; %>
+      <% const editingPreview = editing?.imageUrl || editing?.wallpaperUrl || editing?.emojiUrl || ''; %>
 
       <div class="row g-4">
         <div class="col-12 col-xl-8">
@@ -59,14 +59,13 @@
                       name="itemId"
                       placeholder="Leave blank for auto ID or paste an existing ID to update"
                       value="<%= editing?.itemId || '' %>"
-                      <%= editing ? 'readonly' : '' %>
                       data-item-id-input
                     />
-                    <button class="btn btn-outline-secondary" type="button" data-item-id-regenerate <%= editing ? 'disabled' : '' %>>Generate</button>
+                    <button class="btn btn-outline-secondary" type="button" data-item-id-regenerate>Generate</button>
                   </div>
                   <div class="form-text">
                     <% if (editing) { %>
-                      Item ID is locked while editing so linked inventories stay safe.
+                      You can keep the current ID or generate a clean alphanumeric one. Saving will remap linked inventories, loadouts, wallpaper links, marriage rings, shop listings, and gacha references automatically.
                     <% } else { %>
                       Example: <code class="item-id-code"><%= generatedItemId %></code> • entering an existing Item ID will update that item.
                     <% } %>
@@ -106,7 +105,7 @@
 
                 <div class="col-12">
                   <div class="economy-item-upload-card">
-                    <div class="economy-item-upload-card__preview" data-item-image-preview>
+                    <div class="economy-item-upload-card__preview" data-item-image-preview data-current-src="<%= editingPreview %>">
                       <% if (editingPreview) { %>
                         <img src="<%= editingPreview %>" alt="Item preview" />
                       <% } else { %>
@@ -348,8 +347,11 @@
         const regenerateBtn = form.querySelector('[data-item-id-regenerate]');
         const imageInput = form.querySelector('[data-item-image-input]');
         const imageDataInput = form.querySelector('[data-item-image-data]');
+        const imageUrlInput = form.querySelector('[name="imageUrl"]');
+        const wallpaperUrlInput = form.querySelector('[name="wallpaperUrl"]');
         const preview = form.querySelector('[data-item-image-preview]');
         const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        const currentPreviewSrc = String(preview?.dataset.currentSrc || '').trim();
 
         const generateId = () => {
           if (window.crypto?.getRandomValues) {
@@ -374,14 +376,31 @@
           preview.innerHTML = `<img src="${src}" alt="Item preview" />`;
         };
 
+        const resolvePreviewSource = () => {
+          const imageUrl = String(imageUrlInput?.value || '').trim();
+          if (imageUrl) return imageUrl;
+          const wallpaperUrl = String(wallpaperUrlInput?.value || '').trim();
+          if (wallpaperUrl) return wallpaperUrl;
+          return currentPreviewSrc;
+        };
+
         regenerateBtn?.addEventListener('click', () => ensureId(true));
         ensureId(false);
+        setPreview(resolvePreviewSource(), 'No picture selected');
+
+        const handleUrlPreview = () => {
+          if (String(imageDataInput?.value || '').trim()) return;
+          setPreview(resolvePreviewSource(), 'No picture selected');
+        };
+
+        imageUrlInput?.addEventListener('input', handleUrlPreview);
+        wallpaperUrlInput?.addEventListener('input', handleUrlPreview);
 
         imageInput?.addEventListener('change', () => {
           const [file] = Array.from(imageInput.files || []);
           if (!file) {
             if (imageDataInput) imageDataInput.value = '';
-            setPreview('', 'No picture selected');
+            setPreview(resolvePreviewSource(), 'No picture selected');
             return;
           }
 

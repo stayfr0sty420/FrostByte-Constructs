@@ -6,6 +6,7 @@ const AdminUser = require('../../db/models/AdminUser');
 const GuildConfig = require('../../db/models/GuildConfig');
 const User = require('../../db/models/User');
 const Item = require('../../db/models/Item');
+const GachaBox = require('../../db/models/GachaBox');
 const ShopListing = require('../../db/models/ShopListing');
 const Transaction = require('../../db/models/Transaction');
 const Backup = require('../../db/models/Backup');
@@ -90,6 +91,7 @@ const { computeGearScore } = require('../../services/economy/equipmentService');
 const { ensureVoiceConnection, disconnectVoice } = require('../../jobs/voiceScheduler');
 const { buildVerifyPanelMessage, buildVerifyPanelRow } = require('../../bots/verification/util/verifyMessages');
 const { createPasskeyRegistrationOptions, verifyPasskeyRegistration } = require('../utils/passkeyService');
+const { withOptionalTransaction } = require('../../services/utils/withOptionalTransaction');
 
 const router = express.Router();
 const ACCOUNT_AUDIT_STAGES = ['account-create', 'account-enable', 'account-disable', 'account-delete', 'account-update'];
@@ -861,6 +863,35 @@ function buildItemPayloadFromBody(body = {}) {
 
 function buildRarityMetaMap() {
   return Object.fromEntries(CORE_RARITIES.map((rarity) => [rarity, getRarityMeta(rarity)]));
+}
+
+async function renameCatalogItemReferences({ oldItemId, newItemId, session = null } = {}) {
+  const safeOldItemId = String(oldItemId || '').trim();
+  const safeNewItemId = String(newItemId || '').trim();
+  if (!safeOldItemId || !safeNewItemId || safeOldItemId === safeNewItemId) return;
+
+  const sessionOptions = session ? { session } : {};
+  const equippedSlots = [...new Set([...Object.keys(ECONOMY_EQUIP_SLOT_OPTIONS), 'accessory'])];
+
+  await Promise.all([
+    User.updateMany(
+      { 'inventory.itemId': safeOldItemId },
+      { $set: { 'inventory.$[entry].itemId': safeNewItemId } },
+      { ...sessionOptions, arrayFilters: [{ 'entry.itemId': safeOldItemId }] }
+    ),
+    User.updateMany({ profileWallpaper: safeOldItemId }, { $set: { profileWallpaper: safeNewItemId } }, sessionOptions),
+    User.updateMany({ marriageRingItemId: safeOldItemId }, { $set: { marriageRingItemId: safeNewItemId } }, sessionOptions),
+    ShopListing.updateMany({ itemId: safeOldItemId }, { $set: { itemId: safeNewItemId } }, sessionOptions),
+    GachaBox.updateMany({ boxItemId: safeOldItemId }, { $set: { boxItemId: safeNewItemId } }, sessionOptions),
+    GachaBox.updateMany(
+      { 'drops.itemId': safeOldItemId },
+      { $set: { 'drops.$[drop].itemId': safeNewItemId } },
+      { ...sessionOptions, arrayFilters: [{ 'drop.itemId': safeOldItemId }] }
+    ),
+    ...equippedSlots.map((slot) =>
+      User.updateMany({ [`equipped.${slot}`]: safeOldItemId }, { $set: { [`equipped.${slot}`]: safeNewItemId } }, sessionOptions)
+    )
+  ]);
 }
 
 async function normalizeLegacyItemCatalog() {
@@ -2658,7 +2689,14 @@ router.post('/economy/items', requireAdmin, requireGuild, async (req, res) => {
       setFlash(req, { type: 'warning', message: `Could not find item ${editingItemId} to edit.` });
       return res.redirect('/admin/economy/items');
     }
-    doc.itemId = existing.itemId;
+    doc.itemId = String(doc.itemId || '').trim() || existing.itemId;
+    if (doc.itemId !== existing.itemId) {
+      const duplicate = await Item.findOne({ itemId: doc.itemId }).select('_id').lean().catch(() => null);
+      if (duplicate) {
+        setFlash(req, { type: 'warning', message: `Item ID ${doc.itemId} is already being used by another item.` });
+        return res.redirect(`/admin/economy/items?edit=${encodeURIComponent(editingItemId)}`);
+      }
+    }
   } else if (!doc.itemId) {
     doc.itemId = generateItemId();
   } else {
@@ -2685,8 +2723,22 @@ router.post('/economy/items', requireAdmin, requireGuild, async (req, res) => {
   }
   if (!doc.itemScore) doc.itemScore = itemScoreFor(doc);
   if (existing) {
-    await Item.updateOne({ _id: existing._id }, { $set: doc });
-    setFlash(req, { type: 'success', message: `Updated item ${doc.name} (${doc.itemId}).` });
+    const previousItemId = String(existing.itemId || '').trim();
+    const itemIdChanged = previousItemId !== doc.itemId;
+
+    await withOptionalTransaction(async (session) => {
+      if (itemIdChanged) {
+        await renameCatalogItemReferences({ oldItemId: previousItemId, newItemId: doc.itemId, session });
+      }
+      await Item.updateOne({ _id: existing._id }, { $set: doc }, session ? { session } : undefined);
+    });
+
+    setFlash(req, {
+      type: 'success',
+      message: itemIdChanged
+        ? `Updated item ${doc.name} (${previousItemId} → ${doc.itemId}).`
+        : `Updated item ${doc.name} (${doc.itemId}).`
+    });
     return res.redirect('/admin/economy/items');
   }
 
