@@ -4,6 +4,7 @@ const { CORE_RARITIES, ITEM_TYPES } = require('../../config/constants');
 const ITEM_ID_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const ITEM_ID_LENGTH = 12;
 const generateItemId = customAlphabet(ITEM_ID_ALPHABET, ITEM_ID_LENGTH);
+const LOCAL_ITEM_ASSET_PREFIX = '/assets/images/economy/items/';
 
 const LEGACY_RARITY_ALIASES = Object.freeze({
   uncommon: 'common',
@@ -76,6 +77,29 @@ function buildItemEmojiName({ itemId, name }) {
   return base.startsWith('rb_') ? base : `rb_${base}`.slice(0, 32);
 }
 
+function hasLikelyImageExtension(value) {
+  return /\.(png|jpe?g|gif|webp|avif|svg)(?:[?#].*)?$/i.test(normalizeString(value));
+}
+
+function normalizeItemMediaUrl(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return '';
+  if (normalized.startsWith(LOCAL_ITEM_ASSET_PREFIX) && !hasLikelyImageExtension(normalized)) return '';
+  return normalized;
+}
+
+function getItemDisplayMediaUrl(item, { includeWallpaper = false } = {}) {
+  const imageUrl = normalizeItemMediaUrl(item?.imageUrl);
+  if (imageUrl) return imageUrl;
+
+  if (includeWallpaper) {
+    const wallpaperUrl = normalizeString(item?.wallpaperUrl);
+    if (wallpaperUrl) return wallpaperUrl;
+  }
+
+  return normalizeString(item?.emojiUrl);
+}
+
 function normalizeItemPayload(payload = {}, { generateIdIfMissing = true } = {}) {
   const itemId = normalizeString(payload.itemId) || (generateIdIfMissing ? generateItemId() : '');
   return {
@@ -86,7 +110,7 @@ function normalizeItemPayload(payload = {}, { generateIdIfMissing = true } = {})
     type: normalizeItemType(payload.type),
     rarity: normalizeItemRarity(payload.rarity),
     tags: normalizeStringList(payload.tags),
-    imageUrl: normalizeString(payload.imageUrl),
+    imageUrl: normalizeItemMediaUrl(payload.imageUrl),
     imageHash: normalizeString(payload.imageHash),
     wallpaperUrl: normalizeString(payload.wallpaperUrl),
     emojiId: normalizeString(payload.emojiId),
@@ -133,5 +157,7 @@ module.exports = {
   getRarityMeta,
   compareRarity,
   buildItemEmojiName,
-  getItemVisualToken
+  getItemVisualToken,
+  normalizeItemMediaUrl,
+  getItemDisplayMediaUrl
 };

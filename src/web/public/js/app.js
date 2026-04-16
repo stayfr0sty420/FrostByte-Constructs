@@ -105,17 +105,30 @@
   }
 
   function initImageFallbacks() {
-    const images = document.querySelectorAll('img[data-fallback-img]');
+    const images = document.querySelectorAll('img[data-fallback-img], img[data-fallback-src]');
     images.forEach((img) => {
       const parent = img.closest('[data-fallback]');
-      if (!parent) return;
-      const markFailed = () => parent.classList.remove('image-loaded');
-      const markOk = () => parent.classList.add('image-loaded');
+      let fallbackUsed = false;
+      const fallbackSrc = String(img.getAttribute('data-fallback-src') || '').trim();
+
+      const tryFallback = () => {
+        if (!fallbackSrc || fallbackUsed || img.getAttribute('src') === fallbackSrc) return false;
+        fallbackUsed = true;
+        img.setAttribute('src', fallbackSrc);
+        return true;
+      };
+
+      const markFailed = () => parent?.classList.remove('image-loaded');
+      const markOk = () => parent?.classList.add('image-loaded');
       if (img.complete) {
-        if (img.naturalWidth === 0) markFailed();
+        if (img.naturalWidth === 0) {
+          if (!tryFallback()) markFailed();
+        }
         else markOk();
       }
-      img.addEventListener('error', markFailed);
+      img.addEventListener('error', () => {
+        if (!tryFallback()) markFailed();
+      });
       img.addEventListener('load', markOk);
     });
   }

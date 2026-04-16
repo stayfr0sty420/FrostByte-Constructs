@@ -1,4 +1,5 @@
 const path = require('path');
+const { listJsFiles } = require('../../bots/shared/fileWalker');
 const express = require('express');
 const QRCode = require('qrcode');
 const speakeasy = require('speakeasy');
@@ -1252,6 +1253,19 @@ function listCommands(client) {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function listCommandsFromFiles(commandsDir) {
+  const files = listJsFiles(commandsDir).sort((a, b) => a.localeCompare(b));
+  return files
+    .map((file) => {
+      // eslint-disable-next-line global-require, import/no-dynamic-require
+      const cmd = require(file);
+      const json = cmd?.data?.toJSON ? cmd.data.toJSON() : {};
+      return { name: json.name || '', description: json.description || '' };
+    })
+    .filter((c) => c.name)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 function inviteLink(clientId) {
   const id = String(clientId || '').trim();
   if (!id) return '';
@@ -1532,11 +1546,10 @@ router.get('/', requireAdmin, async (req, res) => {
 });
 
 router.get('/help', requireAdmin, async (req, res) => {
-  const discord = req.app.locals.discord;
   const commands = {
-    economy: listCommands(discord?.economy),
-    backup: listCommands(discord?.backup),
-    verification: listCommands(discord?.verification)
+    economy: listCommandsFromFiles(path.join(process.cwd(), 'src', 'bots', 'economy', 'commands')),
+    backup: listCommandsFromFiles(path.join(process.cwd(), 'src', 'bots', 'backup', 'commands')),
+    verification: listCommandsFromFiles(path.join(process.cwd(), 'src', 'bots', 'verification', 'commands'))
   };
 
   const baseUrl = env.PUBLIC_BASE_URL || `http://localhost:${env.PORT}`;

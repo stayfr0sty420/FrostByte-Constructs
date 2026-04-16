@@ -4,7 +4,7 @@ const path = require('path');
 const sharp = require('sharp');
 const Item = require('../../db/models/Item');
 const { env } = require('../../config/env');
-const { buildItemEmojiName } = require('./itemService');
+const { buildItemEmojiName, normalizeItemMediaUrl } = require('./itemService');
 
 const ITEM_IMAGE_DIR = path.join(process.cwd(), 'images', 'economy', 'items');
 const ITEM_IMAGE_PUBLIC_ROOT = '/assets/images/economy/items';
@@ -207,7 +207,7 @@ async function syncItemMedia({ client, itemId, itemName, imageUploadData, imageU
   const inputBuffer = await readImageInputBuffer({ imageUploadData, imageUrl });
   if (!inputBuffer) {
     return {
-      imageUrl: normalizeString(currentItem?.imageUrl),
+      imageUrl: normalizeItemMediaUrl(currentItem?.imageUrl),
       imageHash: normalizeString(currentItem?.imageHash),
       emojiId: normalizeString(currentItem?.emojiId),
       emojiName: normalizeString(currentItem?.emojiName),

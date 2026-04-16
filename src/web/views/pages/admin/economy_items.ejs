@@ -25,6 +25,7 @@
       <% const editingStats = editing?.stats || {}; %>
       <% const editingEffects = editing?.effects || {}; %>
       <% const editingPreview = editing?.imageUrl || editing?.wallpaperUrl || editing?.emojiUrl || ''; %>
+      <% const editingPreviewFallback = editing?.emojiUrl || editing?.wallpaperUrl || ''; %>
 
       <div class="row g-4">
         <div class="col-12 col-xl-8">
@@ -105,9 +106,18 @@
 
                 <div class="col-12">
                   <div class="economy-item-upload-card">
-                    <div class="economy-item-upload-card__preview" data-item-image-preview data-current-src="<%= editingPreview %>">
+                    <div
+                      class="economy-item-upload-card__preview"
+                      data-item-image-preview
+                      data-current-src="<%= editingPreview %>"
+                      data-current-fallback-src="<%= editingPreviewFallback %>"
+                    >
                       <% if (editingPreview) { %>
-                        <img src="<%= editingPreview %>" alt="Item preview" />
+                        <img
+                          src="<%= editingPreview %>"
+                          alt="Item preview"
+                          data-fallback-src="<%= editingPreviewFallback && editingPreviewFallback !== editingPreview ? editingPreviewFallback : '' %>"
+                        />
                       <% } else { %>
                         <span>No picture selected</span>
                       <% } %>
@@ -276,8 +286,8 @@
                   <tr>
                     <td data-label="Media">
                       <div class="item-media-thumb">
-                        <% if (it.imageUrl || it.emojiUrl) { %>
-                          <img src="<%= it.imageUrl || it.emojiUrl %>" alt="<%= it.name %>" loading="lazy" />
+                        <% if (it.imageUrl || it.emojiUrl) { const primarySrc = it.imageUrl || it.emojiUrl; const fallbackSrc = it.emojiUrl && it.emojiUrl !== primarySrc ? it.emojiUrl : ''; %>
+                          <img src="<%= primarySrc %>" alt="<%= it.name %>" loading="lazy" data-fallback-src="<%= fallbackSrc %>" />
                         <% } else { %>
                           <span><%= it.emojiText || 'IMG' %></span>
                         <% } %>
@@ -352,6 +362,7 @@
         const preview = form.querySelector('[data-item-image-preview]');
         const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
         const currentPreviewSrc = String(preview?.dataset.currentSrc || '').trim();
+        const currentPreviewFallbackSrc = String(preview?.dataset.currentFallbackSrc || '').trim();
 
         const generateId = () => {
           if (window.crypto?.getRandomValues) {
@@ -367,13 +378,14 @@
           if (force || !String(idInput.value || '').trim()) idInput.value = generateId();
         };
 
-        const setPreview = (src = '', label = 'No picture selected') => {
+        const setPreview = (src = '', label = 'No picture selected', fallbackSrc = '') => {
           if (!preview) return;
           if (!src) {
             preview.innerHTML = `<span>${label}</span>`;
             return;
           }
-          preview.innerHTML = `<img src="${src}" alt="Item preview" />`;
+          const fallbackAttr = fallbackSrc && fallbackSrc !== src ? ` data-fallback-src="${fallbackSrc}"` : '';
+          preview.innerHTML = `<img src="${src}" alt="Item preview"${fallbackAttr} />`;
         };
 
         const resolvePreviewSource = () => {
@@ -384,13 +396,19 @@
           return currentPreviewSrc;
         };
 
+        const resolvePreviewFallbackSource = () => {
+          const wallpaperUrl = String(wallpaperUrlInput?.value || '').trim();
+          if (!String(imageUrlInput?.value || '').trim() && wallpaperUrl) return currentPreviewFallbackSrc || '';
+          return currentPreviewFallbackSrc;
+        };
+
         regenerateBtn?.addEventListener('click', () => ensureId(true));
         ensureId(false);
-        setPreview(resolvePreviewSource(), 'No picture selected');
+        setPreview(resolvePreviewSource(), 'No picture selected', resolvePreviewFallbackSource());
 
         const handleUrlPreview = () => {
           if (String(imageDataInput?.value || '').trim()) return;
-          setPreview(resolvePreviewSource(), 'No picture selected');
+          setPreview(resolvePreviewSource(), 'No picture selected', resolvePreviewFallbackSource());
         };
 
         imageUrlInput?.addEventListener('input', handleUrlPreview);
@@ -400,7 +418,7 @@
           const [file] = Array.from(imageInput.files || []);
           if (!file) {
             if (imageDataInput) imageDataInput.value = '';
-            setPreview(resolvePreviewSource(), 'No picture selected');
+            setPreview(resolvePreviewSource(), 'No picture selected', resolvePreviewFallbackSource());
             return;
           }
 
