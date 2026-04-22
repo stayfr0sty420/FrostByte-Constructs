@@ -15,15 +15,21 @@ const {
 } = require('../../../../services/economy/profileService');
 const { buildCharacterSnapshot, buildTopCombatInventory } = require('../../../../services/economy/characterService');
 const { createProfileCardBuffer } = require('../../../../services/economy/profileCardService');
+const { formatMarriageDurationCompact } = require('../../../../services/economy/marriageService');
 const { replyWithSocialConnections } = require('./profileSocialShared');
 
 async function resolveDisplayName(interaction, target) {
   if (target?.id === interaction.user.id) {
-    return interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
+    return interaction.user.globalName || interaction.user.username || interaction.member?.displayName;
   }
+  return target?.globalName || target?.username || target?.id || 'Unknown Player';
+}
+
+async function resolveGuildDisplayName(interaction, discordId, fallback = '') {
   const guild = interaction.guild;
-  const member = guild ? await guild.members.fetch(target.id).catch(() => null) : null;
-  return member?.displayName || target.globalName || target.username;
+  if (!guild || !discordId) return fallback;
+  const member = await guild.members.fetch(discordId).catch(() => null);
+  return member?.user?.globalName || member?.user?.username || fallback;
 }
 
 module.exports = {
@@ -99,7 +105,23 @@ module.exports = {
       const ownedItemIds = [...new Set((Array.isArray(user.inventory) ? user.inventory : []).map((entry) => String(entry?.itemId || '').trim()).filter(Boolean))];
       const ownedItems = ownedItemIds.length ? await Item.find({ itemId: { $in: ownedItemIds } }).lean() : [];
       const itemMap = new Map(ownedItems.map((item) => [String(item.itemId || '').trim(), item]));
-      const topPvpItems = buildTopCombatInventory(user.inventory, itemMap, { limit: 3 });
+      const topPvpItems = snapshot.loadout
+        .filter((entry) => entry?.item && entry?.inventory)
+        .slice()
+        .sort((a, b) => {
+          const refineDiff = (Number(b.inventory?.refinement) || 0) - (Number(a.inventory?.refinement) || 0);
+          if (refineDiff !== 0) return refineDiff;
+          return (Number(b.item?.itemScore) || 0) - (Number(a.item?.itemScore) || 0);
+        })
+        .slice(0, 3);
+      if (!topPvpItems.length) {
+        topPvpItems.push(...buildTopCombatInventory(user.inventory, itemMap, { limit: 3 }));
+      }
+      const spouseName = await resolveGuildDisplayName(
+        interaction,
+        spouse?.discordId || user.marriedTo || '',
+        spouse?.username || spouse?.discordId || user.marriedTo || ''
+      );
 
       try {
         const buffer = await createProfileCardBuffer({
@@ -110,12 +132,13 @@ module.exports = {
           displayName,
           guildName: interaction.guild?.name || user.originGuildName || 'RoBot Network',
           avatarUrl: target.displayAvatarURL({ extension: 'png', size: 256 }),
-          spouseName: spouse?.username || spouse?.discordId || user.marriedTo || '',
+          spouseName,
           topPvpItems
         });
         const attachment = new AttachmentBuilder(buffer, { name: 'robot-profile.png' });
         return await interaction.reply({ files: [attachment], ephemeral: false });
       } catch (_error) {
+        const marriageLabel = user.marriedTo ? `${spouseName || user.marriedTo} (${formatMarriageDurationCompact(user.marriedSince)})` : 'Single';
         const embed = new EmbedBuilder()
           .setTitle(`${displayName}'s Profile`)
           .setColor(0xe11d48)
@@ -126,7 +149,7 @@ module.exports = {
             { name: 'Credits', value: formatCredits(user.balance, emojis.currency), inline: true },
             { name: 'Gear Score', value: formatNumber(snapshot.gearScore), inline: true },
             { name: 'Max HP', value: formatNumber(snapshot.maxHp), inline: true },
-            { name: 'Marriage', value: user.marriedTo ? `<@${user.marriedTo}>` : 'Single', inline: true },
+            { name: 'Marriage', value: marriageLabel, inline: true },
             { name: 'Followers', value: String(user.followers?.length || 0), inline: true },
             { name: 'Following', value: String(user.following?.length || 0), inline: true }
           )

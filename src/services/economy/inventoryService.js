@@ -50,12 +50,16 @@ async function addItemToInventory({ user, itemId, quantity, refinement = 0 }) {
   return { ok: true, item };
 }
 
-async function removeItemFromInventory({ user, itemId, quantity }) {
+async function removeItemFromInventory({ user, itemId, quantity, refinement = null }) {
   normalizeEconomyUserState(user);
   const qty = Math.max(0, Math.floor(Number(quantity) || 0));
   if (qty <= 0) return { ok: false, reason: 'Invalid quantity.' };
-
+  const requestedRefinement =
+    refinement === null || refinement === undefined || refinement === ''
+      ? null
+      : Math.max(0, Math.min(10, Math.floor(Number(refinement) || 0)));
   const matches = findInventoryEntries(user, itemId)
+    .filter((entry) => requestedRefinement === null || (Number(entry?.refinement) || 0) === requestedRefinement)
     .slice()
     .sort((a, b) => (Number(a?.refinement) || 0) - (Number(b?.refinement) || 0));
   const total = matches.reduce((sum, entry) => sum + Math.max(0, Number(entry.quantity) || 0), 0);
@@ -74,7 +78,7 @@ async function removeItemFromInventory({ user, itemId, quantity }) {
   }
 
   user.inventory = user.inventory.filter((entry) => Math.max(0, Number(entry.quantity) || 0) > 0);
-  return { ok: true };
+  return { ok: true, refinement: requestedRefinement };
 }
 
 module.exports = {

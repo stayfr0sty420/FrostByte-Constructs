@@ -36,6 +36,8 @@ module.exports = {
       )
       .setTimestamp();
 
+    if (result.mob?.imageUrl) embed.setThumbnail(result.mob.imageUrl);
+
     if (result.loots?.length) {
       embed.addFields({
         name: 'Loot',

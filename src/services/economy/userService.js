@@ -59,6 +59,17 @@ function normalizeEquipped(value) {
   return Object.fromEntries(EQUIPPED_SLOTS.map((slot) => [slot, normalizeNullableString(source[slot])]));
 }
 
+function normalizeEquippedRefinements(value) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(
+    EQUIPPED_SLOTS.map((slot) => {
+      const raw = source[slot];
+      if (raw === null || raw === undefined || raw === '') return [slot, null];
+      return [slot, clampInt(raw, 0, { min: 0, max: 10 })];
+    })
+  );
+}
+
 function normalizeGachaPity(value) {
   if (!Array.isArray(value)) return [];
   return value
@@ -167,6 +178,7 @@ function normalizeEconomyUserState(user, { now = new Date() } = {}) {
   changed = setNormalizedValue(user, 'sharedBankEnabled', Boolean(user.sharedBankEnabled)) || changed;
   changed = setNormalizedValue(user, 'stats', normalizeStats(user.stats)) || changed;
   changed = setNormalizedValue(user, 'equipped', normalizeEquipped(user.equipped)) || changed;
+  changed = setNormalizedValue(user, 'equippedRefinements', normalizeEquippedRefinements(user.equippedRefinements)) || changed;
   changed = setNormalizedValue(user, 'inventory', normalizeInventory(user.inventory)) || changed;
   changed = setNormalizedValue(user, 'following', normalizeStringList(user.following)) || changed;
   changed = setNormalizedValue(user, 'followers', normalizeStringList(user.followers)) || changed;

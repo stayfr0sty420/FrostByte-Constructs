@@ -3,7 +3,6 @@
 const { EmbedBuilder } = require('discord.js');
 const User = require('../../../db/models/User');
 const { getEconomyAccountGuildId } = require('../../../services/economy/accountScope');
-const { removeItemFromInventory } = require('../../../services/economy/inventoryService');
 const { performMarriage } = require('../../../services/economy/marriageService');
 
 async function handleMarriageComponent(client, interaction) {
@@ -44,13 +43,11 @@ async function handleMarriageComponent(client, interaction) {
   }
 
   if (action === 'decline') {
-    await removeItemFromInventory({ user: proposer, itemId: proposal.ringItemId, quantity: 1 }).catch(() => null);
-    await proposer.save().catch(() => null);
     client.state.marriage.delete(proposalId);
     const embed = new EmbedBuilder()
       .setTitle('Marriage Proposal')
       .setColor(0xe74c3c)
-      .setDescription(`❌ <@${proposal.partnerId}> declined the proposal.\nThe ring was consumed.`);
+      .setDescription(`❌ <@${proposal.partnerId}> declined the proposal.`);
     await interaction.update({ embeds: [embed], components: [] }).catch(() => null);
     return true;
   }

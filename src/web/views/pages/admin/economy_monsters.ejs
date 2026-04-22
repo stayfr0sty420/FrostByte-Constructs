@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+  <head>
+    <%- include('../../partials/head', { title }) %>
+  </head>
+  <body class="app admin-page economy-monsters-page">
+    <%- include('../../partials/nav') %>
+    <main class="container py-4">
+      <% const editing = editingMob || null; %>
+      <% const safeMobs = Array.isArray(mobs) ? mobs : []; %>
+      <% const safeItems = Array.isArray(items) ? items : []; %>
+
+      <section class="economy-items-hero mb-4">
+        <div>
+          <div class="hero-eyebrow">RoBot Monster Management</div>
+          <h1 class="hero-title mb-2">Monsters</h1>
+          <p class="hero-text mb-0">Add or tune hunt enemies with images, stats, spawn weighting, and custom item drops.</p>
+        </div>
+        <div class="text-muted small">Loaded <strong><%= Number(safeMobs.length || 0).toLocaleString('en-US') %></strong> monster(s)</div>
+      </section>
+
+      <% if (flash) { %>
+        <div class="alert alert-<%= flash.type || 'info' %>"><%= flash.message %></div>
+      <% } %>
+
+      <div class="row g-4">
+        <div class="col-12 col-xl-5">
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+                <div>
+                  <h2 class="h5 mb-1"><%= editing ? `Edit Monster • ${editing.mobId}` : 'Create Monster' %></h2>
+                  <div class="text-muted small">Drop format: <code>itemId|chance|qtyMin|qtyMax</code> per line.</div>
+                </div>
+                <% if (editing) { %>
+                  <a class="btn btn-outline-light btn-sm" href="/admin/economy/monsters">Clear Edit</a>
+                <% } %>
+              </div>
+
+              <form method="post" action="/admin/economy/monsters" class="row g-3">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                <input type="hidden" name="editingMobId" value="<%= editing?.mobId || '' %>" />
+
+                <div class="col-12 col-md-5">
+                  <label class="form-label">Mob ID</label>
+                  <input class="form-control" name="mobId" value="<%= editing?.mobId || '' %>" placeholder="void_knight" required />
+                </div>
+                <div class="col-12 col-md-7">
+                  <label class="form-label">Name</label>
+                  <input class="form-control" name="name" value="<%= editing?.name || '' %>" placeholder="Void Knight" required />
+                </div>
+
+                <div class="col-12">
+                  <label class="form-label">Description</label>
+                  <textarea class="form-control" name="description" rows="2" placeholder="Optional flavor text"><%= editing?.description || '' %></textarea>
+                </div>
+
+                <div class="col-6 col-md-4">
+                  <label class="form-label">Rarity</label>
+                  <select class="form-select" name="rarity" required>
+                    <% rarities.forEach(rarity => { %>
+                      <option value="<%= rarity %>" <%= editing?.rarity === rarity ? 'selected' : '' %>><%= rarity %></option>
+                    <% }) %>
+                  </select>
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label">Level Min</label>
+                  <input class="form-control" name="levelMin" type="number" min="1" max="255" value="<%= editing?.levelMin || 1 %>" />
+                </div>
+                <div class="col-6 col-md-4">
+                  <label class="form-label">Level Max</label>
+                  <input class="form-control" name="levelMax" type="number" min="1" max="255" value="<%= editing?.levelMax || 1 %>" />
+                </div>
+
+                <div class="col-6 col-md-3">
+                  <label class="form-label">HP</label>
+                  <input class="form-control" name="hp" type="number" min="1" value="<%= editing?.hp || 100 %>" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">ATK</label>
+                  <input class="form-control" name="atk" type="number" min="0" value="<%= editing?.atk || 10 %>" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">DEF</label>
+                  <input class="form-control" name="def" type="number" min="0" value="<%= editing?.def || 0 %>" />
+                </div>
+                <div class="col-6 col-md-3">
+                  <label class="form-label">EXP</label>
+                  <input class="form-control" name="exp" type="number" min="0" value="<%= editing?.exp || 10 %>" />
+                </div>
+
+                <div class="col-12 col-md-6">
+                  <label class="form-label">Spawn Weight</label>
+                  <input class="form-control" name="spawnWeight" type="number" min="0" step="0.01" value="<%= editing?.spawnWeight || 1 %>" />
+                </div>
+                <div class="col-12 col-md-6">
+                  <label class="form-label">Image URL</label>
+                  <input class="form-control" name="imageUrl" value="<%= editing?.imageUrl || '' %>" placeholder="Optional monster image URL" />
+                </div>
+
+                <div class="col-12">
+                  <label class="form-label">Drops</label>
+                  <textarea class="form-control" name="drops" rows="6" placeholder="gear_arcblade|0.08|1|1&#10;mat_refine_crystal|0.35|1|3"><%= editingDropsText || '' %></textarea>
+                  <div class="form-text">Available items: <%= safeItems.slice(0, 12).map(item => item.itemId).join(', ') %><%= safeItems.length > 12 ? ', ...' : '' %></div>
+                </div>
+
+                <div class="col-12">
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="active" value="1" <%= editing ? (editing.active !== false ? 'checked' : '') : 'checked' %> />
+                    <label class="form-check-label">Active in hunt rotation</label>
+                  </div>
+                </div>
+
+                <div class="col-12 d-flex justify-content-end gap-2">
+                  <% if (editing) { %>
+                    <a class="btn btn-outline-light" href="/admin/economy/monsters">Cancel</a>
+                  <% } %>
+                  <button class="btn btn-primary" type="submit"><%= editing ? 'Save Monster' : 'Create Monster' %></button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12 col-xl-7">
+          <div class="card shadow-sm mb-4">
+            <div class="card-body">
+              <h2 class="h5 mb-3">Find Monsters</h2>
+              <form method="get" action="/admin/economy/monsters" class="row g-2">
+                <div class="col-12 col-md">
+                  <input class="form-control" name="q" value="<%= q || '' %>" placeholder="Search by ID, name, rarity, description" />
+                </div>
+                <div class="col-12 col-md-auto d-grid">
+                  <button class="btn btn-outline-light" type="submit">Search</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <div class="card shadow-sm">
+            <div class="card-body">
+              <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
+                <h2 class="h5 mb-0">Monster Database</h2>
+                <div class="text-muted small">Results: <%= safeMobs.length %></div>
+              </div>
+
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Monster</th>
+                      <th>Levels</th>
+                      <th>Stats</th>
+                      <th>Drops</th>
+                      <th>Status</th>
+                      <th class="text-end">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <% if (!safeMobs.length) { %>
+                      <tr>
+                        <td colspan="6" class="text-muted py-4">No monsters matched this query.</td>
+                      </tr>
+                    <% } %>
+                    <% safeMobs.forEach(mob => { %>
+                      <tr>
+                        <td>
+                          <div class="d-flex align-items-center gap-2">
+                            <div class="item-media-thumb">
+                              <% if (mob.imageUrl) { %>
+                                <img src="<%= mob.imageUrl %>" alt="<%= mob.name %>" loading="lazy" />
+                              <% } else { %>
+                                <span>MOB</span>
+                              <% } %>
+                            </div>
+                            <div>
+                              <div class="fw-semibold"><%= mob.name %></div>
+                              <div class="text-muted small"><code><%= mob.mobId %></code> • <%= mob.rarity %></div>
+                            </div>
+                          </div>
+                        </td>
+                        <td><%= mob.levelMin %> - <%= mob.levelMax %><br /><span class="text-muted small">Spawn: <%= mob.spawnWeight %></span></td>
+                        <td>HP <strong><%= mob.hp %></strong> • ATK <strong><%= mob.atk %></strong> • DEF <strong><%= mob.def %></strong><br /><span class="text-muted small">EXP <%= mob.exp %></span></td>
+                        <td class="small">
+                          <% if (mob.drops?.length) { %>
+                            <%= mob.drops.map(drop => `${drop.itemId} (${Math.round((drop.chance || 0) * 100)}%)`).join(', ') %>
+                          <% } else { %>
+                            <span class="text-muted">Fallback loot rules</span>
+                          <% } %>
+                        </td>
+                        <td><span class="badge <%= mob.active === false ? 'text-bg-secondary' : 'text-bg-success' %>"><%= mob.active === false ? 'Inactive' : 'Active' %></span></td>
+                        <td class="text-end">
+                          <div class="d-inline-flex gap-2">
+                            <a class="btn btn-outline-light btn-sm" href="/admin/economy/monsters?edit=<%= encodeURIComponent(mob.mobId) %>">Edit</a>
+                            <form method="post" action="/admin/economy/monsters/delete" class="d-inline">
+                              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+                              <input type="hidden" name="mobId" value="<%= mob.mobId %>" />
+                              <button
+                                class="btn btn-outline-danger btn-sm"
+                                type="submit"
+                                data-confirm="Delete this custom monster override?"
+                                data-confirm-title="Delete monster?"
+                                data-confirm-ok="Delete"
+                                data-confirm-cancel="Cancel"
+                              >
+                                Delete Override
+                              </button>
+                            </form>
+                          </div>
+                        </td>
+                      </tr>
+                    <% }) %>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <%- include('../../partials/footer') %>
+  </body>
+</html>

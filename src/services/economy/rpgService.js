@@ -1,6 +1,7 @@
 const Transaction = require('../../db/models/Transaction');
 const Item = require('../../db/models/Item');
 const mobConfig = require('../../data/mobs');
+const { listMobCatalog } = require('./mobService');
 const { addItemToInventory } = require('./inventoryService');
 const { applyExpAndLevels } = require('./levelService');
 const { applyEnergyRegen, normalizeEconomyUserState } = require('./userService');
@@ -31,20 +32,26 @@ function pickWeightedKey(weights = {}) {
   return entries.at(-1)?.[0] || null;
 }
 
-function pickMobForUser(level) {
+function pickWeightedEntry(entries = [], weightGetter = (entry) => entry?.weight || 0) {
+  const eligible = entries.filter((entry) => Number(weightGetter(entry)) > 0);
+  const total = eligible.reduce((sum, entry) => sum + Number(weightGetter(entry)), 0);
+  if (!eligible.length || total <= 0) return null;
+
+  let roll = Math.random() * total;
+  for (const entry of eligible) {
+    roll -= Number(weightGetter(entry));
+    if (roll <= 0) return entry;
+  }
+  return eligible.at(-1) || null;
+}
+
+async function pickMobForUser(level) {
+  const catalog = await listMobCatalog();
   const userLevel = Math.max(1, Math.floor(Number(level) || 1));
-  const eligible = mobConfig.mobs.filter((mob) => userLevel >= mob.levelMin - 15 && userLevel <= mob.levelMax + 10);
-  const source = eligible.length ? eligible : mobConfig.mobs;
-
-  const rarityWeights = source.reduce((acc, mob) => {
-    acc[mob.rarity] = mobConfig.rarityWeights[mob.rarity] || 1;
-    return acc;
-  }, {});
-
-  const rarity = pickWeightedKey(rarityWeights);
-  const candidates = source.filter((mob) => mob.rarity === rarity);
-  if (!candidates.length) return source[0] || null;
-  return candidates[randInt(0, candidates.length - 1)];
+  const activeCatalog = catalog.filter((mob) => mob.active !== false);
+  const eligible = activeCatalog.filter((mob) => userLevel >= mob.levelMin - 15 && userLevel <= mob.levelMax + 10);
+  const source = eligible.length ? eligible : activeCatalog;
+  return pickWeightedEntry(source, (mob) => Number(mob?.spawnWeight) || Number(mobConfig.rarityWeights?.[mob?.rarity] || 1)) || null;
 }
 
 function computeCombatMetrics(snapshot, mob) {
@@ -76,6 +83,28 @@ function computeCombatMetrics(snapshot, mob) {
 }
 
 async function rollLootDrop(mob, cfg = null) {
+  const explicitDrops = Array.isArray(mob?.drops) ? mob.drops : [];
+  if (explicitDrops.length) {
+    const candidates = explicitDrops
+      .map((drop) => ({
+        itemId: String(drop?.itemId || '').trim(),
+        chance: clamp(Number(drop?.chance) || 0, 0, 1),
+        quantityMin: Math.max(1, Math.floor(Number(drop?.quantityMin) || 1)),
+        quantityMax: Math.max(1, Math.floor(Number(drop?.quantityMax) || 1))
+      }))
+      .filter((drop) => drop.itemId && drop.chance > 0);
+
+    for (const drop of candidates) {
+      if (Math.random() > drop.chance) continue;
+      const item = await Item.findOne({ itemId: drop.itemId }).lean();
+      if (!item) continue;
+      return {
+        item,
+        quantity: randInt(drop.quantityMin, Math.max(drop.quantityMin, drop.quantityMax))
+      };
+    }
+  }
+
   const rarityOrder = ['common', 'rare', 'epic', 'pristine', 'transcendent', 'primordial'];
   const maxIndex = Math.max(0, rarityOrder.indexOf(mob.rarity));
   const allowed = rarityOrder.slice(0, maxIndex + 1).reverse();
@@ -119,7 +148,7 @@ async function hunt({ user, guildId, energyCost = 50 }) {
   user.energy -= resolvedEnergyCost;
   user.lastHuntAt = now;
 
-  const mob = pickMobForUser(user.level);
+  const mob = await pickMobForUser(user.level);
   if (!mob) return { ok: false, reason: 'No mobs available.' };
 
   const snapshot = await buildCharacterSnapshot(user);

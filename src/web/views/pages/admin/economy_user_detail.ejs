@@ -12,6 +12,15 @@
       <% const safeInventoryByRarity = typeof inventoryByRarity !== 'undefined' && inventoryByRarity && typeof inventoryByRarity === 'object' ? inventoryByRarity : {}; %>
       <% const availableWallpaperItems = typeof wallpaperItems !== 'undefined' && Array.isArray(wallpaperItems) ? wallpaperItems : availableItems.filter(item => item.type === 'wallpaper'); %>
       <% const safeEquipOptionsBySlot = typeof equipOptionsBySlot !== 'undefined' && equipOptionsBySlot && typeof equipOptionsBySlot === 'object' ? equipOptionsBySlot : {}; %>
+      <% const equippedRefinements = user.equippedRefinements || {}; %>
+      <% const loadoutBySlot = new Map((Array.isArray(snapshot?.loadout) ? snapshot.loadout : []).map(entry => [entry.slot, entry])); %>
+      <% const equippedVariantValue = (slotName) => {
+        const itemId = String(user.equipped?.[slotName] || '').trim();
+        if (!itemId) return '';
+        const fallbackRefinement = Number(loadoutBySlot.get(slotName)?.inventory?.refinement || 0);
+        const refinement = Math.max(0, Number(equippedRefinements?.[slotName] ?? fallbackRefinement) || 0);
+        return `${itemId}::${refinement}`;
+      }; %>
       <% const fmtFull = (value) => Math.floor(Number(value || 0)).toLocaleString('en-US'); %>
       <% const fmtCompact = (value, threshold = 1000) => formatCompactNumber(value, { threshold }); %>
 
@@ -183,7 +192,7 @@
                     <select class="form-select" name="<%= field %>">
                       <option value="">None</option>
                       <% (safeEquipOptionsBySlot[slotType] || []).forEach(item => { %>
-                        <option value="<%= item.itemId %>" <%= user.equipped?.[slotType] === item.itemId ? 'selected' : '' %>><%= item.name %> • <%= item.rarity %></option>
+                        <option value="<%= item.value %>" <%= equippedVariantValue(slotType) === item.value ? 'selected' : '' %>><%= item.label %></option>
                       <% }) %>
                     </select>
                   </div>
@@ -237,7 +246,7 @@
                           <option value="">Inventory is empty</option>
                         <% } %>
                         <% safeInventory.forEach(entry => { %>
-                          <option value="<%= entry.itemId %>"><%= entry.item?.name || entry.itemId %> • x<%= entry.quantity %></option>
+                          <option value="<%= entry.value %>"><%= entry.item?.name || entry.itemId %> • +<%= entry.refinement %> • x<%= entry.quantity %></option>
                         <% }) %>
                       </select>
                     </div>

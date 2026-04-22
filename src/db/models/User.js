@@ -44,6 +44,21 @@ const EquippedSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const EquippedRefinementSchema = new mongoose.Schema(
+  {
+    headGear: { type: Number, min: 0, max: 10, default: null },
+    eyeGear: { type: Number, min: 0, max: 10, default: null },
+    faceGear: { type: Number, min: 0, max: 10, default: null },
+    rHand: { type: Number, min: 0, max: 10, default: null },
+    lHand: { type: Number, min: 0, max: 10, default: null },
+    robe: { type: Number, min: 0, max: 10, default: null },
+    shoes: { type: Number, min: 0, max: 10, default: null },
+    rAccessory: { type: Number, min: 0, max: 10, default: null },
+    lAccessory: { type: Number, min: 0, max: 10, default: null }
+  },
+  { _id: false }
+);
+
 const UserSchema = new mongoose.Schema(
   {
     guildId: { type: String, required: true, index: true },
@@ -74,6 +89,7 @@ const UserSchema = new mongoose.Schema(
 
     inventory: { type: [InventoryItemSchema], default: [] },
     equipped: { type: EquippedSchema, default: () => ({}) },
+    equippedRefinements: { type: EquippedRefinementSchema, default: () => ({}) },
     gearScore: { type: Number, default: 0, min: 0 },
 
     marriedTo: { type: String, default: null },

@@ -3,6 +3,7 @@ const path = require('path');
 const sharp = require('sharp');
 const { formatCompactNumber } = require('./economyFormatService');
 const { getRarityMeta, getItemDisplayMediaUrl } = require('./itemService');
+const { formatMarriageDurationCompact } = require('./marriageService');
 const { env } = require('../../config/env');
 
 const CARD_WIDTH = 1040;
@@ -145,6 +146,7 @@ function createOverlaySvg({
   followers,
   following,
   marriageLabel,
+  hasMarriageIcon = false,
   topPvpItems = []
 }) {
   const bioLines = wrapText(bio, { maxChars: 36, maxLines: 2 });
@@ -156,7 +158,7 @@ function createOverlaySvg({
   const labelSpacing = 26;
   const bioLineHeight = 22;
   const serverLineHeight = 20;
-  const relationshipLineHeight = 18;
+  const relationshipLineHeight = 20;
   const bioLabelY = infoTop;
   const bioTextY = bioLabelY + labelSpacing;
   const serverLabelY = bioTextY + Math.max(1, bioLines.length) * bioLineHeight + sectionGap;
@@ -230,7 +232,7 @@ function createOverlaySvg({
       )}</text>
       <text x="${infoLeft}" y="${relationshipLabelY}" fill="rgba(248, 113, 113, 0.88)" font-family="Segoe UI, Arial, sans-serif" font-size="15" letter-spacing="4">RELATIONSHIP</text>
       ${renderTextLines(marriageLines, {
-        x: infoLeft,
+        x: infoLeft + (hasMarriageIcon ? 34 : 0),
         y: relationshipTextY,
         lineHeight: relationshipLineHeight,
         fill: 'rgba(255,255,255,0.72)',
@@ -298,10 +300,17 @@ async function createBackgroundLayer(wallpaperUrl) {
 
 async function createTopItemIconLayer(entry, size = 92) {
   const borderColor = getRarityMeta(entry?.item?.rarity || 'common').color;
+  const refinement = Math.max(0, Number(entry?.inventory?.refinement ?? entry?.refinement) || 0);
   const frame = Buffer.from(`
     <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
       <rect x="2" y="2" width="${size - 4}" height="${size - 4}" rx="24" fill="rgba(8, 6, 10, 0.92)" stroke="${escapeXml(borderColor)}" stroke-width="4" />
       <rect x="12" y="12" width="${size - 24}" height="${size - 24}" rx="18" fill="rgba(18, 8, 12, 0.96)" />
+      ${
+        refinement > 0
+          ? `<rect x="44" y="62" width="40" height="18" rx="9" fill="rgba(0,0,0,0.72)" stroke="rgba(255,255,255,0.2)" />
+      <text x="64" y="75" text-anchor="middle" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="12" font-weight="700">+${refinement}</text>`
+          : ''
+      }
     </svg>
   `);
 
@@ -319,7 +328,16 @@ async function createTopItemIconLayer(entry, size = 92) {
     entry?.item?.imageUrl,
     entry?.item?.emojiUrl
   );
-  if (!imageBuffer) return await base.png().toBuffer();
+  if (!imageBuffer) {
+    const fallbackToken = String(entry?.item?.emojiText || '').trim();
+    if (!fallbackToken || fallbackToken.startsWith('<')) return await base.png().toBuffer();
+    const fallback = Buffer.from(`
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+        <text x="${size / 2}" y="${size / 2 + 18}" text-anchor="middle" fill="#ffffff" font-size="44">${escapeXml(fallbackToken)}</text>
+      </svg>
+    `);
+    return await base.composite([{ input: fallback }]).png().toBuffer();
+  }
 
   const innerSize = size - 24;
   const mask = Buffer.from(`
@@ -343,6 +361,28 @@ async function createTopItemIconLayer(entry, size = 92) {
     .toBuffer();
 }
 
+async function createRelationshipIconLayer(marriageRing, size = 26) {
+  const ringBuffer = await fetchFirstAvailableImageBuffer(
+    getItemDisplayMediaUrl(marriageRing || {}),
+    marriageRing?.emojiUrl,
+    marriageRing?.imageUrl
+  );
+
+  if (!ringBuffer) {
+    return Buffer.from(`
+      <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+        <text x="${size / 2}" y="${size - 4}" text-anchor="middle" fill="#ffffff" font-size="20">💍</text>
+      </svg>
+    `);
+  }
+
+  return await sharp(ringBuffer, { failOnError: false })
+    .resize(size, size, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer()
+    .catch(() => null);
+}
+
 async function createProfileCardBuffer({
   user,
   wallpaper,
@@ -360,9 +400,9 @@ async function createProfileCardBuffer({
   const safeGuildName = clampText(guildName || user?.originGuildName || 'RoBot Network', 56);
   const followers = formatCompactNumber(user?.followers?.length || 0);
   const following = formatCompactNumber(user?.following?.length || 0);
-  const ringName = clampText(marriageRing?.name || snapshot?.ring?.name || '', 22);
   const safeSpouse = clampText(spouseName || user?.marriedTo || '', 22);
-  const marriageLabel = safeSpouse ? `Married to ${safeSpouse}${ringName ? ` • Ring ${ringName}` : ''}` : 'Single';
+  const marriageDuration = user?.marriedTo ? formatMarriageDurationCompact(user?.marriedSince) : '';
+  const marriageLabel = safeSpouse ? `${safeSpouse}${marriageDuration ? ` (${marriageDuration})` : ''}` : 'Single';
   const stats = {
     level: formatCompactNumber(user?.level || 0),
     wallet: formatCompactNumber(user?.balance || 0),
@@ -374,6 +414,7 @@ async function createProfileCardBuffer({
 
   const topSlots = getTopItemSlots();
   const topEntries = topSlots.map((_, index) => topPvpItems[index] || null);
+  const relationshipIcon = safeSpouse ? await createRelationshipIconLayer(marriageRing || snapshot?.ring || null) : null;
   const [background, avatar, overlay, ...topItemLayers] = await Promise.all([
     createBackgroundLayer(wallpaper?.wallpaperUrl || ''),
     createAvatarLayer(avatarUrl),
@@ -387,6 +428,7 @@ async function createProfileCardBuffer({
         followers,
         following,
         marriageLabel,
+        hasMarriageIcon: Boolean(safeSpouse),
         topPvpItems
       })
     ),
@@ -414,6 +456,14 @@ async function createProfileCardBuffer({
     top: 78,
     left: 68
   });
+
+  if (relationshipIcon) {
+    composites.push({
+      input: relationshipIcon,
+      top: 451,
+      left: 305
+    });
+  }
 
   topSlots.forEach((slot, index) => {
     const layer = topItemLayers[index];

@@ -46,6 +46,17 @@ function itemScoreFor(item) {
   return statsToScore(item?.stats);
 }
 
+function scaleStatsByRefinement(stats = {}, refinement = 0) {
+  const safeRefinement = Math.max(0, Math.floor(Number(refinement) || 0));
+  const base = normalizeStats(stats);
+  if (safeRefinement <= 0) return base;
+  return STAT_KEYS.reduce((acc, key) => {
+    const baseValue = Math.max(0, Number(base[key]) || 0);
+    acc[key] = baseValue * (safeRefinement + 1);
+    return acc;
+  }, emptyStats());
+}
+
 function defaultProgressionForLevel(level) {
   const safeLevel = Math.max(1, Math.floor(Number(level) || 1));
   return {
@@ -78,9 +89,33 @@ function readEquippedSlots(equipped) {
   return normalized;
 }
 
+function readEquippedSlotRefinements(equippedRefinements) {
+  const source =
+    equippedRefinements && typeof equippedRefinements?.toObject === 'function'
+      ? equippedRefinements.toObject({
+          depopulate: true,
+          flattenMaps: true,
+          getters: false,
+          virtuals: false,
+          versionKey: false
+        })
+      : equippedRefinements && typeof equippedRefinements === 'object'
+        ? equippedRefinements
+        : {};
+
+  return Object.fromEntries(
+    EQUIPPED_SLOT_KEYS.map((slot) => {
+      const raw = source?.[slot];
+      if (raw === null || raw === undefined || raw === '') return [slot, null];
+      return [slot, Math.max(0, Math.min(10, Math.floor(Number(raw) || 0)))];
+    })
+  );
+}
+
 function resolveInventoryEntriesForEquipped(user) {
   normalizeEconomyUserState(user);
   const equippedEntries = Object.entries(readEquippedSlots(user?.equipped)).filter(([, itemId]) => Boolean(itemId));
+  const slotRefinements = readEquippedSlotRefinements(user?.equippedRefinements);
   const inventoryByItemId = new Map();
 
   for (const invEntry of user?.inventory || []) {
@@ -97,9 +132,29 @@ function resolveInventoryEntriesForEquipped(user) {
   const usage = new Map();
   return equippedEntries.map(([slot, itemId]) => {
     const list = inventoryByItemId.get(itemId) || [];
-    const index = usage.get(itemId) || 0;
-    usage.set(itemId, index + 1);
-    const inventory = list[index] || list[list.length - 1] || null;
+    const preferredRefinement = slotRefinements[slot];
+    let inventory = null;
+    if (preferredRefinement !== null && preferredRefinement !== undefined) {
+      const usedIndexes = usage.get(itemId) || new Set();
+      const preferredIndex = list.findIndex(
+        (entry, index) => !usedIndexes.has(index) && (Number(entry?.refinement) || 0) === Number(preferredRefinement)
+      );
+      if (preferredIndex >= 0) {
+        usedIndexes.add(preferredIndex);
+        usage.set(itemId, usedIndexes);
+        inventory = list[preferredIndex];
+      }
+    }
+    if (!inventory) {
+      const usedIndexes = usage.get(itemId) || new Set();
+      const fallbackIndex = list.findIndex((_, index) => !usedIndexes.has(index));
+      if (fallbackIndex >= 0) {
+        usedIndexes.add(fallbackIndex);
+        usage.set(itemId, usedIndexes);
+        inventory = list[fallbackIndex];
+      }
+    }
+    if (!inventory) inventory = list[0] || null;
     return { slot, itemId, inventory };
   });
 }
@@ -131,8 +186,9 @@ async function buildCharacterSnapshot(user) {
   let gearScore = 0;
   for (const entry of loadout) {
     if (!entry.item || !entry.inventory) continue;
-    addStats(bonusStats, normalizeStats(entry.item.stats));
-    gearScore += itemScoreFor(entry.item) + Math.max(0, Number(entry.inventory?.refinement) || 0) * 2;
+    const refinement = Math.max(0, Number(entry.inventory?.refinement) || 0);
+    addStats(bonusStats, scaleStatsByRefinement(entry.item.stats, refinement));
+    gearScore += itemScoreFor(entry.item) * (refinement + 1);
   }
 
   const ring = await getMarriageRing(user);
@@ -180,7 +236,7 @@ function buildTopCombatInventory(inventory = [], itemMap = new Map(), { limit = 
         quantity: Math.max(0, Number(entry?.quantity) || 0),
         refinement: Math.max(0, Number(entry?.refinement) || 0),
         item,
-        combatScore: item ? itemScoreFor(item) : 0
+        combatScore: item ? itemScoreFor(item) * (Math.max(0, Number(entry?.refinement) || 0) + 1) : 0
       };
     })
     .filter((entry) => entry.item && entry.quantity > 0 && isCombatItem(entry.item))
@@ -208,5 +264,7 @@ module.exports = {
   resolveInventoryEntriesForEquipped,
   getEquipmentLoadout,
   getMarriageRing,
-  buildCharacterSnapshot
+  buildCharacterSnapshot,
+  scaleStatsByRefinement,
+  readEquippedSlotRefinements
 };

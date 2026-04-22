@@ -7,6 +7,7 @@ const AdminUser = require('../../db/models/AdminUser');
 const GuildConfig = require('../../db/models/GuildConfig');
 const User = require('../../db/models/User');
 const Item = require('../../db/models/Item');
+const Mob = require('../../db/models/Mob');
 const GachaBox = require('../../db/models/GachaBox');
 const ShopListing = require('../../db/models/ShopListing');
 const Transaction = require('../../db/models/Transaction');
@@ -69,8 +70,14 @@ const { sendLog } = require('../../services/discord/loggingService');
 const { LOG_SECTIONS, assignLogSettings, normalizeChannelOverrides } = require('../../services/discord/logDefinitions');
 const { getEconomyAccountGuildId, getEconomyAccountScope } = require('../../services/economy/accountScope');
 const { applyExpDelta, requiredExpForLevel, totalAccumulatedExp } = require('../../services/economy/levelService');
-const { buildCharacterSnapshot, itemScoreFor, normalizeStats, buildTopCombatInventory } = require('../../services/economy/characterService');
-const { addItemToInventory, countInventoryQuantity, removeItemFromInventory } = require('../../services/economy/inventoryService');
+const {
+  buildCharacterSnapshot,
+  itemScoreFor,
+  normalizeStats,
+  buildTopCombatInventory,
+  readEquippedSlotRefinements
+} = require('../../services/economy/characterService');
+const { addItemToInventory, removeItemFromInventory } = require('../../services/economy/inventoryService');
 const { formatCompactNumber, formatDisplayNumber, formatTransactionNumber } = require('../../services/economy/economyFormatService');
 const {
   generateItemId,
@@ -81,6 +88,7 @@ const {
   applyItemNormalization
 } = require('../../services/economy/itemService');
 const { syncItemMedia } = require('../../services/economy/itemMediaService');
+const { normalizeMobPayload, listMobCatalog, parseDropsText, dropsToText } = require('../../services/economy/mobService');
 const {
   SHOP_LISTING_TYPES,
   getActiveShopListings,
@@ -180,16 +188,48 @@ function buildFallbackCharacterSnapshot(user) {
   };
 }
 
-function buildEquipOptionsBySlot(items = []) {
-  const grouped = Object.fromEntries(Object.keys(ECONOMY_EQUIP_SLOT_OPTIONS).map((slot) => [slot, []]));
+function buildInventoryVariantValue(itemId, refinement = 0) {
+  return `${String(itemId || '').trim()}::${Math.max(0, Math.min(10, Math.floor(Number(refinement) || 0)))}`;
+}
 
-  for (const item of items) {
+function parseInventoryVariantValue(value = '') {
+  const [itemIdRaw, refinementRaw] = String(value || '').split('::');
+  const itemId = String(itemIdRaw || '').trim();
+  const refinement = Math.max(0, Math.min(10, Math.floor(Number(refinementRaw) || 0)));
+  return { itemId, refinement };
+}
+
+function buildEquipOptionsBySlot(items = [], inventory = []) {
+  const grouped = Object.fromEntries(Object.keys(ECONOMY_EQUIP_SLOT_OPTIONS).map((slot) => [slot, []]));
+  const itemMap = new Map((Array.isArray(items) ? items : []).map((item) => [String(item?.itemId || '').trim(), item]));
+
+  for (const entry of Array.isArray(inventory) ? inventory : []) {
+    const item = itemMap.get(String(entry?.itemId || '').trim()) || null;
     const type = String(item?.type || '').trim();
-    if (!type) continue;
+    if (!item || !type || Math.max(0, Number(entry?.quantity) || 0) <= 0) continue;
 
     for (const [slot, allowedTypes] of Object.entries(ECONOMY_EQUIP_SLOT_OPTIONS)) {
-      if (allowedTypes.includes(type)) grouped[slot].push(item);
+      if (!allowedTypes.includes(type)) continue;
+      grouped[slot].push({
+        itemId: item.itemId,
+        refinement: Math.max(0, Number(entry?.refinement) || 0),
+        quantity: Math.max(0, Number(entry?.quantity) || 0),
+        rarity: item.rarity,
+        name: item.name,
+        value: buildInventoryVariantValue(item.itemId, entry?.refinement),
+        label: `${item.name} • ${item.rarity} • +${Math.max(0, Number(entry?.refinement) || 0)} • x${Math.max(0, Number(entry?.quantity) || 0)}`
+      });
     }
+  }
+
+  for (const options of Object.values(grouped)) {
+    options.sort((a, b) => {
+      const rarityDiff = compareRarity(String(b?.rarity || ''), String(a?.rarity || ''));
+      if (rarityDiff !== 0) return rarityDiff;
+      const refineDiff = (Number(b?.refinement) || 0) - (Number(a?.refinement) || 0);
+      if (refineDiff !== 0) return refineDiff;
+      return String(a?.name || a?.itemId || '').localeCompare(String(b?.name || b?.itemId || ''));
+    });
   }
 
   return grouped;
@@ -1013,15 +1053,24 @@ function buildItemCsv(items = []) {
 }
 
 function buildInventorySummary(inventory = [], itemMap = new Map()) {
-  return inventory.map((entry) => {
-    const item = itemMap.get(entry.itemId) || null;
-    return {
-      itemId: entry.itemId,
-      quantity: Number(entry.quantity) || 0,
-      refinement: Number(entry.refinement) || 0,
-      item
-    };
-  });
+  return inventory
+    .map((entry) => {
+      const item = itemMap.get(entry.itemId) || null;
+      return {
+        itemId: entry.itemId,
+        quantity: Number(entry.quantity) || 0,
+        refinement: Number(entry.refinement) || 0,
+        item,
+        value: buildInventoryVariantValue(entry.itemId, entry.refinement)
+      };
+    })
+    .sort((a, b) => {
+      const rarityDiff = compareRarity(String(b?.item?.rarity || ''), String(a?.item?.rarity || ''));
+      if (rarityDiff !== 0) return rarityDiff;
+      const refineDiff = (Number(b?.refinement) || 0) - (Number(a?.refinement) || 0);
+      if (refineDiff !== 0) return refineDiff;
+      return String(a?.item?.name || a?.itemId || '').localeCompare(String(b?.item?.name || b?.itemId || ''));
+    });
 }
 
 function resolveOriginServerLabel(player = {}, guildNameById = new Map(), fallback = '') {
@@ -2717,6 +2766,12 @@ router.post('/economy/items', requireAdmin, requireGuild, async (req, res) => {
   }
 
   try {
+    if (existing && !String(req.body.imageUploadData || '').trim() && !String(doc.imageUrl || '').trim()) {
+      doc.imageUrl = String(existing.imageUrl || '').trim();
+    }
+    if (existing && !String(doc.wallpaperUrl || '').trim()) {
+      doc.wallpaperUrl = String(existing.wallpaperUrl || '').trim();
+    }
     const media = await syncItemMedia({
       client: req.app.locals.discord.economy,
       itemId: doc.itemId,
@@ -2728,7 +2783,7 @@ router.post('/economy/items', requireAdmin, requireGuild, async (req, res) => {
     doc = { ...doc, ...media };
   } catch (error) {
     setFlash(req, { type: 'warning', message: String(error?.message || error || 'Could not process the item image.') });
-    return res.redirect('/admin/economy/items');
+    return res.redirect(editingItemId ? `/admin/economy/items?edit=${encodeURIComponent(editingItemId)}` : '/admin/economy/items');
   }
 
   if (doc.type === 'wallpaper' && !doc.wallpaperUrl && doc.imageUrl) {
@@ -2838,6 +2893,75 @@ router.post('/economy/items/remove-global', requireAdmin, requireGuild, async (r
   setFlash(req, { type: 'warning', message: `Removed ${itemId} from player inventories and loadouts.` });
   return res.redirect('/admin/economy/items');
 });
+
+router.get('/economy/monsters', requireAdmin, requireGuild, asyncHandler(async (req, res) => {
+  const q = String(req.query.q || '').trim().toLowerCase();
+  const editMobId = String(req.query.edit || '').trim();
+  const [catalog, items] = await Promise.all([
+    listMobCatalog(),
+    Item.find({}).select('itemId name rarity').sort({ rarity: 1, name: 1 }).lean().catch(() => [])
+  ]);
+
+  const mobs = catalog.filter((mob) => {
+    if (!q) return true;
+    return [mob.mobId, mob.name, mob.rarity, mob.description].join(' ').toLowerCase().includes(q);
+  });
+  const editingMob = editMobId ? mobs.find((mob) => mob.mobId === editMobId) || catalog.find((mob) => mob.mobId === editMobId) || null : null;
+  const flash = req.session.flash || null;
+  delete req.session.flash;
+
+  return res.render('pages/admin/economy_monsters', {
+    title: 'Monsters',
+    mobs,
+    editingMob,
+    q,
+    flash,
+    items,
+    rarities: CORE_RARITIES,
+    editingDropsText: dropsToText(editingMob?.drops || [])
+  });
+}));
+
+router.post('/economy/monsters', requireAdmin, requireGuild, asyncHandler(async (req, res) => {
+  const editingMobId = String(req.body.editingMobId || '').trim();
+  const payload = normalizeMobPayload({
+    mobId: String(req.body.mobId || '').trim(),
+    name: String(req.body.name || '').trim(),
+    description: String(req.body.description || '').trim(),
+    rarity: String(req.body.rarity || '').trim().toLowerCase(),
+    levelMin: req.body.levelMin,
+    levelMax: req.body.levelMax,
+    hp: req.body.hp,
+    atk: req.body.atk,
+    def: req.body.def,
+    exp: req.body.exp,
+    spawnWeight: req.body.spawnWeight,
+    imageUrl: String(req.body.imageUrl || '').trim(),
+    drops: parseDropsText(req.body.drops || ''),
+    active: parseCheckboxValue(req.body.active, true)
+  });
+
+  if (!payload.mobId || !payload.name) {
+    setFlash(req, { type: 'warning', message: 'Mob ID and name are required.' });
+    return res.redirect(editingMobId ? `/admin/economy/monsters?edit=${encodeURIComponent(editingMobId)}` : '/admin/economy/monsters');
+  }
+
+  if (editingMobId && editingMobId !== payload.mobId) {
+    await Mob.deleteOne({ mobId: editingMobId }).catch(() => null);
+  }
+
+  await Mob.updateOne({ mobId: payload.mobId }, { $set: payload }, { upsert: true });
+  setFlash(req, { type: 'success', message: `Saved monster ${payload.name} (${payload.mobId}).` });
+  return res.redirect('/admin/economy/monsters');
+}));
+
+router.post('/economy/monsters/delete', requireAdmin, requireGuild, asyncHandler(async (req, res) => {
+  const mobId = String(req.body.mobId || '').trim();
+  if (!mobId) return res.redirect('/admin/economy/monsters');
+  await Mob.deleteOne({ mobId }).catch(() => null);
+  setFlash(req, { type: 'info', message: `Removed custom monster override ${mobId}.` });
+  return res.redirect('/admin/economy/monsters');
+}));
 
 // Economy: shop
 router.get('/economy/shop', requireAdmin, requireGuild, async (req, res) => {
@@ -3497,7 +3621,7 @@ router.get('/economy/users/:discordId', requireAdmin, requireGuild, asyncHandler
     inventory,
     inventoryByRarity,
     wallpaperItems: normalizedItems.filter((item) => item.type === 'wallpaper'),
-    equipOptionsBySlot: buildEquipOptionsBySlot(normalizedItems),
+    equipOptionsBySlot: buildEquipOptionsBySlot(normalizedItems, inventoryEntries),
     transactions: transactions.map((tx) => ({
       ...tx,
       guildName: guildNameById.get(String(tx.guildId || '').trim()) || String(tx.guildId || '').trim()
@@ -3553,7 +3677,20 @@ router.get('/economy/players/:discordId', requireAdmin, requireGuild, asyncHandl
   const itemMap = new Map(normalizedItems.map((item) => [item.itemId, item]));
   const inventory = buildInventorySummary(inventoryEntries, itemMap);
   const inventoryByRarity = summarizeInventoryByRarity(inventoryEntries, itemMap);
-  const topPvpItems = buildTopCombatInventory(inventoryEntries, itemMap, { limit: 3 });
+  const topPvpItems = snapshot.loadout
+    .filter((entry) => entry?.item && entry?.inventory)
+    .slice()
+    .sort((a, b) => {
+      const rarityDiff = compareRarity(String(b?.item?.rarity || ''), String(a?.item?.rarity || ''));
+      if (rarityDiff !== 0) return rarityDiff;
+      const refineDiff = (Number(b?.inventory?.refinement) || 0) - (Number(a?.inventory?.refinement) || 0);
+      if (refineDiff !== 0) return refineDiff;
+      return String(a?.item?.name || a?.itemId || '').localeCompare(String(b?.item?.name || b?.itemId || ''));
+    })
+    .slice(0, 3);
+  if (!topPvpItems.length) {
+    topPvpItems.push(...buildTopCombatInventory(inventoryEntries, itemMap, { limit: 3 }));
+  }
   const topInventory = inventory
     .slice()
     .sort((a, b) => {
@@ -3621,18 +3758,48 @@ router.post('/economy/users/:discordId/update', requireAdmin, requireGuild, asyn
   user.sharedBankEnabled = parseCheckboxValue(req.body.sharedBankEnabled, user.sharedBankEnabled);
   user.stats = normalizeStats(parseItemStatsFromBody(req.body, 'character'));
 
+  const currentEquippedRefinements = readEquippedSlotRefinements(user.equippedRefinements);
+  const parseSlotSelection = (rawValue = '', slotName = '') => {
+    const { itemId, refinement } = parseInventoryVariantValue(rawValue);
+    if (!itemId) return { itemId: null, refinement: null };
+    return {
+      itemId,
+      refinement: slotName ? refinement : currentEquippedRefinements?.[slotName] ?? refinement
+    };
+  };
+  const headGear = parseSlotSelection(req.body.equippedHeadGear, 'headGear');
+  const eyeGear = parseSlotSelection(req.body.equippedEyeGear, 'eyeGear');
+  const faceGear = parseSlotSelection(req.body.equippedFaceGear, 'faceGear');
+  const rHand = parseSlotSelection(req.body.equippedRHand, 'rHand');
+  const lHand = parseSlotSelection(req.body.equippedLHand, 'lHand');
+  const robe = parseSlotSelection(req.body.equippedRobe, 'robe');
+  const shoes = parseSlotSelection(req.body.equippedShoes, 'shoes');
+  const rAccessory = parseSlotSelection(req.body.equippedRAccessory, 'rAccessory');
+  const lAccessory = parseSlotSelection(req.body.equippedLAccessory, 'lAccessory');
   const equipped = {
-    headGear: String(req.body.equippedHeadGear || '').trim() || null,
-    eyeGear: String(req.body.equippedEyeGear || '').trim() || null,
-    faceGear: String(req.body.equippedFaceGear || '').trim() || null,
-    rHand: String(req.body.equippedRHand || '').trim() || null,
-    lHand: String(req.body.equippedLHand || '').trim() || null,
-    robe: String(req.body.equippedRobe || '').trim() || null,
-    shoes: String(req.body.equippedShoes || '').trim() || null,
-    rAccessory: String(req.body.equippedRAccessory || '').trim() || null,
-    lAccessory: String(req.body.equippedLAccessory || '').trim() || null
+    headGear: headGear.itemId,
+    eyeGear: eyeGear.itemId,
+    faceGear: faceGear.itemId,
+    rHand: rHand.itemId,
+    lHand: lHand.itemId,
+    robe: robe.itemId,
+    shoes: shoes.itemId,
+    rAccessory: rAccessory.itemId,
+    lAccessory: lAccessory.itemId
+  };
+  const equippedRefinements = {
+    headGear: headGear.refinement,
+    eyeGear: eyeGear.refinement,
+    faceGear: faceGear.refinement,
+    rHand: rHand.refinement,
+    lHand: lHand.refinement,
+    robe: robe.refinement,
+    shoes: shoes.refinement,
+    rAccessory: rAccessory.refinement,
+    lAccessory: lAccessory.refinement
   };
   user.equipped = equipped;
+  user.equippedRefinements = equippedRefinements;
   user.gearScore = await computeGearScore(user);
   await user.save();
 
@@ -3670,7 +3837,8 @@ router.post('/economy/users/:discordId/inventory/remove', requireAdmin, requireG
   const accountGuildId = getEconomyAccountGuildId(guildId);
   const discordId = String(req.params.discordId || '').trim();
   const user = await User.findOne({ guildId: accountGuildId, discordId });
-  const itemId = String(req.body.itemId || '').trim();
+  const selectedVariant = parseInventoryVariantValue(req.body.itemId);
+  const itemId = selectedVariant.itemId;
   const quantity = parseIntegerField(req.body.quantity, 1, { min: 1, max: 999999 });
   if (!user || !itemId) {
     setFlash(req, { type: 'warning', message: 'User or item not found.' });
@@ -3678,15 +3846,29 @@ router.post('/economy/users/:discordId/inventory/remove', requireAdmin, requireG
   }
 
   normalizeEconomyUserState(user);
-  const removed = await removeItemFromInventory({ user, itemId, quantity });
+  const removed = await removeItemFromInventory({
+    user,
+    itemId,
+    quantity,
+    refinement: selectedVariant.refinement
+  });
   if (!removed.ok) {
     setFlash(req, { type: 'warning', message: removed.reason || 'Could not remove item.' });
     return res.redirect(`/admin/economy/users/${discordId}`);
   }
 
-  if (countInventoryQuantity(user, itemId) <= 0) {
+  const remainingVariantCount = (Array.isArray(user.inventory) ? user.inventory : [])
+    .filter((entry) => entry.itemId === itemId && (Number(entry.refinement) || 0) === selectedVariant.refinement)
+    .reduce((sum, entry) => sum + Math.max(0, Number(entry.quantity) || 0), 0);
+  if (remainingVariantCount <= 0) {
     for (const [slot, equippedItemId] of Object.entries(user.equipped || {})) {
-      if (equippedItemId === itemId) user.equipped[slot] = null;
+      if (equippedItemId !== itemId) continue;
+      const slotRefinement = Number(user.equippedRefinements?.[slot] || 0);
+      if (slotRefinement !== selectedVariant.refinement) continue;
+      user.equipped[slot] = null;
+      if (user.equippedRefinements && typeof user.equippedRefinements === 'object') {
+        user.equippedRefinements[slot] = null;
+      }
     }
   }
   user.gearScore = await computeGearScore(user);

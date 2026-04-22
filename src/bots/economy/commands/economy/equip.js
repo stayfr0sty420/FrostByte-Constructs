@@ -27,7 +27,9 @@ module.exports = {
     const embed = new EmbedBuilder()
       .setTitle('Equipped')
       .setColor(0x3498db)
-      .setDescription(`Equipped **${result.item.name}** to **${result.slot}**.`)
+      .setDescription(
+        `Equipped **${result.item.name}**${Number(result.refinement || 0) > 0 ? ` **+${result.refinement}**` : ''} to **${result.slot}**.`
+      )
       .addFields({ name: 'Gear Score', value: String(result.gearScore), inline: true })
       .setTimestamp();
 
